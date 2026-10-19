@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# --- PARCA 1 BASI ---
 import json, os, re, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
@@ -63,7 +63,10 @@ LOCKED_PRE_CACHE = {
     "Leeds vs Man United": ("Maç Önü PAS (3.5 Alt / İY 1.5 Alt)", 25),
     "Osasuna vs Racing": ("Maç Önü PAS (3.5 Alt / İY 1.5 Alt)", 21),
     "Bournemouth vs Sunderland": ("Maç Önü PAS (3.5 Alt / İY 1.5 Alt)", 20),
-}def sget(d, key, default=None):
+}
+# --- PARCA 1 SONU ---
+# --- PARCA 2 BASI ---
+def sget(d, key, default=None):
     if not isinstance(d, dict): return default
     val = d.get(key, default)
     return default if val is None else val
@@ -127,7 +130,9 @@ def verify_pre_prediction(tahmin_str, h_name, a_name, h_score, a_score, ht_goals
     if "Maç Önü PAS (3.5 Alt / İY 1.5 Alt)" in t: return tot <= 3 or ht_goals <= 1
     if "KG Var / İlk Yarı 1.5 Alt" in t: return btts or ht_goals <= 1
     return False
-	def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_line, tier_weight):
+# --- PARCA 2 SONU ---
+# --- PARCA 3 BASI ---
+def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_line, tier_weight):
     mom_diff, avg_mom = abs(h_mom - a_mom), (h_mom + a_mom) / 2.0
     imp_prob, raw_odds_val = odds_to_implied_prob(odds_str), parse_american_odds(odds_str)
     if raw_odds_val and raw_odds_val <= -150:
@@ -198,7 +203,9 @@ def verify_pre_prediction(tahmin_str, h_name, a_name, h_score, a_score, ht_goals
     is_ana_kasa = final_conf >= 83 and tier_weight >= 0.81 and archetype in ("MUTLAK_FAVORI", "CIFT_YONLU_MOMENTUM", "RAKIP_COKUSU")
     if is_ana_kasa: tahmin = f"{tahmin} (Ana Kasa)"
     return {"confidence": final_conf, "archetype": archetype, "yorum": yorum, "tahmin": tahmin, "pusu": pusu, "is_ana_kasa": is_ana_kasa}
-	def evaluate_live_or_ft(minute, is_ft, h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_foul, a_foul, tot_yc, h_poss, a_poss, tier_w, pre_conf, tunnel, first_goal_min, fw_notes):
+# --- PARCA 3 SONU ---
+# --- PARCA 4 BASI ---
+def evaluate_live_or_ft(minute, is_ft, h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_foul, a_foul, tot_yc, h_poss, a_poss, tier_w, pre_conf, tunnel, first_goal_min, fw_notes):
     tot_goals, tot_sot, tot_cor, tot_fouls = h_score + a_score, h_sot + a_sot, h_cor + a_cor, h_foul + a_foul
     d_h_sh, d_a_sh = sget(tunnel, "d_h_sh", 0), sget(tunnel, "d_a_sh", 0)
     d_h_cor, d_a_cor = sget(tunnel, "d_h_cor", 0), sget(tunnel, "d_a_cor", 0)
@@ -269,7 +276,9 @@ def parse_record_wdl(comp_dict):
             try: return int(p[0]), int(p[1]), int(p[2]), summary
             except ValueError: pass
     return 0, 0, 0, "0-0-0"
-	def detect_fw_to_df_subs(summary_data):
+# --- PARCA 4 SONU ---
+# --- PARCA 5 BASI ---
+def detect_fw_to_df_subs(summary_data):
     notes, pos_map = [], {}
     for r in sget(summary_data, "rosters", []):
         for ath in sget(r, "roster", []):
@@ -346,7 +355,9 @@ def ask_gemini_ai_analyst(api_key, report_text):
             return res["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
         return f"⚠️ AI Bağlantı Uyarısı: API Anahtarını kontrol edin ({e})"
-		def process_single_event(slug, lg_name, tier_w, ev, ev_day, date_str, memory):
+# --- PARCA 5 SONU ---
+# --- PARCA 6 BASI ---
+def process_single_event(slug, lg_name, tier_w, ev, ev_day, date_str, memory):
     ev_id = str(sget(ev, "id", ""))
     comps = sget(ev, "competitions", [])
     if not comps or not isinstance(comps[0], dict): return None
@@ -447,11 +458,15 @@ def main():
     date_str, time_str = now_tr.strftime("%Y%m%d"), now_tr.strftime("%H:%M")
     yesterday_str = (now_tr - timedelta(days=1)).strftime("%Y%m%d")
 
+    try:
+        default_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception:
+        default_key = ""
+
     with st.sidebar:
         st.header("⚡ Delta Pulse Bulut")
         inc_yest = st.checkbox("📅 Dünkü (18 Ekim) Sonuçları Dahil Et", value=True)
         auto_ref = st.checkbox("🔄 60 Saniyede Bir Otomatik Yenile", value=False)
-        default_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
         gem_key = st.text_input("🤖 Gemini API Anahtarı (Otomatik AI):", value=default_key, type="password")
         run_ai = st.button("🧠 Yapay Zekaya Canlı Analiz Yaptır", use_container_width=True)
         st.button("⚡ Verileri Şimdi Yenile", type="primary", use_container_width=True)
@@ -528,3 +543,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# --- PARCA 6 SONU ---
