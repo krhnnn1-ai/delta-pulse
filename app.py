@@ -190,7 +190,58 @@ def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_
         else:
             yorum = f"{fav_team} %{fav_mom} zirve momentumuyla ({fav_rec}) rakibinin (%{dog_mom}) +{mom_diff} puan önünde (Kademe: {tier_weight})."
             tahmin, pusu = f"{fav_team} Takım Golü 1.5 Üst", f"{fav_team} Geriye Düşerse veya İY 0-0 Kalırsa -> {fav_team} Korner Patlaması"
-    elif h_mom >= 58 and a_mom >=
+    elif h_mom >= 58 and a_mom >= 58 and tg_line >= 3.5:
+        archetype = "CIFT_YONLU_MOMENTUM"
+        base = 73.0 + (avg_mom * 0.20) + ((tg_line - 2.5) * 4.5) - (mom_diff * 0.08)
+        yorum = f"Çift Yönlü Yüksek Momentum (%{h_mom} vs %{a_mom}). Açık oyun ve erken gol beklentisi (Kademe: {tier_weight})."
+        tahmin, pusu = f"KG Var & 2.5 Üst / {fav_team} 1.5 Üst", "İlk 20 Dakika Erken Gol -> 3.5 Üst | FW->DF olursa alt/korner revizyonu"
+    elif (dog_mom <= 36 and mom_diff >= 28) or mom_diff >= 40 or (mom_diff >= 28 and raw_odds_val and raw_odds_val <= -155):
+        archetype = "RAKIP_COKUSU"
+        weak_team = a_name if fav_team == h_name else h_name
+        strong_mkt = (raw_odds_val is not None and raw_odds_val <= -145) or (raw_odds_val is not None and raw_odds_val < 0 and dog_mom <= 17)
+        if strong_mkt:
+            base = 71.0 + (mom_diff * 0.24) + ((imp_prob - 50.0) * 0.20)
+            yorum = f"Rakip Çöküş Asimetrisi: {weak_team} ({dog_rec}) %{dog_mom} momentumda. {fav_team} (+{mom_diff} fark | {odds_str}) net favori (Kademe: {tier_weight})."
+            tahmin, pusu = f"{fav_team} Takım Golü 1.5 Üst & {fav_team} Galibiyeti", f"İlk yarı kilitlenirse -> {fav_team} Korner Patlaması (5.5 Üst)"
+        elif tg_line >= 3.5 or dog_mom <= 15 or (odds_str == "Veri Yok" and fav_team == h_name and mom_diff >= 32):
+            base = 66.0 + (mom_diff * 0.20)
+            yorum = f"Savunma Çöküşü & Üstünlük: {weak_team} (%{dog_mom}) savunması kırılgan; {fav_team} (+{mom_diff} fark) hücumda üstün (Kademe: {tier_weight})."
+            tahmin, pusu = f"{fav_team} Çifte Şans ({fav_code}) & Maç 1.5 Üst", f"İlk yarı gol gecikirse -> {fav_team} Korner Üst"
+        else:
+            base = 64.0 + (mom_diff * 0.20)
+            yorum = f"Kontrollü Üstünlük: {fav_team} (%{fav_mom}) rakibinin (%{dog_mom}) +{mom_diff} puan önünde ancak barem ({tg_line}) kontrollü (Kademe: {tier_weight})."
+            tahmin, pusu = f"{fav_team} Çifte Şans ({fav_code}) & 3.5 Alt", f"60. dakikada 0-0 ise -> {fav_team} Korner Üst & Kart Üst"
+    elif raw_odds_val and raw_odds_val <= -170 and mom_diff < 28:
+        archetype = "PIYASA_BASKISI"
+        base = 63.0 + ((imp_prob - 50.0) * 0.32) + (mom_diff * 0.15)
+        if fav_mom <= 20 and tg_line <= 2.5:
+            yorum = f"Piyasa ({odds_str}) {mkt_fav} lehine ancak favori %{fav_mom} momentumla ({fav_rec}) form krizinde (Kademe: {tier_weight})."
+            tahmin, pusu = f"{mkt_fav} Çifte Şans ({fav_code}) & 3.5 Alt", f"{mkt_fav} Golü Gecikirse -> {mkt_fav} Korner Baskısı (5.5/6.5 Üst)"
+        else:
+            yorum = f"Piyasa ({odds_str}) oranı {mkt_fav} lehine baskı fiyatlıyor ancak momentum dengeli (+{mom_diff} fark | Kademe: {tier_weight})."
+            tahmin = f"{mkt_fav} Takım Golü 1.5 Üst & Maç 2.5 Üst" if tg_line >= 3.5 else f"{mkt_fav} Takım Golü 1.5 Üst"
+            pusu = f"{mkt_fav} Golü Gecikirse -> {mkt_fav} Korner Baskısı (5.5/6.5 Üst)"
+    elif tg_line >= 3.5:
+        archetype = "CIFT_YONLU_MOMENTUM"
+        base = 63.0 + (avg_mom * 0.20) + ((tg_line - 2.5) * 4.5)
+        yorum = f"Piyasa {tg_line} gol baremiyle ({odds_str}) yüksek tempolu ve bol pozisyonlu geçiş oyunu fiyatlıyor (Kademe: {tier_weight})."
+        tahmin, pusu = "Maç 2.5 Gol Üst / KG Var", "İlk 20 dk gol çıkarsa -> 3.5 Üst | İlk yarı 0-0 kalırsa -> Korner Üst"
+    elif tg_line <= 1.5 or (h_mom < 42 and a_mom < 35 and tg_line <= 2.5):
+        archetype = "KARA_DELIK"
+        base = 66.0 if tg_line <= 1.5 else max(20.0, 42.0 - ((45.0 - avg_mom) * 0.65))
+        yorum = f"Düşük Gol Baremi (T/G: {tg_line} | Mom: %{h_mom}-%{a_mom}). Kısır ve kontrollü taktik maç (Kademe: {tier_weight})."
+        tahmin, pusu = "Maç Önü PAS (3.5 Alt / İY 1.5 Alt)", "75'+ Skor Yakınsa -> 80+ Kart Üst"
+    else:
+        archetype = "SIMETRIK_DENGE"
+        base = 52.0 + (avg_mom * 0.16) + (mom_diff * 0.14)
+        yorum = f"Simetrik güç ve momentum dengesi (%{h_mom} vs %{a_mom}). Taktik değişiklikler skoru belirler (Kademe: {tier_weight})."
+        tahmin, pusu = "KG Var / İlk Yarı 1.5 Alt", "60. dakikaya kadar 1-0 giden senaryoda gerideki takımın kornerleri"
+
+    final_conf = int(round(min(97.0, max(20.0, base * (0.62 + 0.38 * tier_weight) * ARCHETYPE_WEIGHTS.get(archetype, 1.0)))))
+    is_ana_kasa = final_conf >= 83 and tier_weight >= 0.81 and archetype in ("MUTLAK_FAVORI", "CIFT_YONLU_MOMENTUM", "RAKIP_COKUSU")
+    if is_ana_kasa: tahmin = f"{tahmin} (Ana Kasa)"
+    return {"confidence": final_conf, "archetype": archetype, "yorum": yorum, "tahmin": tahmin, "pusu": pusu, "is_ana_kasa": is_ana_kasa}
+# --- PARCA 3 SONU ---
 # --- PARCA 4 BASI ---
 def evaluate_live_or_ft(minute, is_ft, h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_foul, a_foul, tot_yc, h_poss, a_poss, tier_w, pre_conf, tunnel, first_goal_min, fw_notes):
     tot_goals, tot_sot, tot_cor, tot_fouls = h_score + a_score, h_sot + a_sot, h_cor + a_cor, h_foul + a_foul
