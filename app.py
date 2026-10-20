@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import streamlit as st
 
-st.set_page_config(page_title="Delta Pulse v4.5 Cloud", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.6 Cloud", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -25,19 +25,40 @@ ARCHETYPE_WEIGHTS = {
     "PIYASA_BASKISI": 0.90, "SIMETRIK_DENGE": 0.88, "KARA_DELIK": 0.75,
 }
 
+# 22 TURNUVA: Şampiyonlar Ligi, Avrupa Kupaları, Ana Ligler ve Hafta İçi Alt Ligler
 LEAGUES = {
+    "uefa.champions": ("UEFA ŞAMPİYONLAR LİGİ", 0.95),
+    "uefa.europa": ("UEFA AVRUPA LİGİ", 0.90),
+    "uefa.europa.conf": ("UEFA KONFERANS LİGİ", 0.86),
     "eng.1": ("İNGİLTERE PREMIER LİG", 0.92),
     "esp.1": ("İSPANYA LA LIGA", 0.90),
     "ger.1": ("ALMANYA BUNDESLIGA", 0.88),
     "ita.1": ("İTALYA SERIE A", 0.87),
     "fra.1": ("FRANSA LIGUE 1", 0.84),
-    "tur.1": ("TÜRKIYE SÜPER LIG", 0.81),
+    "ned.1": ("HOLLANDA EREDIVISIE", 0.83),
+    "por.1": ("PORTEKİZ LIGA PORTUGAL", 0.83),
+    "tur.1": ("TÜRKIYE SÜPER LİG", 0.81),
     "eng.2": ("İNGİLTERE CHAMPIONSHIP", 0.80),
     "ger.2": ("ALMANYA BUNDESLIGA 2", 0.79),
+    "ita.2": ("İTALYA SERIE B", 0.78),
+    "esp.2": ("İSPANYA LA LIGA 2", 0.78),
+    "fra.2": ("FRANSA LIGUE 2", 0.77),
+    "eng.3": ("İNGİLTERE LEAGUE ONE", 0.76),
     "tur.2": ("TÜRKIYE 1. LİG", 0.75),
+    "eng.league_cup": ("İNGİLTERE EFL KUPASI", 0.84),
+    "esp.copa_del_rey": ("İSPANYA KRAL KUPASI", 0.82),
+    "ger.dfb_pokal": ("ALMANYA DFB POKAL", 0.83),
+    "ita.coppa_italia": ("İTALYA KUPASI", 0.82),
 }
 
 LOCKED_PRE_CACHE = {
+    # 19 Ekim Pazartesi Kilitli Tahminleri (Ana Kasa: 1/1 | Genel: 3/5)
+    "Trabzonspor vs Besiktas": ("KG Var & 2.5 Üst / Trabzonspor 1.5 Üst (Ana Kasa)", 84),
+    "Monza vs Cagliari": ("Cagliari Çifte Şans (X2) & 3.5 Alt", 67),
+    "Spurs vs Coventry": ("Spurs Takım Golü 1.5 Üst & Maç 2.5 Üst", 62),
+    "Parma vs Torino": ("KG Var / İlk Yarı 1.5 Alt", 49),
+    "Getafe vs Rayo": ("Maç Önü PAS (3.5 Alt / İY 1.5 Alt)", 48),
+    # 18 Ekim Pazar Kilitli Tahminleri (Ana Kasa: 3/3 | Genel: 17/25)
     "Brighton vs C Palace": ("Brighton Takım Golü 1.5 Üst (Ana Kasa)", 88),
     "Leverkusen vs Freiburg": ("KG Var & 2.5 Üst / Leverkusen 1.5 Üst (Ana Kasa)", 87),
     "Real Madrid vs Sevilla": ("Real Madrid Takım Golü 2.5 Üst / Maç 3.5 Üst (Ana Kasa)", 85),
@@ -403,7 +424,8 @@ def process_single_event(slug, lg_name, tier_w, ev, ev_day, date_str, memory):
         mem_data = {"match": match_key, "pre_conf": pre_eval["confidence"], "tahmin": pre_eval["tahmin"], "snapshots": sget(mem_entry, "snapshots", [])}
         meta_str = f"Mom: %{h_mom} ({h_rec}|{h_form}) vs %{a_mom} ({a_rec}|{a_form}) | Barem: {odds_str} | T/G: {tg_line}"
         lines = [f"🕒 [{day_tag}{kickoff_str} | {lg_name}] {match_key} ({meta_str})", f"   🎯 Tahmin: {pre_eval['tahmin']} | 📐 Pusu: {pre_eval['pusu']}"]
-        item = {"confidence": pre_eval["confidence"], "state": "pre", "priority": 2, "kickoff": f"{day_tag}{kickoff_str}", "league": lg_name, "match_title": match_key, "meta": meta_str, "yorum": pre_eval["yorum"], "tahmin": pre_eval["tahmin"], "pusu": pre_eval["pusu"], "is_hit": None, "lines": lines}
+        mini_line = f"ÖNÜ|{day_tag}{kickoff_str}|{lg_name}|{match_key}|%{pre_eval['confidence']}|Mom:{h_mom}-{a_mom}|{odds_str}|TG:{tg_line} -> {pre_eval['tahmin']}"
+        item = {"confidence": pre_eval["confidence"], "state": "pre", "priority": 2, "kickoff": f"{day_tag}{kickoff_str}", "league": lg_name, "match_title": match_key, "meta": meta_str, "yorum": pre_eval["yorum"], "tahmin": pre_eval["tahmin"], "pusu": pre_eval["pusu"], "is_hit": None, "lines": lines, "mini": mini_line, "is_today": ev_day >= date_str}
         return {"ev_id": ev_id, "mem_data": mem_data, "item": item, "is_ana_kasa": pre_eval["is_ana_kasa"], "state": "pre", "is_hit": None, "is_ak_ft": False}
 
     is_ft = state == "post"
@@ -449,31 +471,37 @@ def process_single_event(slug, lg_name, tier_w, ev, ev_day, date_str, memory):
     is_ak_ft = ("(Ana Kasa)" in stored_tahmin) if is_ft else False
     hit_badge = f" | 🎯 MaçÖnü: {stored_tahmin} ➔ {'✅[TUTTU]' if is_hit else '❌[YATTI]'}" if is_ft else ""
     meta_str = f"Şut: {h_sh}({h_sot})-{a_sh}({a_sot}) | Korner: {h_cor}-{a_cor} | Kart: {tot_yc} | Faul: {h_foul}-{a_foul} | Top: %{h_poss:.0f}-%{a_poss:.0f}"
+    tun_str = f"Δ({p_min}'->{minute}'):+{d_h_sh}/{d_a_sh}Ş,+{d_h_cor}/{d_a_cor}K" if (not is_ft and p_min < minute) else ""
     lines = [f"{'🏁 FT' if is_ft else '🔴 CANLI'} [{min_label} | {lg_name}] {h_name} {h_score} - {a_score} {a_name} | {meta_str}", f"   🤖 Karar -> {dec_str}{hit_badge}"]
-    item = {"confidence": live_conf, "state": state, "priority": (3 if not is_ft else 1), "kickoff": min_label, "league": lg_name, "match_title": f"{h_name} {h_score} - {a_score} {a_name}", "meta": meta_str, "yorum": " | ".join(goals_list) if goals_list else "Gol Yok", "tahmin": stored_tahmin, "pusu": dec_str, "is_hit": is_hit, "lines": lines}
+    if not is_ft:
+        mini_line = f"CANLI|{min_label}|{h_name} {h_score}-{a_score} {a_name}|Şut:{h_sh}({h_sot})-{a_sh}({a_sot})|Kor:{h_cor}-{a_cor}|Kart:{tot_yc}|Top:%{h_poss:.0f}|{tun_str}|Önü:{stored_tahmin}"
+    else:
+        mini_line = f"FT|{min_label}|{h_name} {h_score}-{a_score} {a_name}|{'✅' if is_hit else '❌'}|{stored_tahmin}"
+    item = {"confidence": live_conf, "state": state, "priority": (3 if not is_ft else 1), "kickoff": min_label, "league": lg_name, "match_title": f"{h_name} {h_score} - {a_score} {a_name}", "meta": meta_str, "yorum": " | ".join(goals_list) if goals_list else "Gol Yok", "tahmin": stored_tahmin, "pusu": dec_str, "is_hit": is_hit, "lines": lines, "mini": mini_line, "is_today": ev_day >= date_str}
     return {"ev_id": ev_id, "mem_data": mem_data, "item": item, "is_ana_kasa": False, "state": state, "is_hit": is_hit, "is_ak_ft": is_ak_ft}
 
 def main():
     now_tr = datetime.now(TR_TZ)
     date_str, time_str = now_tr.strftime("%Y%m%d"), now_tr.strftime("%H:%M")
     yesterday_str = (now_tr - timedelta(days=1)).strftime("%Y%m%d")
+    tomorrow_str = (now_tr + timedelta(days=1)).strftime("%Y%m%d")
 
-    try:
-        default_key = st.secrets.get("GEMINI_API_KEY", "")
-    except Exception:
-        default_key = ""
+    try: default_key = st.secrets.get("GEMINI_API_KEY", "")
+    except Exception: default_key = ""
 
     with st.sidebar:
-        st.header("⚡ Delta Pulse Bulut")
-        inc_yest = st.checkbox("📅 Dünkü (18 Ekim) Sonuçları Dahil Et", value=True)
+        st.header("⚡ Delta Pulse v4.6")
+        inc_yest = st.checkbox(f"📅 Dünkü ({yesterday_str}) Karneyi Dahil Et", value=True)
+        inc_tom = st.checkbox(f"⏭️ Yarınki ({tomorrow_str}) Maçları da Göster", value=False)
         auto_ref = st.checkbox("🔄 60 Saniyede Bir Otomatik Yenile", value=False)
-        gem_key = st.text_input("🤖 Gemini API Anahtarı (Otomatik AI):", value=default_key, type="password")
+        gem_key = st.text_input("🤖 Gemini API Anahtarı:", value=default_key, type="password")
         run_ai = st.button("🧠 Yapay Zekaya Canlı Analiz Yaptır", use_container_width=True)
         st.button("⚡ Verileri Şimdi Yenile", type="primary", use_container_width=True)
 
     memory = load_memory()
     raw_events = fetch_day_events(date_str)
     if inc_yest: raw_events.extend(fetch_day_events(yesterday_str))
+    if inc_tom: raw_events.extend(fetch_day_events(tomorrow_str))
 
     processed, ana_kasa = [], []
     live_cnt = ft_cnt = pre_cnt = ft_hit = ft_total = ak_hit = ak_total = 0
@@ -502,27 +530,36 @@ def main():
     ft_pct = int(round((ft_hit / ft_total) * 100)) if ft_total > 0 else 0
     ak_pct = int(round((ak_hit / ak_total) * 100)) if ak_total > 0 else 0
 
-    st.title(f"⚡ DELTA PULSE v4.5 | Bulut Radar ({time_str})")
+    st.title(f"⚡ DELTA PULSE v4.6 | Avrupa & Lig Radarı ({time_str})")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📊 Maç Önü Karnesi", f"{ft_hit}/{ft_total} (%{ft_pct})")
-    c2.metric("💎 Ana Kasa Karnesi", f"{ak_hit}/{ak_total} (%{ak_pct})")
-    c3.metric("🔴 Canlı Maçlar", str(live_cnt))
-    c4.metric("🕒 Maç Önü Bülten", str(pre_cnt))
+    c1.metric("📊 Karne", f"{ft_hit}/{ft_total} (%{ft_pct})")
+    c2.metric("💎 Ana Kasa", f"{ak_hit}/{ak_total} (%{ak_pct})")
+    c3.metric("🔴 Canlı", str(live_cnt))
+    c4.metric("🕒 Maç Önü", str(pre_cnt))
 
     rep_lines = [f"TARİH: {date_str} {time_str} | KARNE: {ft_hit}/{ft_total} (%{ft_pct}) | ANA KASA: {ak_hit}/{ak_total} (%{ak_pct})"]
-    for i, it in enumerate(processed, 1): rep_lines.extend([f"#{i}. [%{it['confidence']}] {it['lines'][0]}", it["lines"][1]])
+    mini_lines = [f"⚡ DP-MİNİ [{date_str} {time_str}] Karne:{ft_hit}/{ft_total}(%{ft_pct}) AK:{ak_hit}/{ak_total}"]
+    for i, it in enumerate(processed, 1):
+        rep_lines.extend([f"#{i}. [%{it['confidence']}] {it['lines'][0]}", it["lines"][1]])
+        if it["state"] in ("in", "pre") or it.get("is_today"):
+            mini_lines.append(it["mini"])
     full_rep_text = "\n".join(rep_lines)
+    mini_rep_text = "\n".join(mini_lines)
 
     if run_ai and gem_key:
         with st.spinner("🤖 Yapay Zeka canlı bülteni analiz ediyor..."):
             st.info(ask_gemini_ai_analyst(gem_key, full_rep_text))
+
+    with st.expander("📲 GEMİNİ'YE TEK TIKLA AKTAR (Telefon Panosu Dostu)", expanded=True):
+        st.caption(f"Mini-Paket Boyutu: {len(mini_rep_text)} Karakter (Sağ üstteki kopyala ikonuna dokunup doğrudan Gemini'ye yapıştırın):")
+        st.code(mini_rep_text, language="text")
 
     if ana_kasa:
         st.subheader(f"💎 Günün 'Ana Kasa' Hedefleri ({len(ana_kasa)} Maç)")
         for ak in ana_kasa:
             st.markdown(f"<div class='dp-ak'><b>[%{ak['confidence']} GÜVEN | {ak['kickoff']}] {ak['match_title']}</b> ({ak['league']})<br>🎯 <b>Tahmin:</b> {ak['tahmin']}</div>", unsafe_allow_html=True)
 
-    t_live, t_pre, t_ft, t_raw = st.tabs([f"🔴 Canlı ({live_cnt})", f"🕒 Maç Önü ({pre_cnt})", f"🏁 Biten & Karne ({ft_cnt})", "📋 Tek Tık Kopyala"])
+    t_live, t_pre, t_ft, t_raw = st.tabs([f"🔴 Canlı ({live_cnt})", f"🕒 Maç Önü ({pre_cnt})", f"🏁 Biten & Karne ({ft_cnt})", "📋 Tam Rapor"])
     with t_live:
         for m in [x for x in processed if x["state"] == "in"]:
             st.markdown(f"<div class='dp-card dp-live'><b>[%{m['confidence']} GÜVEN | {m['kickoff']}] {m['match_title']}</b> ({m['league']})<br>📊 {m['meta']}<br>⏱️ {m['yorum']}<br>🤖 <b>Karar:</b> {m['pusu']}</div>", unsafe_allow_html=True)
