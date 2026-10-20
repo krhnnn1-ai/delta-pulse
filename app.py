@@ -153,15 +153,32 @@ def verify_pre_prediction(tahmin_str, h_name, a_name, h_score, a_score, ht_goals
     return False
 # --- PARCA 2 SONU ---
 # --- PARCA 3 BASI ---
+def detect_odds_favorite(h_name, a_name, odds_str, h_mom, a_mom):
+    prefix = re.sub(r"[^A-Z]", "", str(odds_str or "").split()[0].upper())
+    if not prefix or prefix == "VERI":
+        return h_name if h_mom >= a_mom else a_name
+    aliases = {"TOT": "SPURS", "MNC": "MANCITY", "MAN": "MAN", "WOL": "WOLVES", "SHW": "SHEFFIELD", " ox": "OXFORD"}
+    prefix_ mapped = aliases.get(prefix, prefix)
+    h_cl = re.sub(r"[^A-Z]", "", h_name.upper())
+    a_cl = re.sub(r"[^A-Z]", "", a_name.upper())
+    if a_cl.startswith(prefix_mapped) or (prefix_mapped in a_cl and prefix_mapped not in h_cl):
+        return a_name
+    if h_cl.startswith(prefix_mapped) or (prefix_mapped in h_cl and prefix_mapped not in a_cl):
+        return h_name
+    return h_name if h_mom >= a_mom else a_name
+
 def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_line, tier_weight):
     mom_diff, avg_mom = abs(h_mom - a_mom), (h_mom + a_mom) / 2.0
     imp_prob, raw_odds_val = odds_to_implied_prob(odds_str), parse_american_odds(odds_str)
-    if raw_odds_val and raw_odds_val <= -150:
-        fav_team = h_name if h_mom >= a_mom - 15 else a_name
+    mkt_fav = detect_odds_favorite(h_name, a_name, odds_str, h_mom, a_mom)
+    if raw_odds_val and raw_odds_val <= -145:
+        fav_team = mkt_fav
     else:
         fav_team = h_name if h_mom >= a_mom else a_name
-    fav_mom, dog_mom = max(h_mom, a_mom), min(h_mom, a_mom)
-    fav_rec, dog_rec = (h_rec, a_rec) if h_mom >= a_mom else (a_rec, h_rec)
+    fav_mom = h_mom if fav_team == h_name else a_mom
+    dog_mom = a_mom if fav_team == h_name else h_mom
+    fav_rec = h_rec if fav_team == h_name else a_rec
+    dog_rec = a_rec if fav_team == h_name else h_rec
     fav_code = "1X" if fav_team == h_name else "X2"
 
     if fav_mom >= 72 and (mom_diff >= 24 or (raw_odds_val and raw_odds_val <= -400)) and tg_line >= 3.5:
@@ -180,7 +197,7 @@ def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_
         tahmin, pusu = f"KG Var & 2.5 Üst / {fav_team} 1.5 Üst", "İlk 20 Dakika Erken Gol -> 3.5 Üst | FW->DF olursa alt/korner revizyonu"
     elif (dog_mom <= 36 and mom_diff >= 28) or mom_diff >= 40 or (mom_diff >= 28 and raw_odds_val and raw_odds_val <= -155):
         archetype = "RAKIP_COKUSU"
-        weak_team = h_name if h_mom < a_mom else a_name
+        weak_team = a_name if fav_team == h_name else h_name
         strong_mkt = (raw_odds_val is not None and raw_odds_val <= -145) or (raw_odds_val is not None and raw_odds_val < 0 and dog_mom <= 17)
         if strong_mkt:
             base = 71.0 + (mom_diff * 0.24) + ((imp_prob - 50.0) * 0.20)
@@ -197,13 +214,13 @@ def evaluate_pre_match(h_name, a_name, h_mom, a_mom, h_rec, a_rec, odds_str, tg_
     elif raw_odds_val and raw_odds_val <= -170 and mom_diff < 28:
         archetype = "PIYASA_BASKISI"
         base = 63.0 + ((imp_prob - 50.0) * 0.32) + (mom_diff * 0.15)
-        if h_mom <= 20 and tg_line <= 2.5:
-            yorum = f"Piyasa ({odds_str}) {h_name} lehine ancak ev sahibi %{h_mom} momentumla ({h_rec}) form krizinde (Kademe: {tier_weight})."
-            tahmin, pusu = f"{h_name} Çifte Şans (1X) & 3.5 Alt", f"{h_name} Golü Gecikirse -> {h_name} Korner Baskısı (5.5/6.5 Üst)"
+        if fav_mom <= 20 and tg_line <= 2.5:
+            yorum = f"Piyasa ({odds_str}) { mkt_fav } lehine ancak favori %{fav_mom} momentumla ({fav_rec}) form krizinde (Kademe: {tier_weight})."
+            tahmin, pusu = f"{mkt_fav} Çifte Şans ({fav_code}) & 3.5 Alt", f"{mkt_fav} Golü Gecikirse -> {mkt_fav} Korner Baskısı (5.5/6.5 Üst)"
         else:
-            yorum = f"Piyasa ({odds_str}) oranı {h_name} lehine baskı fiyatlıyor ancak momentum dengeli (+{mom_diff} fark | Kademe: {tier_weight})."
-            tahmin = f"{h_name} Takım Golü 1.5 Üst & Maç 2.5 Üst" if tg_line >= 3.5 else f"{h_name} Takım Golü 1.5 Üst"
-            pusu = f"{h_name} Golü Gecikirse -> {h_name} Korner Baskısı (5.5/6.5 Üst)"
+            yorum = f"Piyasa ({odds_str}) oranı {mkt_fav} lehine baskı fiyatlıyor ancak momentum dengeli (+{mom_diff} fark | Kademe: {tier_weight})."
+            tahmin = f"{mkt_fav} Takım Golü 1.5 Üst & Maç 2.5 Üst" if tg_line >= 3.5 else f"{mkt_fav} Takım Golü 1.5 Üst"
+            pusu = f"{mkt_fav} Golü Gecikirse -> {mkt_fav} Korner Baskısı (5.5/6.5 Üst)"
     elif tg_line >= 3.5:
         archetype = "CIFT_YONLU_MOMENTUM"
         base = 63.0 + (avg_mom * 0.20) + ((tg_line - 2.5) * 4.5)
