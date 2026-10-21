@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.8.2", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -47,59 +47,19 @@ LEAGUES = {
 @st.cache_resource
 def get_persistent_memory():
     return {
-        "locked_pre": {
-            "Como vs Man United": {"conf": 68, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
-            "Lille vs Galatasaray": {"conf": 40, "pick": "KG Var / İlk Yarı 1.5 Alt", "warn": False},
-            "Levante vs Athletic": {"conf": 67, "pick": "Athletic Çifte Şans (X2) & 3.5 Alt", "warn": False},
-            "Real Madrid vs RB Leipzig": {"conf": 97, "pick": "KG Var & 2.5 Üst / Real Madrid 1.5 Üst (Ana Kasa)", "warn": False},
-            "Club Brugge vs Lens": {"conf": 81, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
-            "Inter Milan vs Shakhtar": {"conf": 78, "pick": "Inter Milan 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
-            "Aston Villa vs Viking FK": {"conf": 76, "pick": "Aston Villa 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
-            "Betis vs Feyenoord": {"conf": 75, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
-            "Bayern vs Arsenal": {"conf": 74, "pick": "KG Var / Maç 2.5 Gol Üst", "warn": False},
-            "Sporting vs LASK Linz": {"conf": 74, "pick": "Sporting 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
-            "Reading vs Leyton Orient": {"conf": 47, "pick": "Reading Takım Golü 1.5 Üst", "warn": False}
-        },
-        "live_snapshots": {
-            "Como vs Man United": {"min": 11, "h_sh": 1, "a_sh": 1, "h_cor": 0, "a_cor": 0},
-            "Lille vs Galatasaray": {"min": 13, "h_sh": 1, "a_sh": 1, "h_cor": 0, "a_cor": 0},
-            "Levante vs Athletic": {"min": 2, "h_sh": 0, "a_sh": 0, "h_cor": 0, "a_cor": 0}
-        },
+        "locked_pre": {},
+        "live_snapshots": {},
         "settled_results": {},
-        "base_wins": 16,
-        "base_total": 21,
-        "base_ak_wins": 3,
-        "base_ak_total": 3,
-        "opening_odds": {
-            "Sporting vs LASK Linz": {"fav": "SCP", "val": -525, "tg": 3.5},
-            "Betis vs Feyenoord": {"fav": "BET", "val": -180, "tg": 3.5},
-            "Real Madrid vs RB Leipzig": {"fav": "RMA", "val": -400, "tg": 4.5},
-            "Aston Villa vs Viking FK": {"fav": "AVL", "val": -450, "tg": 3.5},
-            "Club Brugge vs Lens": {"fav": "BRU", "val": 100, "tg": 3.5},
-            "Como vs Man United": {"fav": "COMO", "val": 115, "tg": 3.5},
-            "Inter Milan vs Shakhtar": {"fav": "INT", "val": -475, "tg": 3.5},
-            "Levante vs Athletic": {"fav": "ATH", "val": 115, "tg": 2.5},
-            "Bayern vs Arsenal": {"fav": "MUN", "val": 105, "tg": 2.5},
-            "Reading vs Leyton Orient": {"fav": "REA", "val": -185, "tg": 2.5},
-            "Lille vs Galatasaray": {"fav": "LILL", "val": 115, "tg": 2.5}
-        },
-        "last_valid_odds": {
-            "Real Madrid vs RB Leipzig": ("RMA -425", "RMA", -425, 4.5),
-            "Club Brugge vs Lens": ("BRU -125", "BRU", -125, 3.5),
-            "Inter Milan vs Shakhtar": ("INT -425", "INT", -425, 3.5),
-            "Aston Villa vs Viking FK": ("AVL -390", "AVL", -390, 3.5),
-            "Betis vs Feyenoord": ("BET -155", "BET", -155, 3.5),
-            "Bayern vs Arsenal": ("MUN +140", "MUN", 140, 2.5),
-            "Sporting vs LASK Linz": ("SCP -310", "SCP", -310, 3.5),
-            "Reading vs Leyton Orient": ("REA -195", "REA", -195, 2.5),
-            "Levante vs Athletic": ("ATH +125", "ATH", 125, 2.5),
-            "Como vs Man United": ("COMO +140", "COMO", 140, 3.5),
-            "Lille vs Galatasaray": ("LILL +150", "LILL", 150, 2.5)
-        }
+        " settled_date": "20261021",
+        "base_wins": 23,
+        "base_total": 32,
+        "base_ak_wins": 5,
+        "base_ak_total": 6,
+        "opening_odds": {},
+        "last_valid_odds": {}
     }
 
 MEM = get_persistent_memory()
-
 def american_to_steps(odd):
     if odd >= 100:
         return odd - 100
@@ -243,60 +203,57 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
         if conf >= 83:
             conf = 74 if severe_drift_warning else 78
 
+    # v4.9 TEK KURŞUN (TEK NET TERCİH) ATAMA MOTORU
     if h_mom == a_mom and h_mom <= 35 and ou_val <= 2.5:
         conf = 25
-        pick = "Maç Önü PAS (3.5 Alt / İY 1.5 Alt)"
+        pick = "Maç 3.5 Gol Alt"
     elif conf >= 83 and kademe >= 0.88 and not ana_kasa_veto:
-        if fav_val <= -350 and fav_mom >= 75 and dog_mom <= 72:
-            pick = f"{fav_team} Takım Golü 2.5 Üst / Maç 3.5 Üst (Ana Kasa)"
+        # Rakip de güçlü hücum takımısıysa (Örn: Real-Leipzig 68-68, Villa-Viking 78-81) -> Maç 2.5 Gol Üst
+        # Rakip zayıfsa (Örn: Club Brugge-Lens 63-33) -> Favori Takım Golü 1.5 Üst
+        if dog_mom >= 58 and ou_val >= 3.5:
+            pick = "Maç 2.5 Gol Üst (Ana Kasa)"
         else:
-            pick = f"KG Var & 2.5 Üst / {fav_team} 1.5 Üst (Ana Kasa)"
+            pick = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
-            pick = f"{fav_team} 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]"
-        elif fav_val <= -170:
-            pick = f"{fav_team} Takım Golü 1.5 Üst & Maç 2.5 Üst"
-        elif mom_diff >= 28 and fav_mom >= 70:
+            pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
+        elif dog_mom < 45 and fav_val <= -140:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
-            pick = "Maç 2.5 Gol Üst / KG Var"
+            pick = "Maç 2.5 Gol Üst"
     else:
-        if kademe >= 0.95 and (h_mom >= 60 and a_mom >= 60):
-            conf = max(conf, 74)
-            pick = "KG Var / Maç 2.5 Gol Üst"
-        elif fav_val <= -170:
+        if h_mom >= 58 and a_mom >= 58:
+            pick = "Karşılıklı Gol Var (KG Var)"
+        elif fav_val <= -175:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         elif mom_diff >= 25:
             cs_code = "X2" if is_away_fav else "1X"
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
-        elif kademe <= 0.78:
-            pick = "İlk Yarı 1.5 Alt & Maç 3.5 Alt"
         else:
-            pick = "KG Var / İlk Yarı 1.5 Alt"
+            pick = "Maç 3.5 Gol Alt"
 
     display_odd = f"{odd_str}{smart_tag}" if smart_tag else odd_str
     return conf, pick, display_odd, severe_drift_warning
 
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
+    """DÜRÜST KARNE HESAPLAYICI: 'Veya' (or) hilesi yoktur, yazan tek tercih tutarsa True döner."""
     tot = h_score + a_score
     btts = (h_score > 0 and a_score > 0)
     fav_is_away = (a_name in pick and h_name not in pick)
     fav_goals = a_score if fav_is_away else h_score
     fav_won_or_drew = (a_score >= h_score) if fav_is_away else (h_score >= a_score)
 
-    if "PAS" in pick or ("3.5 Alt" in pick and "Çifte Şans" not in pick):
-        return tot <= 3
-    if "2.5 Üst / Maç 3.5 Üst" in pick:
-        return fav_goals >= 3 or tot >= 4
-    if "KG Var & 2.5 Üst /" in pick:
-        return (btts and tot >= 3) or fav_goals >= 2
-    if "1.5 Üst" in pick and "İlk Yarı" not in pick:
-        return fav_goals >= 2 or tot >= 3
-    if "Maç 2.5 Gol Üst / KG Var" in pick or "KG Var / Maç 2.5" in pick:
-        return tot >= 3 or btts
+    if "Takım Golü 1.5 Üst" in pick:
+        return fav_goals >= 2
+    if "Maç 2.5 Gol Üst" in pick:
+        return tot >= 3
+    if "Karşılıklı Gol Var" in pick:
+        return btts
     if "Çifte Şans" in pick:
         return fav_won_or_drew and tot <= 3
-    return tot <= 3 or btts
+    if "Maç 3.5 Gol Alt" in pick:
+        return tot <= 3
+    return False
 @st.cache_data(ttl=45)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
@@ -419,7 +376,7 @@ def fetch_all_matches():
                         d_ac = max(0, a_cor - snap["a_cor"])
                         delta_str = f"|Δ({snap['min']}'->{m_int}'):+{d_hs}/{d_as}Ş,+{d_hc}/{d_ac}K"
 
-                if state == "post":
+                if state == "post" and date_str != MEM.get(" settled_date", ""):
                     won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
                     MEM["settled_results"][match_title] = {"won": won, "is_ak": ("Ana Kasa" in pick)}
 
@@ -478,7 +435,7 @@ for m in post_m:
 st.markdown("##### 📲 GEMİNİ'YE TEK TIKLA AKTAR (Sağ Üstteki Kopyala İkonuna Dokun)")
 st.code("\n".join(mini_lines), language="text")
 
-st.markdown(f"**📊 Aktif Karne:** `{tot_w}/{tot_t} (%{tot_pct})` | **💎 Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Canlı:** `{len(live_m)}` | **⏳ Maç Önü:** `{len(pre_m)}`")
+st.markdown(f"**📊 Dürüst Karne:** `{tot_w}/{tot_t} (%{tot_pct})` | **💎 Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Canlı:** `{len(live_m)}` | **⏳ Maç Önü:** `{len(pre_m)}`")
 
 if live_m:
     st.markdown("### 🔴 Canlı Tünel & Keskinlik Radar")
@@ -492,7 +449,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.8.2 Otonom Sinyaller")
+st.markdown("### ⏳ Maç Önü v4.9 Otonom Sinyaller (Tek Net Tercih Standardı)")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
@@ -504,6 +461,6 @@ for m in pre_m:
         f"<div class='{card_cls}'><b>🕒 {m['saat']} | {m['mac']}</b> — <b>%{m['conf']} Güven</b> "
         f"<span class='dp-badge'>{m['lig']}</span><br>"
         f"📈 Mom: <b>%{m['h_mom']} vs %{m['a_mom']}</b> | 💰 Oran: <b>{m['odd_str']}</b> | ⚽ TG: <b>{m['tg']}</b><br>"
-        f"🎯 <b>Hedef:</b> {m['pick']}</div>",
+        f"🎯 <b>Net Hedef:</b> {m['pick']}</div>",
         unsafe_allow_html=True
     )
