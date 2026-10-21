@@ -2,10 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-# ==========================================
-# PARÇA 1: SAYFA AYARLARI VE 22 LİG HAVUZU
-# ==========================================
-st.set_page_config(page_title="Delta Pulse v4.8", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.8.2", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -46,14 +43,28 @@ LEAGUES = {
     "İNGİLTERE EFL CUP": ("eng.league_cup", 0.85),
     "TÜRKİYE KUPASI": ("tur.cup", 0.80)
 }
-# ==========================================
-# PARÇA 2: KALICI HAFIZA VE 00:02 BAZ ORANLAR
-# ==========================================
+
 @st.cache_resource
 def get_persistent_memory():
     return {
-        "locked_pre": {},
-        "live_snapshots": {},
+        "locked_pre": {
+            "Como vs Man United": {"conf": 68, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
+            "Lille vs Galatasaray": {"conf": 40, "pick": "KG Var / İlk Yarı 1.5 Alt", "warn": False},
+            "Levante vs Athletic": {"conf": 67, "pick": "Athletic Çifte Şans (X2) & 3.5 Alt", "warn": False},
+            "Real Madrid vs RB Leipzig": {"conf": 97, "pick": "KG Var & 2.5 Üst / Real Madrid 1.5 Üst (Ana Kasa)", "warn": False},
+            "Club Brugge vs Lens": {"conf": 81, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
+            "Inter Milan vs Shakhtar": {"conf": 78, "pick": "Inter Milan 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
+            "Aston Villa vs Viking FK": {"conf": 76, "pick": "Aston Villa 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
+            "Betis vs Feyenoord": {"conf": 75, "pick": "Maç 2.5 Gol Üst / KG Var", "warn": False},
+            "Bayern vs Arsenal": {"conf": 74, "pick": "KG Var / Maç 2.5 Gol Üst", "warn": False},
+            "Sporting vs LASK Linz": {"conf": 74, "pick": "Sporting 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
+            "Reading vs Leyton Orient": {"conf": 47, "pick": "Reading Takım Golü 1.5 Üst", "warn": False}
+        },
+        "live_snapshots": {
+            "Como vs Man United": {"min": 11, "h_sh": 1, "a_sh": 1, "h_cor": 0, "a_cor": 0},
+            "Lille vs Galatasaray": {"min": 13, "h_sh": 1, "a_sh": 1, "h_cor": 0, "a_cor": 0},
+            "Levante vs Athletic": {"min": 2, "h_sh": 0, "a_sh": 0, "h_cor": 0, "a_cor": 0}
+        },
         "settled_results": {},
         "base_wins": 16,
         "base_total": 21,
@@ -71,13 +82,25 @@ def get_persistent_memory():
             "Bayern vs Arsenal": {"fav": "MUN", "val": 105, "tg": 2.5},
             "Reading vs Leyton Orient": {"fav": "REA", "val": -185, "tg": 2.5},
             "Lille vs Galatasaray": {"fav": "LILL", "val": 115, "tg": 2.5}
+        },
+        "last_valid_odds": {
+            "Real Madrid vs RB Leipzig": ("RMA -425", "RMA", -425, 4.5),
+            "Club Brugge vs Lens": ("BRU -125", "BRU", -125, 3.5),
+            "Inter Milan vs Shakhtar": ("INT -425", "INT", -425, 3.5),
+            "Aston Villa vs Viking FK": ("AVL -390", "AVL", -390, 3.5),
+            "Betis vs Feyenoord": ("BET -155", "BET", -155, 3.5),
+            "Bayern vs Arsenal": ("MUN +140", "MUN", 140, 2.5),
+            "Sporting vs LASK Linz": ("SCP -310", "SCP", -310, 3.5),
+            "Reading vs Leyton Orient": ("REA -195", "REA", -195, 2.5),
+            "Levante vs Athletic": ("ATH +125", "ATH", 125, 2.5),
+            "Como vs Man United": ("COMO +140", "COMO", 140, 3.5),
+            "Lille vs Galatasaray": ("LILL +150", "LILL", 150, 2.5)
         }
     }
 
 MEM = get_persistent_memory()
 
 def american_to_steps(odd):
-    """Amerikan oranındaki +100/-100 sıfır geçişini gerçek puana çevirir."""
     if odd >= 100:
         return odd - 100
     elif odd <= -100:
@@ -85,48 +108,64 @@ def american_to_steps(odd):
     return 0
 
 def calc_true_odds_delta(open_val, cur_val):
-    """Negatif sonuç = Oran düştü (Akıllı Para), Pozitif sonuç = Oran yükseldi (Gevşeme/Erime)."""
     return american_to_steps(cur_val) - american_to_steps(open_val)
 
 def parse_form_momentum(form_str):
-    if not form_str:
-        return 50
-    weights = [1.0, 1.2, 1.5, 1.8, 2.2]
-    chars = list(form_str.upper()[-5:])
-    score, max_s = 0.0, 0.0
-    for i, ch in enumerate(chars):
-        w = weights[i] if i < len(weights) else 1.0
-        max_s += w * 3.0
-        if ch == 'W':
-            score += w * 3.0
-        elif ch == 'D':
-            score += w * 1.0
-    return int(round((score / max_s) * 100)) if max_s > 0 else 50
-
-def parse_odds(comp):
-    odds_list = comp.get("odds", [])
-    if not odds_list:
-        return "Veri Yok", "", 0, 2.5
-    o = odds_list[0]
-    details = o.get("details", "") or "Veri Yok"
-    ou = o.get("overUnder", 2.5)
     try:
-        ou_val = float(ou)
+        if not form_str or not isinstance(form_str, str):
+            return 50
+        weights = [1.0, 1.2, 1.5, 1.8, 2.2]
+        chars = list(form_str.upper()[-5:])
+        score, max_s = 0.0, 0.0
+        for i, ch in enumerate(chars):
+            w = weights[i] if i < len(weights) else 1.0
+            max_s += w * 3.0
+            if ch == 'W':
+                score += w * 3.0
+            elif ch == 'D':
+                score += w * 1.0
+        return int(round((score / max_s) * 100)) if max_s > 0 else 50
     except Exception:
-        ou_val = 2.5
+        return 50
 
-    fav_abbr, fav_val = "", 0
-    if details and details != "Veri Yok" and " " in details:
-        parts = details.split(" ")
-        fav_abbr = parts[0].strip()
+def safe_parse_odds(comp, match_title):
+    fallback = MEM["last_valid_odds"].get(match_title, ("Veri Yok", "", 0, 2.5))
+    try:
+        if not isinstance(comp, dict):
+            return fallback
+        odds_list = comp.get("odds")
+        if not odds_list or not isinstance(odds_list, list):
+            return fallback
+        o = next((item for item in odds_list if isinstance(item, dict)), None)
+        if not isinstance(o, dict):
+            return fallback
+
+        raw_det = o.get("details")
+        details = str(raw_det).strip() if raw_det is not None else ""
+        if not details or details.lower() == "none":
+            return fallback
+
+        ou = o.get("overUnder")
         try:
-            fav_val = int(float(parts[-1]))
+            ou_val = float(ou) if ou is not None else fallback[3]
         except Exception:
-            fav_val = 0
-    return details, fav_abbr, fav_val, ou_val
-    # ==========================================
-# PARÇA 3: v4.8 OTONOM MERKEZ ÜS KARAR MOTORU
-# ==========================================
+            ou_val = fallback[3]
+
+        fav_abbr, fav_val = "", 0
+        if " " in details:
+            parts = details.split(" ")
+            fav_abbr = parts[0].strip()
+            try:
+                fav_val = int(float(parts[-1]))
+            except Exception:
+                fav_val = 0
+
+        res = (details, fav_abbr, fav_val, ou_val)
+        if fav_val != 0:
+            MEM["last_valid_odds"][match_title] = res
+        return res
+    except Exception:
+        return fallback
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe):
     match_key = f"{h_name} vs {a_name}"
     open_db = MEM["opening_odds"]
@@ -142,30 +181,25 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
 
     if match_key in open_db and fav_val != 0:
         op = open_db[match_key]
-        # 1. Favori El Değiştirmesi (Flip)
         if op["fav"] and fav_abbr and op["fav"] != fav_abbr:
             smart_tag += f" 🔄FAV({op['fav']}->{fav_abbr})"
             bonus_conf += 5
         else:
-            # 2. Gerçek Oran Farkı (Sıfır Geçişi Düzeltmeli)
             diff = calc_true_odds_delta(op["val"], fav_val)
             if diff <= -10:
                 smart_tag += f" 🔥Δ{diff}"
                 bonus_conf += min(7, abs(diff) // 7)
             elif diff >= 40:
-                # SPORTING KURALI: 40+ Puanlık Sert Erime -> Ana Kasa Veto & Ağır Puan Kırpma!
                 smart_tag += f" 🚨Δ+{diff}"
                 bonus_conf -= min(26, 12 + (diff // 7))
                 ana_kasa_veto = True
                 severe_drift_warning = True
             elif diff >= 15:
-                # Orta Ölçekli Gevşeme (Betis / Aston Villa / Como)
                 smart_tag += f" ⚠️Δ+{diff}"
                 bonus_conf -= min(12, 5 + (diff // 5))
                 if fav_val > -250:
                     ana_kasa_veto = True
 
-        # 3. Toplam Gol Baremi Sıçraması (Bayern - Arsenal Kuralı)
         if ou_val > op["tg"]:
             smart_tag += f" 💥TG↑({op['tg']}->{ou_val})"
             bonus_conf += 10
@@ -202,7 +236,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     conf = int(round(raw_conf * min(1.05, max(0.78, kademe)))) + bonus_conf
     conf = max(25, min(97, conf))
 
-    # Sahte Ana Kasa Freni (+100/-110 Oran Koruması) VE Erime Vetosu
     is_strong_market_fav = (fav_val <= -140)
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
@@ -210,7 +243,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
         if conf >= 83:
             conf = 74 if severe_drift_warning else 78
 
-    # OTONOM TAHMİN ATAMA MOTORU
     if h_mom == a_mom and h_mom <= 35 and ou_val <= 2.5:
         conf = 25
         pick = "Maç Önü PAS (3.5 Alt / İY 1.5 Alt)"
@@ -265,9 +297,6 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "Çifte Şans" in pick:
         return fav_won_or_drew and tot <= 3
     return tot <= 3 or btts
-    # ==========================================
-# PARÇA 4: CANLI TÜNEL (SOT% KESKİNLİK) & EKRAN
-# ==========================================
 @st.cache_data(ttl=45)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
@@ -282,113 +311,129 @@ def fetch_all_matches():
             if r.status_code != 200:
                 continue
             data = r.json()
+            if not isinstance(data, dict):
+                continue
         except Exception:
             continue
 
-        for ev in data.get("events", []):
-            comp = ev.get("competitions", [{}])[0]
-            status_obj = comp.get("status", {}).get("type", {})
-            state = status_obj.get("state", "pre")
-            detail_clock = status_obj.get("shortDetail", "")
-
-            competitors = comp.get("competitors", [])
-            if len(competitors) < 2:
-                continue
-            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0])
-            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1])
-
-            h_name = home.get("team", {}).get("shortDisplayName", "Ev")
-            a_name = away.get("team", {}).get("shortDisplayName", "Dep")
-            h_abbr = home.get("team", {}).get("abbreviation", "")
-            a_abbr = away.get("team", {}).get("abbreviation", "")
-            match_title = f"{h_name} vs {a_name}"
-
-            h_score = int(home.get("score", 0) or 0)
-            a_score = int(away.get("score", 0) or 0)
-
-            h_mom = parse_form_momentum(home.get("form", ""))
-            a_mom = parse_form_momentum(away.get("form", ""))
-            odd_str, fav_abbr, fav_val, ou_val = parse_odds(comp)
-
+        for ev in (data.get("events") or []):
             try:
-                dt_utc = datetime.fromisoformat(ev.get("date", "").replace("Z", "+00:00"))
-                saat_str = dt_utc.astimezone(TR_TZ).strftime("%H:%M")
-            except Exception:
-                saat_str = "00:00"
+                if not isinstance(ev, dict):
+                    continue
+                comp_list = ev.get("competitions") or []
+                comp = comp_list[0] if (len(comp_list) > 0 and isinstance(comp_list[0], dict)) else {}
+                status_obj = (comp.get("status") or {}).get("type") or {}
+                state = str(status_obj.get("state") or "pre")
+                detail_clock = str(status_obj.get("shortDetail") or "")
 
-            def get_stat(comp_team, names):
-                for s in comp_team.get("statistics", []):
-                    if s.get("name") in names:
-                        try:
-                            return int(float(s.get("displayValue", "0").replace("%", "")))
-                        except Exception:
-                            return 0
-                return 0
+                competitors = [c for c in (comp.get("competitors") or []) if isinstance(c, dict)]
+                if len(competitors) < 2:
+                    continue
+                home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0])
+                away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1])
 
-            h_sh = get_stat(home, ["totalShots", "shotsSummary"])
-            a_sh = get_stat(away, ["totalShots", "shotsSummary"])
-            h_sot = get_stat(home, ["shotsOnTarget"])
-            a_sot = get_stat(away, ["shotsOnTarget"])
-            h_cor = get_stat(home, ["wonCorners", "corners"])
-            a_cor = get_stat(away, ["wonCorners", "corners"])
-            h_poss = get_stat(home, ["possessionPct"])
-            cards = (
-                get_stat(home, ["yellowCards"]) + get_stat(away, ["yellowCards"]) +
-                get_stat(home, ["redCards"]) + get_stat(away, ["redCards"])
-            )
+                h_team = home.get("team") or {}
+                a_team = away.get("team") or {}
+                h_name = str(h_team.get("shortDisplayName") or "Ev")
+                a_name = str(a_team.get("shortDisplayName") or "Dep")
+                h_abbr = str(h_team.get("abbreviation") or "")
+                a_abbr = str(a_team.get("abbreviation") or "")
+                match_title = f"{h_name} vs {a_name}"
 
-            conf, pick, disp_odd, warn_flag = evaluate_pre_match(
-                h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe
-            )
-
-            if state == "pre":
-                MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag}
-            elif match_title in MEM["locked_pre"]:
-                conf = MEM["locked_pre"][match_title]["conf"]
-                pick = MEM["locked_pre"][match_title]["pick"]
-                warn_flag = MEM["locked_pre"][match_title].get("warn", False)
-
-            delta_str = ""
-            sot_tag = ""
-            if state == "in":
-                cur_min = detail_clock.replace("'", "").replace("HT", "45").split("+")[0].strip()
                 try:
-                    m_int = int(cur_min)
+                    h_score = int(float(home.get("score") or 0))
                 except Exception:
-                    m_int = 1
+                    h_score = 0
+                try:
+                    a_score = int(float(away.get("score") or 0))
+                except Exception:
+                    a_score = 0
 
-                h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
-                a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
-                if (h_sh >= 6 and h_sot_pct >= 45) or (a_sh >= 6 and a_sot_pct >= 45):
-                    sot_tag = "|🎯KeskinGol"
-                elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct >= 15):
-                    sot_tag = "|📐KörŞut->Korner"
+                h_mom = parse_form_momentum(home.get("form"))
+                a_mom = parse_form_momentum(away.get("form"))
+                odd_str, fav_abbr, fav_val, ou_val = safe_parse_odds(comp, match_title)
 
-                snap = MEM["live_snapshots"].get(match_title)
-                if not snap:
-                    MEM["live_snapshots"][match_title] = {
-                        "min": m_int, "h_sh": h_sh, "a_sh": a_sh, "h_cor": h_cor, "a_cor": a_cor
-                    }
-                elif m_int > snap["min"] + 5:
-                    d_hs = max(0, h_sh - snap["h_sh"])
-                    d_as = max(0, a_sh - snap["a_sh"])
-                    d_hc = max(0, h_cor - snap["h_cor"])
-                    d_ac = max(0, a_cor - snap["a_cor"])
-                    delta_str = f"|Δ({snap['min']}'->{m_int}'):+{d_hs}/{d_as}Ş,+{d_hc}/{d_ac}K"
+                try:
+                    dt_utc = datetime.fromisoformat(str(ev.get("date") or "").replace("Z", "+00:00"))
+                    saat_str = dt_utc.astimezone(TR_TZ).strftime("%H:%M")
+                except Exception:
+                    saat_str = "00:00"
 
-            if state == "post":
-                won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-                MEM["settled_results"][match_title] = {"won": won, "is_ak": ("Ana Kasa" in pick)}
+                def get_stat(comp_team, names):
+                    for s in (comp_team.get("statistics") or []):
+                        if isinstance(s, dict) and s.get("name") in names:
+                            try:
+                                return int(float(str(s.get("displayValue") or "0").replace("%", "")))
+                            except Exception:
+                                return 0
+                    return 0
 
-            results.append({
-                "state": state, "saat": saat_str, "clock": detail_clock, "lig": lig_adi,
-                "mac": match_title, "h_name": h_name, "a_name": a_name,
-                "h_score": h_score, "a_score": a_score, "conf": conf,
-                "h_mom": h_mom, "a_mom": a_mom, "odd_str": disp_odd, "tg": ou_val,
-                "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
-                "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
-                "cards": cards, "h_poss": h_poss, "delta_str": delta_str, "sot_tag": sot_tag
-            })
+                h_sh = get_stat(home, ["totalShots", "shotsSummary"])
+                a_sh = get_stat(away, ["totalShots", "shotsSummary"])
+                h_sot = get_stat(home, ["shotsOnTarget"])
+                a_sot = get_stat(away, ["shotsOnTarget"])
+                h_cor = get_stat(home, ["wonCorners", "corners"])
+                a_cor = get_stat(away, ["wonCorners", "corners"])
+                h_poss = get_stat(home, ["possessionPct"])
+                cards = (
+                    get_stat(home, ["yellowCards"]) + get_stat(away, ["yellowCards"]) +
+                    get_stat(home, ["redCards"]) + get_stat(away, ["redCards"])
+                )
+
+                conf, pick, disp_odd, warn_flag = evaluate_pre_match(
+                    h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe
+                )
+
+                if state == "pre":
+                    MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag}
+                elif match_title in MEM["locked_pre"]:
+                    conf = MEM["locked_pre"][match_title]["conf"]
+                    pick = MEM["locked_pre"][match_title]["pick"]
+                    warn_flag = MEM["locked_pre"][match_title].get("warn", False)
+
+                delta_str = ""
+                sot_tag = ""
+                if state == "in":
+                    cur_min = detail_clock.replace("'", "").replace("HT", "45").split("+")[0].strip()
+                    try:
+                        m_int = int(cur_min)
+                    except Exception:
+                        m_int = 45
+
+                    h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
+                    a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
+                    if (h_sh >= 6 and h_sot_pct >= 45) or (a_sh >= 6 and a_sot_pct >= 45):
+                        sot_tag = "|🎯KeskinGol"
+                    elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct <= 15):
+                        sot_tag = "|📐KörŞut->Korner"
+
+                    snap = MEM["live_snapshots"].get(match_title)
+                    if not snap:
+                        MEM["live_snapshots"][match_title] = {
+                            "min": m_int, "h_sh": h_sh, "a_sh": a_sh, "h_cor": h_cor, "a_cor": a_cor
+                        }
+                    elif m_int > snap["min"] + 5:
+                        d_hs = max(0, h_sh - snap["h_sh"])
+                        d_as = max(0, a_sh - snap["a_sh"])
+                        d_hc = max(0, h_cor - snap["h_cor"])
+                        d_ac = max(0, a_cor - snap["a_cor"])
+                        delta_str = f"|Δ({snap['min']}'->{m_int}'):+{d_hs}/{d_as}Ş,+{d_hc}/{d_ac}K"
+
+                if state == "post":
+                    won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
+                    MEM["settled_results"][match_title] = {"won": won, "is_ak": ("Ana Kasa" in pick)}
+
+                results.append({
+                    "state": state, "saat": saat_str, "clock": detail_clock, "lig": lig_adi,
+                    "mac": match_title, "h_name": h_name, "a_name": a_name,
+                    "h_score": h_score, "a_score": a_score, "conf": conf,
+                    "h_mom": h_mom, "a_mom": a_mom, "odd_str": disp_odd, "tg": ou_val,
+                    "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
+                    "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
+                    "cards": cards, "h_poss": h_poss, "delta_str": delta_str, "sot_tag": sot_tag
+                })
+            except Exception:
+                continue
     return results
 
 matches = fetch_all_matches()
@@ -412,7 +457,7 @@ pre_m = sorted([m for m in matches if m["state"] == "pre"], key=lambda x: x["con
 post_m = [m for m in matches if m["state"] == "post"]
 
 for m in live_m:
-    clk = m["clock"].replace(" ", "")
+    clk = str(m["clock"]).replace(" ", "")
     mini_lines.append(
         f"CANLI|{clk}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|"
         f"Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|"
@@ -447,7 +492,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.8 Otonom Sinyaller (Akıllı Para & Erime Freni)")
+st.markdown("### ⏳ Maç Önü v4.8.2 Otonom Sinyaller")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
