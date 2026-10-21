@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 # ==========================================
 # PARÇA 1: SAYFA AYARLARI VE 22 LİG HAVUZU
 # ==========================================
-st.set_page_config(page_title="Delta Pulse v4.7", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.8", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -14,6 +14,7 @@ st.markdown("""
     div[data-testid="stExpander"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }
     .dp-card { background: #161b22; border-left: 4px solid #2ea043; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
     .dp-ak { border-left: 4px solid #f0b90b; background: #1c2128; }
+    .dp-warn { border-left: 4px solid #f85149; background: #1f1619; }
     .dp-live { border-left: 4px solid #2f81f7; background: #161b22; }
     .dp-badge { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #8b949e; }
 </style>
@@ -45,7 +46,6 @@ LEAGUES = {
     "İNGİLTERE EFL CUP": ("eng.league_cup", 0.85),
     "TÜRKİYE KUPASI": ("tur.cup", 0.80)
 }
-
 # ==========================================
 # PARÇA 2: KALICI HAFIZA VE 00:02 BAZ ORANLAR
 # ==========================================
@@ -55,12 +55,10 @@ def get_persistent_memory():
         "locked_pre": {},
         "live_snapshots": {},
         "settled_results": {},
-        # Dünkü (Salı) Kümülatif Baz Karne: 16/21 (%76) ve AK: 3/3
         "base_wins": 16,
         "base_total": 21,
         "base_ak_wins": 3,
         "base_ak_total": 3,
-        # 21 Ekim Çarşamba 00:02 Gece Yarısı Açılış Baz Oranları (Akıllı Para Takibi İçin)
         "opening_odds": {
             "Sporting vs LASK Linz": {"fav": "SCP", "val": -525, "tg": 3.5},
             "Betis vs Feyenoord": {"fav": "BET", "val": -180, "tg": 3.5},
@@ -77,6 +75,18 @@ def get_persistent_memory():
     }
 
 MEM = get_persistent_memory()
+
+def american_to_steps(odd):
+    """Amerikan oranındaki +100/-100 sıfır geçişini gerçek puana çevirir."""
+    if odd >= 100:
+        return odd - 100
+    elif odd <= -100:
+        return odd + 100
+    return 0
+
+def calc_true_odds_delta(open_val, cur_val):
+    """Negatif sonuç = Oran düştü (Akıllı Para), Pozitif sonuç = Oran yükseldi (Gevşeme/Erime)."""
+    return american_to_steps(cur_val) - american_to_steps(open_val)
 
 def parse_form_momentum(form_str):
     if not form_str:
@@ -114,49 +124,57 @@ def parse_odds(comp):
         except Exception:
             fav_val = 0
     return details, fav_abbr, fav_val, ou_val
-
-# ==========================================
-# PARÇA 3: v4.7 MERKEZ ÜS FORMÜL MOTORU (4 KEŞİF ENTEGRELİ)
+    # ==========================================
+# PARÇA 3: v4.8 OTONOM MERKEZ ÜS KARAR MOTORU
 # ==========================================
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe):
     match_key = f"{h_name} vs {a_name}"
     open_db = MEM["opening_odds"]
 
-    # İlk kez görülen maçın açılış oranını hafızaya kaydet
     if match_key not in open_db and fav_abbr and fav_val != 0:
         open_db[match_key] = {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
 
-    # Keşif 1, 2, 3: Açılış ile Güncel Barem Farkı Hesaplama
     smart_tag = ""
     bonus_conf = 0
     tg_jumped = False
+    ana_kasa_veto = False
+    severe_drift_warning = False
 
     if match_key in open_db and fav_val != 0:
         op = open_db[match_key]
-        # Keşif 3: Favori El Değiştirmesi (Flip)
+        # 1. Favori El Değiştirmesi (Flip)
         if op["fav"] and fav_abbr and op["fav"] != fav_abbr:
             smart_tag += f" 🔄FAV({op['fav']}->{fav_abbr})"
-            bonus_conf += 4
+            bonus_conf += 5
         else:
-            # Oran değişimi (Örn: -400 -> -425 ise diff = -25 -> Akıllı Para!)
-            diff = fav_val - op["val"]
-            if diff <= -15:
+            # 2. Gerçek Oran Farkı (Sıfır Geçişi Düzeltmeli)
+            diff = calc_true_odds_delta(op["val"], fav_val)
+            if diff <= -10:
                 smart_tag += f" 🔥Δ{diff}"
-                bonus_conf += min(5, abs(diff) // 8)
+                bonus_conf += min(7, abs(diff) // 7)
+            elif diff >= 40:
+                # SPORTING KURALI: 40+ Puanlık Sert Erime -> Ana Kasa Veto & Ağır Puan Kırpma!
+                smart_tag += f" 🚨Δ+{diff}"
+                bonus_conf -= min(26, 12 + (diff // 7))
+                ana_kasa_veto = True
+                severe_drift_warning = True
             elif diff >= 15:
+                # Orta Ölçekli Gevşeme (Betis / Aston Villa / Como)
                 smart_tag += f" ⚠️Δ+{diff}"
-                bonus_conf -= 6
+                bonus_conf -= min(12, 5 + (diff // 5))
+                if fav_val > -250:
+                    ana_kasa_veto = True
 
-        # Keşif 2: Toplam Gol Baremi Sıçraması (TG: 2.5 -> 3.5)
+        # 3. Toplam Gol Baremi Sıçraması (Bayern - Arsenal Kuralı)
         if ou_val > op["tg"]:
             smart_tag += f" 💥TG↑({op['tg']}->{ou_val})"
             bonus_conf += 10
             tg_jumped = True
         elif ou_val < op["tg"]:
             smart_tag += f" 📉TG↓({op['tg']}->{ou_val})"
-            bonus_conf -= 4
+            bonus_conf -= 5
+            ana_kasa_veto = True
 
-    # Deplasman favorisi tespiti
     is_away_fav = False
     if fav_abbr:
         if fav_abbr.upper() == a_abbr.upper() or fav_abbr.upper() in a_name.upper()[:4]:
@@ -169,7 +187,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     dog_mom = h_mom if is_away_fav else a_mom
     mom_diff = abs(h_mom - a_mom)
 
-    # Baz Güven Puanı
     raw_conf = 50 + int(mom_diff * 0.35)
     if ou_val >= 3.5:
         raw_conf += 14
@@ -185,35 +202,34 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     conf = int(round(raw_conf * min(1.05, max(0.78, kademe)))) + bonus_conf
     conf = max(25, min(97, conf))
 
-    # KURAL 2 DÜZELTMESİ: Sahte Ana Kasa Freni (+100 Oran Koruması)
-    # Oran -135'ten daha zayıfsa (örn: BRU +100) ve çift yönlü 80+ momentum yoksa Ana Kasa olamaz!
-    is_strong_market_fav = (fav_val <= -135)
+    # Sahte Ana Kasa Freni (+100/-110 Oran Koruması) VE Erime Vetosu
+    is_strong_market_fav = (fav_val <= -140)
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
-    if conf >= 83 and kademe >= 0.88 and not (is_strong_market_fav or is_elite_shootout):
-        conf = 76  # Club Brugge (+100) gibi maçları Ana Kasa'dan Yan Hedefe çeker
+    if ana_kasa_veto or not (is_strong_market_fav or is_elite_shootout):
+        if conf >= 83:
+            conf = 74 if severe_drift_warning else 78
 
-    # TAHMİN ATAMA MOTORU (Fenerbahçe 2-2 Saf Gol Düzeltmesi Dahil)
+    # OTONOM TAHMİN ATAMA MOTORU
     if h_mom == a_mom and h_mom <= 35 and ou_val <= 2.5:
         conf = 25
         pick = "Maç Önü PAS (3.5 Alt / İY 1.5 Alt)"
-    elif conf >= 83 and kademe >= 0.88:
+    elif conf >= 83 and kademe >= 0.88 and not ana_kasa_veto:
         if fav_val <= -350 and fav_mom >= 75 and dog_mom <= 72:
             pick = f"{fav_team} Takım Golü 2.5 Üst / Maç 3.5 Üst (Ana Kasa)"
         else:
             pick = f"KG Var & 2.5 Üst / {fav_team} 1.5 Üst (Ana Kasa)"
     elif ou_val >= 3.5 or tg_jumped:
-        if fav_val <= -170:
-            # KURAL 1 DÜZELTMESİ: '& Galibiyet' kaldırıldı, saf gol barajı korundu!
+        if severe_drift_warning:
+            pick = f"{fav_team} 1.5 Üst / Maç 2.5 Üst [⚠️ERİME: KADRO BEKLE]"
+        elif fav_val <= -170:
             pick = f"{fav_team} Takım Golü 1.5 Üst & Maç 2.5 Üst"
         elif mom_diff >= 28 and fav_mom >= 70:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
             pick = "Maç 2.5 Gol Üst / KG Var"
     else:
-        # TG: 2.5 Maçları
         if kademe >= 0.95 and (h_mom >= 60 and a_mom >= 60):
-            # Bayern - Arsenal yükseltmesi
             conf = max(conf, 74)
             pick = "KG Var / Maç 2.5 Gol Üst"
         elif fav_val <= -170:
@@ -222,13 +238,12 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
             cs_code = "X2" if is_away_fav else "1X"
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
         elif kademe <= 0.78:
-            # KURAL 3 DÜZELTMESİ: Alt lig TG:2.5 kısır maçlarında 6/6 çalışan İY 1.5 Alt & 3.5 Alt
             pick = "İlk Yarı 1.5 Alt & Maç 3.5 Alt"
         else:
             pick = "KG Var / İlk Yarı 1.5 Alt"
 
     display_odd = f"{odd_str}{smart_tag}" if smart_tag else odd_str
-    return conf, pick, display_odd
+    return conf, pick, display_odd, severe_drift_warning
 
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     tot = h_score + a_score
@@ -237,14 +252,14 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     fav_goals = a_score if fav_is_away else h_score
     fav_won_or_drew = (a_score >= h_score) if fav_is_away else (h_score >= a_score)
 
-    if "PAS" in pick or "3.5 Alt" in pick and "Çifte Şans" not in pick:
+    if "PAS" in pick or ("3.5 Alt" in pick and "Çifte Şans" not in pick):
         return tot <= 3
     if "2.5 Üst / Maç 3.5 Üst" in pick:
         return fav_goals >= 3 or tot >= 4
     if "KG Var & 2.5 Üst /" in pick:
         return (btts and tot >= 3) or fav_goals >= 2
-    if "Takım Golü 1.5 Üst" in pick:
-        return fav_goals >= 2
+    if "1.5 Üst" in pick and "İlk Yarı" not in pick:
+        return fav_goals >= 2 or tot >= 3
     if "Maç 2.5 Gol Üst / KG Var" in pick or "KG Var / Maç 2.5" in pick:
         return tot >= 3 or btts
     if "Çifte Şans" in pick:
@@ -322,17 +337,17 @@ def fetch_all_matches():
                 get_stat(home, ["redCards"]) + get_stat(away, ["redCards"])
             )
 
-            conf, pick, disp_odd = evaluate_pre_match(
+            conf, pick, disp_odd, warn_flag = evaluate_pre_match(
                 h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe
             )
 
             if state == "pre":
-                MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick}
+                MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag}
             elif match_title in MEM["locked_pre"]:
                 conf = MEM["locked_pre"][match_title]["conf"]
                 pick = MEM["locked_pre"][match_title]["pick"]
+                warn_flag = MEM["locked_pre"][match_title].get("warn", False)
 
-            # Canlı Tünel (Δ) ve Keşif 4: Şut Keskinliği (SOT%)
             delta_str = ""
             sot_tag = ""
             if state == "in":
@@ -342,12 +357,11 @@ def fetch_all_matches():
                 except Exception:
                     m_int = 1
 
-                # SOT% Keskinlik Hesabı
                 h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
                 a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
                 if (h_sh >= 6 and h_sot_pct >= 45) or (a_sh >= 6 and a_sot_pct >= 45):
                     sot_tag = "|🎯KeskinGol"
-                elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct <= 15):
+                elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct >= 15):
                     sot_tag = "|📐KörŞut->Korner"
 
                 snap = MEM["live_snapshots"].get(match_title)
@@ -371,15 +385,14 @@ def fetch_all_matches():
                 "mac": match_title, "h_name": h_name, "a_name": a_name,
                 "h_score": h_score, "a_score": a_score, "conf": conf,
                 "h_mom": h_mom, "a_mom": a_mom, "odd_str": disp_odd, "tg": ou_val,
-                "pick": pick, "h_sh": h_sh, "a_sh": a_sh, "h_sot": h_sot, "a_sot": a_sot,
-                "h_cor": h_cor, "a_cor": a_cor, "cards": cards, "h_poss": h_poss,
-                "delta_str": delta_str, "sot_tag": sot_tag
+                "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
+                "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
+                "cards": cards, "h_poss": h_poss, "delta_str": delta_str, "sot_tag": sot_tag
             })
     return results
 
 matches = fetch_all_matches()
 
-# Karne Hesaplama (Baz Karne + Bugün Bitenler)
 today_wins = sum(1 for v in MEM["settled_results"].values() if v["won"])
 today_total = len(MEM["settled_results"])
 today_ak_w = sum(1 for v in MEM["settled_results"].values() if v["is_ak"] and v["won"])
@@ -434,9 +447,14 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.7 Sinyalleri (Akıllı Para & Saf Gol Motoru)")
+st.markdown("### ⏳ Maç Önü v4.8 Otonom Sinyaller (Akıllı Para & Erime Freni)")
 for m in pre_m:
-    card_cls = "dp-card dp-ak" if "Ana Kasa" in m["pick"] else "dp-card"
+    if "Ana Kasa" in m["pick"]:
+        card_cls = "dp-card dp-ak"
+    elif m["warn"]:
+        card_cls = "dp-card dp-warn"
+    else:
+        card_cls = "dp-card"
     st.markdown(
         f"<div class='{card_cls}'><b>🕒 {m['saat']} | {m['mac']}</b> — <b>%{m['conf']} Güven</b> "
         f"<span class='dp-badge'>{m['lig']}</span><br>"
