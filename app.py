@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9.1", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -50,12 +50,49 @@ def get_persistent_memory():
         "locked_pre": {},
         "live_snapshots": {},
         "settled_results": {},
-        " settled_date": "20261021",
+        "settled_date": "20261021",
         "base_wins": 23,
         "base_total": 32,
         "base_ak_wins": 5,
         "base_ak_total": 6,
-        "opening_odds": {},
+        # 22 EKİM 00:02 BAZ ORANLARI (Uygulama yeniden başlasa bile Δ farkını korur)
+        "opening_odds": {
+            "OFI Crete vs Leverkusen": {"fav": "B04", "val": -425, "tg": 3.5},
+            "Jablonec vs Brighton": {"fav": "BHA", "val": -340, "tg": 3.5},
+            "Red Imps vs FC Twente": {"fav": "TWE", "val": -450, "tg": 3.5},
+            "Hoffenheim vs Lyon": {"fav": "TSG", "val": 100, "tg": 3.5},
+            "Trabzonspor vs Hearts": {"fav": "TRAB", "val": -310, "tg": 3.5},
+            "Union SG vs Hapoel Be'er": {"fav": "USG", "val": -285, "tg": 3.5},
+            "Ararat-Armenia vs AZ Alkmaar": {"fav": "AZ", "val": -195, "tg": 3.5},
+            "Olympiacos vs Sparta": {"fav": "OLY", "val": -190, "tg": 2.5},
+            "Nordsjælland vs CSKA Sofia": {"fav": "FCN", "val": -250, "tg": 3.5},
+            "Dinamo Zagreb vs NEC": {"fav": "DZG", "val": -150, "tg": 3.5},
+            "Lillestrom vs Real Sociedad": {"fav": "RSO", "val": -195, "tg": 2.5},
+            "Kairat Almaty vs Panathinaikos": {"fav": "PAO", "val": -155, "tg": 2.5},
+            "Juventus vs Rennes": {"fav": "JUV", "val": -185, "tg": 2.5},
+            "Besiktas vs C Palace": {"fav": "BES", "val": 115, "tg": 3.5},
+            "NK Celje vs RB Salzburg": {"fav": "SLZ", "val": -190, "tg": 2.5},
+            "Ferencvaros vs Torreense": {"fav": "FER", "val": -290, "tg": 2.5},
+            "Red Star vs København": {"fav": "RSB", "val": 125, "tg": 2.5},
+            "Ajax vs Atalanta": {"fav": "AJA", "val": 115, "tg": 3.5},
+            "FC Thun vs Hajduk Split": {"fav": "HAJ", "val": 140, "tg": 2.5},
+            "Omonia vs Benfica": {"fav": "SLB", "val": -270, "tg": 2.5},
+            "Braga vs KAA Gent": {"fav": "SCB", "val": -110, "tg": 2.5},
+            "Getafe vs FC Lugano": {"fav": "GET", "val": -120, "tg": 2.5},
+            "Borac vs KuPS Kuopio": {"fav": "BBL", "val": -130, "tg": 2.5},
+            "Pafos vs Riga FC": {"fav": "PAF", "val": -155, "tg": 2.5},
+            "Lech Poznan vs Sunderland": {"fav": "SUN", "val": -140, "tg": 2.5},
+            "Viktoria Plzen vs Levski Sofia": {"fav": "PLZ", "val": -130, "tg": 2.5},
+            "Inter D'Escaldes vs CSU Craiova": {"fav": "UCRA", "val": -165, "tg": 2.5},
+            "Kauno Zalgiris vs SK Brann": {"fav": "SKBR", "val": -140, "tg": 2.5},
+            "AGF vs Egnatia": {"fav": "AGF", "val": -190, "tg": 2.5},
+            "Monaco vs Freiburg": {"fav": "MON", "val": 130, "tg": 2.5},
+            "Sturm Graz vs Marseille": {"fav": "OLM", "val": 105, "tg": 2.5},
+            "Celtic vs Celta Vigo": {"fav": "CEL", "val": 160, "tg": 2.5},
+            "Jagiellonia  vs Anderlecht": {"fav": "AND", "val": 125, "tg": 2.5},
+            "Bournemouth vs Milan": {"fav": "BOU", "val": 100, "tg": 2.5},
+            "Iberia 1999 vs Mjällby": {"fav": "MJA", "val": 135, "tg": 2.5}
+        },
         "last_valid_odds": {}
     }
 
@@ -181,7 +218,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     dog_mom = h_mom if is_away_fav else a_mom
     mom_diff = abs(h_mom - a_mom)
 
-    raw_conf = 50 + int(mom_diff * 0.35)
+    # TERS FORM KORUMASI: Oran favorisinin formu rakibinden 20+ puan düşükse güveni kırp!
+    form_clash = (dog_mom - fav_mom >= 20)
+
+    raw_conf = 50 + (int(mom_diff * 0.35) if not form_clash else -4)
     if ou_val >= 3.5:
         raw_conf += 14
     if ou_val >= 4.5:
@@ -199,17 +239,15 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     is_strong_market_fav = (fav_val <= -140)
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
-    if ana_kasa_veto or not (is_strong_market_fav or is_elite_shootout):
+    if ana_kasa_veto or form_clash or not (is_strong_market_fav or is_elite_shootout):
         if conf >= 83:
             conf = 74 if severe_drift_warning else 78
 
-    # v4.9 TEK KURŞUN (TEK NET TERCİH) ATAMA MOTORU
+    # v4.9.1 TEK KURŞUN (TEK NET TERCİH) ATAMA MOTORU
     if h_mom == a_mom and h_mom <= 35 and ou_val <= 2.5:
         conf = 25
         pick = "Maç 3.5 Gol Alt"
     elif conf >= 83 and kademe >= 0.88 and not ana_kasa_veto:
-        # Rakip de güçlü hücum takımısıysa (Örn: Real-Leipzig 68-68, Villa-Viking 78-81) -> Maç 2.5 Gol Üst
-        # Rakip zayıfsa (Örn: Club Brugge-Lens 63-33) -> Favori Takım Golü 1.5 Üst
         if dog_mom >= 58 and ou_val >= 3.5:
             pick = "Maç 2.5 Gol Üst (Ana Kasa)"
         else:
@@ -217,16 +255,16 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
             pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
-        elif dog_mom < 45 and fav_val <= -140:
+        elif dog_mom < 45 and fav_val <= -140 and not form_clash:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
             pick = "Maç 2.5 Gol Üst"
     else:
-        if h_mom >= 58 and a_mom >= 58:
+        if (h_mom >= 58 and a_mom >= 58) or (form_clash and dog_mom >= 65 and fav_val <= -110):
             pick = "Karşılıklı Gol Var (KG Var)"
-        elif fav_val <= -175:
+        elif fav_val <= -175 and not form_clash:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
-        elif mom_diff >= 25:
+        elif mom_diff >= 25 and fav_mom > dog_mom:
             cs_code = "X2" if is_away_fav else "1X"
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
         else:
@@ -236,7 +274,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     return conf, pick, display_odd, severe_drift_warning
 
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
-    """DÜRÜST KARNE HESAPLAYICI: 'Veya' (or) hilesi yoktur, yazan tek tercih tutarsa True döner."""
     tot = h_score + a_score
     btts = (h_score > 0 and a_score > 0)
     fav_is_away = (a_name in pick and h_name not in pick)
