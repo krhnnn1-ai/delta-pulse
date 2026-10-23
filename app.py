@@ -1,3 +1,4 @@
+# ==================== 1. PARÇA BAŞLANGICI ====================
 import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
@@ -55,63 +56,51 @@ def get_persistent_memory():
         "locked_pre": {},
         "live_snapshots": {},
         "settled_results": {},
-        "settled_date": "20261021",
-        "base_wins": 23,
-        "base_total": 32,
-        "base_ak_wins": 5,
-        "base_ak_total": 6,
+        "settled_date": "20261022",
+        "base_wins": 38,
+        "base_total": 52,
+        "base_ak_wins": 8,
+        "base_ak_total": 10,
+        # 23 EKİM CUMA 05:49 SABAH BAZ ORANLARI (Gün içi Δ ve TG takibi için kilitli)
         "opening_odds": {
-            "OFI Crete vs Leverkusen": {"fav": "B04", "val": -425, "tg": 3.5},
-            "Jablonec vs Brighton": {"fav": "BHA", "val": -340, "tg": 3.5},
-            "Red Imps vs FC Twente": {"fav": "TWE", "val": -450, "tg": 3.5},
-            "Hoffenheim vs Lyon": {"fav": "TSG", "val": 100, "tg": 3.5},
-            "Trabzonspor vs Hearts": {"fav": "TRAB", "val": -310, "tg": 3.5},
-            "Union SG vs Hapoel Be'er": {"fav": "USG", "val": -285, "tg": 3.5},
-            "Ararat-Armenia vs AZ Alkmaar": {"fav": "AZ", "val": -195, "tg": 3.5},
-            "Olympiacos vs Sparta": {"fav": "OLY", "val": -190, "tg": 2.5},
-            "Nordsjælland vs CSKA Sofia": {"fav": "FCN", "val": -250, "tg": 3.5},
-            "Dinamo Zagreb vs NEC": {"fav": "DZG", "val": -150, "tg": 3.5},
-            "Lillestrom vs Real Sociedad": {"fav": "RSO", "val": -195, "tg": 2.5},
-            "Kairat Almaty vs Panathinaikos": {"fav": "PAO", "val": -155, "tg": 2.5},
-            "Juventus vs Rennes": {"fav": "JUV", "val": -185, "tg": 2.5},
-            "Besiktas vs C Palace": {"fav": "BES", "val": 115, "tg": 3.5},
-            "NK Celje vs RB Salzburg": {"fav": "SLZ", "val": -190, "tg": 2.5},
-            "Ferencvaros vs Torreense": {"fav": "FER", "val": -290, "tg": 2.5},
-            "Red Star vs København": {"fav": "RSB", "val": 125, "tg": 2.5},
-            "Ajax vs Atalanta": {"fav": "AJA", "val": 115, "tg": 3.5},
-            "FC Thun vs Hajduk Split": {"fav": "HAJ", "val": 140, "tg": 2.5},
-            "Omonia vs Benfica": {"fav": "SLB", "val": -270, "tg": 2.5},
-            "Braga vs KAA Gent": {"fav": "SCB", "val": -110, "tg": 2.5},
-            "Getafe vs FC Lugano": {"fav": "GET", "val": -120, "tg": 2.5},
-            "Borac vs KuPS Kuopio": {"fav": "BBL", "val": -130, "tg": 2.5},
-            "Pafos vs Riga FC": {"fav": "PAF", "val": -155, "tg": 2.5},
-            "Lech Poznan vs Sunderland": {"fav": "SUN", "val": -140, "tg": 2.5},
-            "Viktoria Plzen vs Levski Sofia": {"fav": "PLZ", "val": -130, "tg": 2.5},
-            "Inter D'Escaldes vs CSU Craiova": {"fav": "UCRA", "val": -165, "tg": 2.5},
-            "Kauno Zalgiris vs SK Brann": {"fav": "SKBR", "val": -140, "tg": 2.5},
-            "AGF vs Egnatia": {"fav": "AGF", "val": -190, "tg": 2.5},
-            "Monaco vs Freiburg": {"fav": "MON", "val": 130, "tg": 2.5},
-            "Sturm Graz vs Marseille": {"fav": "OLM", "val": 105, "tg": 2.5},
-            "Celtic vs Celta Vigo": {"fav": "CEL", "val": 160, "tg": 2.5},
-            "Jagiellonia  vs Anderlecht": {"fav": "AND", "val": 125, "tg": 2.5},
-            "Bournemouth vs Milan": {"fav": "BOU", "val": 100, "tg": 2.5},
-            "Iberia 1999 vs Mjällby": {"fav": "MJA", "val": 135, "tg": 2.5}
+            "Stuttgart vs Gladbach": {"fav": "VFB", "val": -275, "tg": 3.5},
+            "Go Ahead Eagles vs Telstar": {"fav": "GAE", "val": -165, "tg": 3.5},
+            "Torino vs Monza": {"fav": "TOR", "val": 110, "tg": 2.5},
+            "Bolton vs Boro": {"fav": "MID", "val": -170, "tg": 3.5},
+            "Alavés vs Málaga": {"fav": "ALA", "val": -150, "tg": 2.5},
+            "Ipswich vs Nottm Forest": {"fav": "NFO", "val": 125, "tg": 2.5},
+            "Bochum vs Wolfsburg": {"fav": "WOB", "val": 100, "tg": 3.5},
+            "Alanyaspor vs Kocaelispor": {"fav": "ALA", "val": -105, "tg": 2.5},
+            "Brest vs Nice": {"fav": "BRE", "val": 125, "tg": 2.5},
+            "Vitória  vs Maritimo": {"fav": "VSC", "val": -155, "tg": 2.5},
+            "Vitória vs Maritimo": {"fav": "VSC", "val": -155, "tg": 2.5},
+            "Darmstadt vs St. Pauli": {"fav": "STP", "val": 120, "tg": 2.5},
+            "KV Kortrijk vs KV Mechelen": {"fav": "KVM", "val": 155, "tg": 2.5},
+            "Empoli vs Vicenza": {"fav": "EMP", "val": 145, "tg": 2.5},
+            "Granada vs Valladolid": {"fav": "GRA", "val": 125, "tg": 2.5}
         },
+        # Maça dakikalar kala oran kapanırsa devreye girecek son geçerli oranlar:
         "last_valid_odds": {
-            "Kairat Almaty vs Panathinaikos": ("PAO -165", "PAO", -165, 2.5),
-            "OFI Crete vs Leverkusen": ("B04 -500", "B04", -500, 3.5),
-            "Omonia vs Benfica": ("SLB -310", "SLB", -310, 3.5),
-            "Juventus vs Rennes": ("JUV -250", "JUV", -250, 3.5),
-            "Jablonec vs Brighton": ("BHA -600", "BHA", -600, 3.5),
-            "Lillestrom vs Real Sociedad": ("RSO -220", "RSO", -220, 3.5),
-            "Red Imps vs FC Twente": ("TWE -500", "TWE", -500, 3.5),
-            "NK Celje vs RB Salzburg": ("SLZ -195", "SLZ", -195, 3.5),
-            "Trabzonspor vs Hearts": ("TRAB -330", "TRAB", -330, 3.5),
-            "Besiktas vs C Palace": ("BES +125", "BES", 125, 3.5)
+            "Stuttgart vs Gladbach": ("VFB -280", "VFB", -280, 3.5),
+            "Go Ahead Eagles vs Telstar": ("GAE -170", "GAE", -170, 3.5),
+            "Torino vs Monza": ("TOR +105", "TOR", 105, 2.5),
+            "Bolton vs Boro": ("MID -160", "MID", -160, 3.5),
+            "Alavés vs Málaga": ("ALA -165", "ALA", -165, 2.5),
+            "Vitória  vs Maritimo": ("VSC -185", "VSC", -185, 2.5),
+            "Ipswich vs Nottm Forest": ("NFO +130", "NFO", 130, 2.5),
+            "Bochum vs Wolfsburg": ("WOB +100", "WOB", 100, 3.5),
+            "Alanyaspor vs Kocaelispor": ("ALA -105", "ALA", -105, 2.5),
+            "Brest vs Nice": ("BRE +120", "BRE", 120, 2.5),
+            "Darmstadt vs St. Pauli": ("STP +130", "STP", 130, 2.5),
+            "KV Kortrijk vs KV Mechelen": ("KVM +155", "KVM", 155, 2.5),
+            "Empoli vs Vicenza": ("EMP +155", "EMP", 155, 2.5),
+            "Granada vs Valladolid": ("GRA +130", "GRA", 130, 2.5)
         }
     }
 
 MEM = get_persistent_memory()
+# ==================== 1. PARÇA SONU ====================
+# ==================== 2. PARÇA BAŞLANGICI ====================
 def safe_int(val, default=0):
     s = str(val if val is not None else "").replace("%", "").strip()
     if s.startswith("+"):
@@ -308,6 +297,8 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "Maç 3.5 Gol Alt" in pick:
         return tot <= 3
     return False
+# ==================== 2. PARÇA SONU ====================
+# ==================== 3. PARÇA BAŞLANGICI ====================
 def calc_projected_score(m):
     h_m, a_m = m["h_mom"], m["a_mom"]
     tg = m["tg"]
@@ -334,7 +325,7 @@ def generate_card_comment_and_score(m):
 
     if "🔥Δ-" in odd_s:
         d_val = odd_s.split("🔥Δ-")[1].split(" ")[0]
-        notes.append(f"00:02 baz oranına göre favoriye -{d_val}p Akıllı Para girişi var")
+        notes.append(f"Baz orana göre favoriye -{d_val}p Akıllı Para girişi var")
     elif "🚨Δ+" in odd_s:
         d_val = odd_s.split("🚨Δ+")[1].split(" ")[0]
         notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf bahsinden uzak dur")
@@ -385,7 +376,7 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         s1, s2 = calc_projected_score(m)
         lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}` | `Mom: {m['h_mom']}-{m['a_mom']}`) ➔ 🎯 **{m['pick']}** *(Skor: `{s1} / {s2}`)*")
     if smart_list:
-        lines.append("\n**🔥 Gündüz Para Girişi Alan Yan Adaylar:**")
+        lines.append("\n**🔥 Gün İçi Para Girişi Alan Yan Adaylar:**")
         for m in smart_list[:4]:
             s1, s2 = calc_projected_score(m)
             lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}`) ➔ **{m['pick']}** *(Skor: `{s1}`)*")
@@ -615,3 +606,4 @@ for m in pre_m:
         f"💬 <span style='color:#8b949e;'>{auto_comm}</span></div>",
         unsafe_allow_html=True
     )
+# ==================== 3. PARÇA SONU ====================
