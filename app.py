@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9.3 AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9.4 AI", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -56,12 +56,12 @@ def get_persistent_memory():
         "locked_pre": {},
         "live_snapshots": {},
         "settled_results": {},
-        "settled_date": "20261022",
-        "base_wins": 38,
-        "base_total": 52,
-        "base_ak_wins": 8,
-        "base_ak_total": 10,
-        # 23 EKİM CUMA 05:49 SABAH BAZ ORANLARI (Gün içi Δ ve TG takibi için kilitli)
+        "settled_date": "20261023",
+        "base_wins": 48,
+        "base_total": 64,
+        "base_ak_wins": 9,
+        "base_ak_total": 11,
+        # Cuma baz oranları + Cumartesi yeni maçlar çekildiğinde otomatik eklenecek:
         "opening_odds": {
             "Stuttgart vs Gladbach": {"fav": "VFB", "val": -275, "tg": 3.5},
             "Go Ahead Eagles vs Telstar": {"fav": "GAE", "val": -165, "tg": 3.5},
@@ -79,23 +79,7 @@ def get_persistent_memory():
             "Empoli vs Vicenza": {"fav": "EMP", "val": 145, "tg": 2.5},
             "Granada vs Valladolid": {"fav": "GRA", "val": 125, "tg": 2.5}
         },
-        # Maça dakikalar kala oran kapanırsa devreye girecek son geçerli oranlar:
-        "last_valid_odds": {
-            "Stuttgart vs Gladbach": ("VFB -280", "VFB", -280, 3.5),
-            "Go Ahead Eagles vs Telstar": ("GAE -170", "GAE", -170, 3.5),
-            "Torino vs Monza": ("TOR +105", "TOR", 105, 2.5),
-            "Bolton vs Boro": ("MID -160", "MID", -160, 3.5),
-            "Alavés vs Málaga": ("ALA -165", "ALA", -165, 2.5),
-            "Vitória  vs Maritimo": ("VSC -185", "VSC", -185, 2.5),
-            "Ipswich vs Nottm Forest": ("NFO +130", "NFO", 130, 2.5),
-            "Bochum vs Wolfsburg": ("WOB +100", "WOB", 100, 3.5),
-            "Alanyaspor vs Kocaelispor": ("ALA -105", "ALA", -105, 2.5),
-            "Brest vs Nice": ("BRE +120", "BRE", 120, 2.5),
-            "Darmstadt vs St. Pauli": ("STP +130", "STP", 130, 2.5),
-            "KV Kortrijk vs KV Mechelen": ("KVM +155", "KVM", 155, 2.5),
-            "Empoli vs Vicenza": ("EMP +155", "EMP", 155, 2.5),
-            "Granada vs Valladolid": ("GRA +130", "GRA", 130, 2.5)
-        }
+        "last_valid_odds": {}
     }
 
 MEM = get_persistent_memory()
@@ -268,7 +252,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     else:
         if (h_mom >= 58 and a_mom >= 58) or (form_clash and dog_mom >= 65 and fav_val <= -110):
             pick = "Karşılıklı Gol Var (KG Var)"
-        elif fav_val <= -175 and not form_clash:
+        elif (fav_val <= -175 or (dog_mom < 20 and fav_val <= -145)) and not form_clash:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         elif mom_diff >= 25 and fav_mom > dog_mom:
             cs_code = "X2" if is_away_fav else "1X"
@@ -589,7 +573,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.9.3 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v4.9.4 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
