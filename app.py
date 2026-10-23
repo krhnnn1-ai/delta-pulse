@@ -20,7 +20,6 @@ st.markdown("""
 
 TR_TZ = timezone(timedelta(hours=3))
 
-# GitHub Secret Scanner korumalı anahtar birleştirici:
 _k1, _k2 = "AQ.Ab8RN6Jqy", "SY98EJDEmQ98"
 _k3, _k4 = "B99Yta0WQQ7_", "mkBnHdk8ofHy3FchQ"
 GEMINI_API_KEY = _k1 + _k2 + _k3 + _k4
@@ -61,23 +60,78 @@ def get_persistent_memory():
         "base_total": 64,
         "base_ak_wins": 9,
         "base_ak_total": 11,
-        # Cuma baz oranları + Cumartesi yeni maçlar çekildiğinde otomatik eklenecek:
+        # 24 EKİM CUMARTESİ 00:01 BAZ ORANLARI (70 Maç Kilitli)
         "opening_odds": {
-            "Stuttgart vs Gladbach": {"fav": "VFB", "val": -275, "tg": 3.5},
-            "Go Ahead Eagles vs Telstar": {"fav": "GAE", "val": -165, "tg": 3.5},
-            "Torino vs Monza": {"fav": "TOR", "val": 110, "tg": 2.5},
-            "Bolton vs Boro": {"fav": "MID", "val": -170, "tg": 3.5},
-            "Alavés vs Málaga": {"fav": "ALA", "val": -150, "tg": 2.5},
-            "Ipswich vs Nottm Forest": {"fav": "NFO", "val": 125, "tg": 2.5},
-            "Bochum vs Wolfsburg": {"fav": "WOB", "val": 100, "tg": 3.5},
-            "Alanyaspor vs Kocaelispor": {"fav": "ALA", "val": -105, "tg": 2.5},
-            "Brest vs Nice": {"fav": "BRE", "val": 125, "tg": 2.5},
-            "Vitória  vs Maritimo": {"fav": "VSC", "val": -155, "tg": 2.5},
-            "Vitória vs Maritimo": {"fav": "VSC", "val": -155, "tg": 2.5},
-            "Darmstadt vs St. Pauli": {"fav": "STP", "val": 120, "tg": 2.5},
-            "KV Kortrijk vs KV Mechelen": {"fav": "KVM", "val": 155, "tg": 2.5},
-            "Empoli vs Vicenza": {"fav": "EMP", "val": 145, "tg": 2.5},
-            "Granada vs Valladolid": {"fav": "GRA", "val": 125, "tg": 2.5}
+            "Atlético vs Deportivo": {"fav": "ATM", "val": -350, "tg": 3.5},
+            "Chelsea vs Spurs": {"fav": "CHE", "val": -120, "tg": 3.5},
+            "Aston Villa vs Man City": {"fav": "MNC", "val": -160, "tg": 3.5},
+            "Dortmund vs Frankfurt": {"fav": "DOR", "val": -215, "tg": 3.5},
+            "Como vs Sassuolo": {"fav": "COMO", "val": -220, "tg": 3.5},
+            "RB Leipzig vs Elversberg": {"fav": "RBL", "val": -240, "tg": 3.5},
+            "Augsburg vs Union Berlin": {"fav": "FCA", "val": -120, "tg": 3.5},
+            "Lazio vs Parma": {"fav": "LAZ", "val": -260, "tg": 2.5},
+            "Rangers vs St Johnstone": {"fav": "RAN", "val": -475, "tg": 3.5},
+            "FC Utrecht vs PEC Zwolle": {"fav": "UTR", "val": -160, "tg": 3.5},
+            "Mainz vs Bremen": {"fav": "M05", "val": -140, "tg": 3.5},
+            "Hertha vs Bielefeld": {"fav": "BSC", "val": -120, "tg": 3.5},
+            "Bromley vs Peterborough": {"fav": "PET", "val": 100, "tg": 3.5},
+            "ADO Den Haag vs Heerenveen": {"fav": "HEE", "val": 100, "tg": 3.5},
+            "Wolves vs Watford": {"fav": "WOL", "val": -270, "tg": 2.5},
+            "Antwerp vs Royal Charleroi": {"fav": "CHA", "val": -125, "tg": 2.5},
+            "Westerlo vs Waasland-Beveren": {"fav": "KVCW", "val": 110, "tg": 3.5},
+            "Magdeburg vs Karlsruher": {"fav": "FCM", "val": -120, "tg": 3.5},
+            "Huddersfield vs Wigan": {"fav": "HUD", "val": -300, "tg": 2.5},
+            "Arsenal vs Everton": {"fav": "ARS", "val": -220, "tg": 2.5},
+            "Valencia vs Villarreal": {"fav": "VIL", "val": 120, "tg": 2.5},
+            "Eyupspor vs Kasimpasa": {"fav": "KAS", "val": -160, "tg": 2.5},
+            "Gil Vicente vs FC Porto": {"fav": "FCP", "val": -220, "tg": 2.5},
+            "Luton vs Leicester": {"fav": "LTN", "val": 120, "tg": 3.5},
+            "Rayo vs Elche": {"fav": "RAY", "val": -130, "tg": 2.5},
+            "Heidenheim vs Cottbus": {"fav": "HDH", "val": -135, "tg": 3.5},
+            "Cologne vs Schalke": {"fav": "KOE", "val": 105, "tg": 2.5},
+            "Willem II vs Cambuur": {"fav": "WIL", "val": 150, "tg": 3.5},
+            "Lens vs Paris FC": {"fav": "RCL", "val": 145, "tg": 2.5},
+            "Alverca vs Arouca": {"fav": "ALV", "val": 115, "tg": 2.5},
+            "Stoke vs Bristol City": {"fav": "STK", "val": 145, "tg": 2.5},
+            "Coventry vs Fulham": {"fav": "FUL", "val": 130, "tg": 2.5},
+            "1. FC Nürnberg vs Kaiserslautern": {"fav": "FCN", "val": 105, "tg": 3.5},
+            "Almería vs Real Oviedo": {"fav": "ALM", "val": -145, "tg": 2.5},
+            "Racing vs Espanyol": {"fav": "RAC", "val": 140, "tg": 2.5},
+            "Napoli vs AS Roma": {"fav": "ROMA", "val": 150, "tg": 2.5},
+            "Gaziantep vs Erzurum": {"fav": "GAZ", "val": 145, "tg": 2.5},
+            "Cardiff vs Birmingham": {"fav": "BIR", "val": 140, "tg": 2.5},
+            "Modena vs Cesena": {"fav": "MOD", "val": -185, "tg": 2.5},
+            "West Ham vs Southampton": {"fav": "WHU", "val": -150, "tg": 3.5},
+            "Wimbledon vs Wycombe": {"fav": "WYC", "val": -120, "tg": 2.5},
+            "Notts County vs Stockport": {"fav": "STO", "val": -170, "tg": 2.5},
+            "Arezzo vs Benevento": {"fav": "BEN", "val": 140, "tg": 2.5},
+            "Cagliari vs Bologna": {"fav": "BOL", "val": 145, "tg": 2.5},
+            "Estrela vs Casa Pia": {"fav": "EST", "val": -130, "tg": 2.5},
+            "Cremonese vs Juve Stabia": {"fav": "CRE", "val": -115, "tg": 2.5},
+            "Avellino vs Padova": {"fav": "AVE", "val": 125, "tg": 2.5},
+            "Preston vs West Brom": {"fav": "WBA", "val": 105, "tg": 2.5},
+            "Sheffield Utd vs Derby": {"fav": "SHU", "val": -120, "tg": 2.5},
+            "OH Leuven vs Lommel SK": {"fav": "OHL", "val": -110, "tg": 2.5},
+            "Dundee Utd vs Aberdeen": {"fav": "DUN", "val": 115, "tg": 2.5},
+            "Oxford Utd vs Bradford": {"fav": "BRD", "val": 160, "tg": 2.5},
+            "Leganés vs Mallorca": {"fav": "MLL", "val": 130, "tg": 2.5},
+            "Portsmouth vs Millwall": {"fav": "POR", "val": 150, "tg": 2.5},
+            "Sudtirol vs Sampdoria": {"fav": "SAM", "val": 160, "tg": 2.5},
+            "Lincoln City vs Burnley": {"fav": "BUR", "val": 145, "tg": 2.5},
+            "La Louvière vs Zulte-Waregem": {"fav": "ZUL", "val": 130, "tg": 2.5},
+            "Falkirk vs Kilmarnock": {"fav": "FALK", "val": -115, "tg": 2.5},
+            "Blackpool vs Mansfield": {"fav": "MNF", "val": 140, "tg": 2.5},
+            "Stevenage vs MK Dons": {"fav": "STE", "val": 105, "tg": 2.5},
+            "Las Palmas vs Real Sociedad II": {"fav": "LPA", "val": 100, "tg": 2.5},
+            "Virtus Entella vs Mantova": {"fav": "ENT", "val": 125, "tg": 2.5},
+            "Cambridge vs Plymouth": {"fav": "CAM", "val": 135, "tg": 2.5},
+            "Doncaster vs Sheffield Wed": {"fav": "SHW", "val": 140, "tg": 2.5},
+            "Charlton vs Norwich City": {"fav": "NOR", "val": 120, "tg": 2.5},
+            "Blackburn vs Wrexham": {"fav": "WXM", "val": 165, "tg": 2.5},
+            "QPR vs Swansea": {"fav": "QPR", "val": 150, "tg": 2.5},
+            "St Mirren vs Dundee": {"fav": "STM", "val": 125, "tg": 2.5},
+            "Córdoba vs Eibar": {"fav": "COR", "val": 115, "tg": 2.5},
+            "Catanzaro vs Ascoli": {"fav": "CAT", "val": 160, "tg": 2.5}
         },
         "last_valid_odds": {}
     }
@@ -309,7 +363,7 @@ def generate_card_comment_and_score(m):
 
     if "🔥Δ-" in odd_s:
         d_val = odd_s.split("🔥Δ-")[1].split(" ")[0]
-        notes.append(f"Baz orana göre favoriye -{d_val}p Akıllı Para girişi var")
+        notes.append(f"00:01 baz oranına göre favoriye -{d_val}p Akıllı Para girişi var")
     elif "🚨Δ+" in odd_s:
         d_val = odd_s.split("🚨Δ+")[1].split(" ")[0]
         notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf bahsinden uzak dur")
@@ -329,7 +383,7 @@ def generate_card_comment_and_score(m):
         notes.append(f"İki takım da yüksek hücum formunda ({h_m} vs {a_m})")
 
     if not notes:
-        notes.append("Oranlar ve form dengesi başlangıç çizgisini koruyor")
+        notes.append("Oranlar ve form dengesi 00:01 başlangıç çizgisini koruyor")
 
     s1, s2 = calc_projected_score(m)
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
@@ -361,7 +415,7 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}` | `Mom: {m['h_mom']}-{m['a_mom']}`) ➔ 🎯 **{m['pick']}** *(Skor: `{s1} / {s2}`)*")
     if smart_list:
         lines.append("\n**🔥 Gün İçi Para Girişi Alan Yan Adaylar:**")
-        for m in smart_list[:4]:
+        for m in smart_list[:5]:
             s1, s2 = calc_projected_score(m)
             lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}`) ➔ **{m['pick']}** *(Skor: `{s1}`)*")
 
@@ -375,7 +429,7 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         lines.append("\n#### 🎯 4. Öne Çıkan Maçlar İçin Tahmini Skor Matrisi")
         lines.append("| Saat | Karşılaşma | Güven & Oran | Net Hedef | Birincil Skor | Alternatif |")
         lines.append("| :--- | :--- | :--- | :--- | :---: | :---: |")
-        for m in pre_m[:8]:
+        for m in pre_m[:10]:
             s1, s2 = calc_projected_score(m)
             lines.append(f"| **{m['saat']}** | **{m['mac']}** | `%{m['conf']}` ({m['odd_str']}) | **{m['pick']}** | **{s1}** | `{s2}` |")
 
