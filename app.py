@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9.4 AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9.5 AI", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -19,10 +19,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 TR_TZ = timezone(timedelta(hours=3))
-
-_k1, _k2 = "AQ.Ab8RN6Jqy", "SY98EJDEmQ98"
-_k3, _k4 = "B99Yta0WQQ7_", "mkBnHdk8ofHy3FchQ"
-GEMINI_API_KEY = _k1 + _k2 + _k3 + _k4
 
 LEAGUES = {
     "UEFA ŞAMPİYONLAR LİGİ": ("uefa.champions", 1.05),
@@ -52,7 +48,15 @@ LEAGUES = {
 @st.cache_resource
 def get_persistent_memory():
     return {
-        "locked_pre": {},
+        "locked_pre": {
+            "Eyupspor vs Kasimpasa": {"conf": 50, "pick": "Kasimpasa Takım Golü 1.5 Üst", "warn": True},
+            "Heidenheim vs Cottbus": {"conf": 69, "pick": "Heidenheim Takım Golü 1.5 Üst", "warn": False},
+            "Hertha vs Bielefeld": {"conf": 49, "pick": "Hertha Çifte Şans (1X) & 3.5 Alt", "warn": False},
+            "Córdoba vs Eibar": {"conf": 62, "pick": "Maç 2.5 Gol Üst", "warn": False},
+            "Augsburg vs Union Berlin": {"conf": 77, "pick": "Augsburg Takım Golü 1.5 Üst", "warn": False},
+            "RB Leipzig vs Elversberg": {"conf": 56, "pick": "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
+            "Cardiff vs Birmingham": {"conf": 71, "pick": "Maç 2.5 Gol Üst", "warn": False}
+        },
         "live_snapshots": {},
         "settled_results": {},
         "settled_date": "20261023",
@@ -60,7 +64,6 @@ def get_persistent_memory():
         "base_total": 64,
         "base_ak_wins": 9,
         "base_ak_total": 11,
-        # 24 EKİM CUMARTESİ 00:01 BAZ ORANLARI (70 Maç Kilitli)
         "opening_odds": {
             "Atlético vs Deportivo": {"fav": "ATM", "val": -350, "tg": 3.5},
             "Chelsea vs Spurs": {"fav": "CHE", "val": -120, "tg": 3.5},
@@ -182,8 +185,17 @@ def parse_form_momentum(form_str):
             score += w * 1.0
     return int(round((score / max_s) * 100)) if max_s > 0 else 50
 
+def get_opening_fallback(match_title):
+    if match_title in MEM["last_valid_odds"]:
+        return MEM["last_valid_odds"][match_title]
+    if match_title in MEM["opening_odds"]:
+        op = MEM["opening_odds"][match_title]
+        v_str = f"+{op['val']}" if op["val"] > 0 else str(op["val"])
+        return (f"{op['fav']} {v_str}", op["fav"], op["val"], op["tg"])
+    return ("Veri Yok", "", 0, 2.5)
+
 def safe_parse_odds(comp, match_title):
-    fallback = MEM["last_valid_odds"].get(match_title, ("Veri Yok", "", 0, 2.5))
+    fallback = get_opening_fallback(match_title)
     if not isinstance(comp, dict):
         return fallback
     odds_list = comp.get("odds")
@@ -222,6 +234,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     tg_jumped = False
     ana_kasa_veto = False
     severe_drift_warning = False
+    any_drift_warning = False
 
     if match_key in open_db and fav_val != 0:
         op = open_db[match_key]
@@ -238,9 +251,11 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
                 bonus_conf -= min(26, 12 + (diff // 7))
                 ana_kasa_veto = True
                 severe_drift_warning = True
+                any_drift_warning = True
             elif diff >= 15:
                 smart_tag += f" ⚠️Δ+{diff}"
                 bonus_conf -= min(12, 5 + (diff // 5))
+                any_drift_warning = True
                 if fav_val > -250:
                     ana_kasa_veto = True
 
@@ -299,14 +314,14 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
             pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
-        elif dog_mom < 45 and fav_val <= -140 and not form_clash:
+        elif dog_mom < 45 and fav_val <= -145 and (fav_mom >= 58 or fav_val <= -195) and not form_clash and not any_drift_warning:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
             pick = "Maç 2.5 Gol Üst"
     else:
         if (h_mom >= 58 and a_mom >= 58) or (form_clash and dog_mom >= 65 and fav_val <= -110):
             pick = "Karşılıklı Gol Var (KG Var)"
-        elif (fav_val <= -175 or (dog_mom < 20 and fav_val <= -145)) and not form_clash:
+        elif (fav_val <= -185 or (dog_mom < 20 and fav_val <= -160 and fav_mom >= 50)) and not form_clash and not any_drift_warning:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         elif mom_diff >= 25 and fav_mom > dog_mom:
             cs_code = "X2" if is_away_fav else "1X"
@@ -366,7 +381,7 @@ def generate_card_comment_and_score(m):
         notes.append(f"00:01 baz oranına göre favoriye -{d_val}p Akıllı Para girişi var")
     elif "🚨Δ+" in odd_s:
         d_val = odd_s.split("🚨Δ+")[1].split(" ")[0]
-        notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf bahsinden uzak dur")
+        notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf/1.5 Üst bahsinden uzak dur")
     elif "⚠️Δ+" in odd_s:
         d_val = odd_s.split("⚠️Δ+")[1].split(" ")[0]
         notes.append(f"Oranda +{d_val}p gevşeme var, maç öncesi kadrolar beklenmeli")
@@ -389,18 +404,20 @@ def generate_card_comment_and_score(m):
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
 def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t):
-    lines = [f"### 🧠 Delta Pulse Merkez Üs — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
+    lines = [f"### 🧠 Delta Pulse v4.9.5 Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
 
     if live_m:
-        lines.append("#### 🔴 1. Canlı Tünel & Keskinlik (`SOT%`) Pusu Radarı")
+        lines.append("#### 🔴 1. Canlı Tünel, Keskinlik (`SOT%`) & Korner Pususu Radarı")
         for lm in live_m:
             tot_sh = lm["h_sh"] + lm["a_sh"]
-            if "🎯KeskinGol" in lm["sot_tag"]:
+            if "🚩GerideBaskı->Korner" in lm["sot_tag"]:
+                c_advice = "🚩 **GERİDEKİ TAKIM KORNER BASKISI:** Geride olan takım oyunu rakip yarı sahaya yıktı! Canlıdan **Takım / Maç Korner Üst** fırsatı çok yüksek."
+            elif "📐KörŞut->Korner" in lm["sot_tag"]:
+                c_advice = "📐 **KÖR ŞUT BASKISI:** Çok şut atılıyor ama çerçeve bulunamıyor; **Canlı Korner Üst** pususu öne çıkıyor."
+            elif "🎯KeskinGol" in lm["sot_tag"]:
                 c_advice = "🔥 **KESKİN GOL SİNYALİ:** Kaleyi bulan şut yüzdesi çok yüksek! Canlıdan **Sıradaki Gol / +0.5 Gol Üst** değerlendirilir."
-            elif "📐KörŞut" in lm["sot_tag"]:
-                c_advice = "📐 **KÖR ŞUT BASKISI:** Çok şut atılıyor ama çerçeve bulunamıyor; **Canlı Korner Üst** fırsatı öne çıkıyor."
             elif tot_sh >= 12 and (lm["h_score"] + lm["a_score"]) == 0:
-                c_advice = "⚡ **0-0 ŞUT ANOMALİSİ:** Sahada yüksek şut temposu var; **Canlı 0.5 / 1.5 Gol Üst** pususu uygun."
+                c_advice = "⚡ **0-0 ŞUT ANOMALİSİ:** Sahada yüksek şut temposu var; **Canlı 0.5 Gol Üst & Korner Üst** pususu uygun."
             else:
                 c_advice = f"📌 **Kilitli Hedef Takibi:** Maç önü `{lm['pick']}` hedefi izleniyor (`Top: %{lm['h_poss']}`)."
             lines.append(f"* **⏱️ {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** (`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']}): {c_advice}")
@@ -423,7 +440,7 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
     if drift_list:
         lines.append("\n#### 🚨 3. Otonom Erime Freni (Oranı Gevşeyen / Tuzak Maçlar)")
         for m in drift_list[:5]:
-            lines.append(f"* **⚠️ [{m['saat']}] {m['mac']}** (`{m['odd_str']}` | Güven: `%{m['conf']}`): Favoriden para çıkışı tespit edildi. Kadrolar görülmeden taraf bahsine girilmemeli!")
+            lines.append(f"* **⚠️ [{m['saat']}] {m['mac']}** (`{m['odd_str']}` | Güven: `%{m['conf']}`): Favoriden para çıkışı tespit edildi. Takım 1.5 Üst veya taraf bahsine girilmemeli!")
 
     if pre_m:
         lines.append("\n#### 🎯 4. Öne Çıkan Maçlar İçin Tahmini Skor Matrisi")
@@ -525,10 +542,16 @@ def fetch_all_matches():
                 m_int = safe_int(cur_min, 45)
                 h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
                 a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
+
+                h_trailing_push = (h_score < a_score and (h_sh >= 6 or h_cor >= 4 or h_poss >= 60))
+                a_trailing_push = (a_score < h_score and (a_sh >= 6 or a_cor >= 4 or (h_poss > 0 and (100 - h_poss) >= 60)))
+
+                if h_trailing_push or a_trailing_push:
+                    sot_tag += "|🚩GerideBaskı->Korner"
                 if (h_sh >= 6 and h_sot_pct >= 45) or (a_sh >= 6 and a_sot_pct >= 45):
-                    sot_tag = "|🎯KeskinGol"
+                    sot_tag += "|🎯KeskinGol"
                 elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct <= 15):
-                    sot_tag = "|📐KörŞut->Korner"
+                    sot_tag += "|📐KörŞut->Korner"
 
                 snap = MEM["live_snapshots"].get(match_title)
                 if not snap:
@@ -593,7 +616,7 @@ for m in pre_m:
     )
 
 for m in post_m:
-    icon = "✅" if evaluate_ft_result(m["pick"], m["h_name"], m["a_name"], m["h_score"], m["a_score"]) else "❌"
+    icon = "✅" if evaluate_ft_result(m["pick"], m["h_name"], m["h_name"] if m["a_name"] == "" else m["a_name"], m["h_score"], m["a_score"]) else "❌"
     mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|{icon}|{m['pick']}")
 
 full_dp_text = "\n".join(mini_lines)
@@ -616,7 +639,7 @@ with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code(full_dp_text, language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı Tünel & Keskinlik Radar")
+    st.markdown("### 🔴 Canlı Tünel, Keskinlik & Korner Radar")
     for m in live_m:
         st.markdown(
             f"<div class='dp-card dp-live'><b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
@@ -627,7 +650,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.9.4 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v4.9.5 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
