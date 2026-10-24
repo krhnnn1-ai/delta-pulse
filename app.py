@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9.5 AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9.6 AI", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -15,6 +15,29 @@ st.markdown("""
     .dp-warn { border-left: 4px solid #f85149; background: #1f1619; }
     .dp-live { border-left: 4px solid #2f81f7; background: #161b22; }
     .dp-badge { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #8b949e; }
+    @keyframes dpPulse {
+        0% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
+        50% { opacity: 0.35; box-shadow: 0 0 2px rgba(240, 185, 11, 0.1); border-color: #d29922; }
+        100% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
+    }
+    .dp-exp-alert {
+        display: inline-block;
+        background: linear-gradient(90deg, #3d2800, #161b22);
+        color: #ffd33d;
+        border: 1px solid #f0b90b;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        margin-top: 6px;
+        animation: dpPulse 1.2s infinite ease-in-out;
+    }
+    .dp-exp-calm {
+        display: inline-block;
+        color: #8b949e;
+        padding: 3px 0px;
+        margin-top: 4px;
+        font-size: 12px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -352,6 +375,39 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     return False
 # ==================== 2. PARÇA SONU ====================
 # ==================== 3. PARÇA BAŞLANGICI ====================
+def build_live_expectations(h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int):
+    exp_list = []
+    tot_sh = h_sh + a_sh
+    tot_sot = h_sot + a_sot
+    tot_cor = h_cor + a_cor
+    h_sot_pct = int(round((h_sot / h_sh) * 100)) if h_sh > 0 else 0
+    a_sot_pct = int(round((a_sot / a_sh) * 100)) if a_sh > 0 else 0
+    tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
+    a_poss = (100 - h_poss) if h_poss > 0 else 0
+
+    if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
+        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (Şut isabeti çok keskin: %{tot_sot_pct} [{tot_sot}/{tot_sh}])")
+    elif tot_sh >= 13 and (h_score + a_score) <= 1:
+        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (Sahada {tot_sh} şut birikti, kilit kırılabilir)")
+
+    if h_score < a_score and (h_sh >= 5 or h_cor >= 3 or h_poss >= 58):
+        exp_list.append(f"🚩 KORNER ARTABİLİR ({h_name} geriye düştü; %{h_poss} top ve {h_sh} şutla yükleniyor)")
+    elif a_score < h_score and (a_sh >= 5 or a_cor >= 3 or a_poss >= 58):
+        exp_list.append(f"🚩 KORNER ARTABİLİR ({a_name} geriye düştü; {a_sh} şut ve {a_cor} kornerle baskıda)")
+    elif (h_sh >= 8 and h_sot_pct <= 20) or (a_sh >= 8 and a_sot_pct <= 20):
+        dom_t = h_name if h_sh >= a_sh else a_name
+        exp_list.append(f"📐 KORNER ARTABİLİR ({dom_t} çok şut deniyor ama çerçeve kapalı, toplar kornere gidiyor)")
+    elif (m_int <= 45 and tot_cor >= 6) or (m_int > 45 and tot_cor >= 10):
+        exp_list.append(f"🚩 KORNER TEMPOSU YÜKSEK ({h_cor}-{a_cor} toplam {tot_cor} korner oldu, devamı gelebilir)")
+
+    if not exp_list:
+        if m_int >= 22 and tot_sh <= 4 and tot_sot <= 1:
+            exp_list.append(f"🛡️ Düşük Tempo ({m_int}' itibarıyla sadece {tot_sot} isabetli şut var, canlı üst riskli)")
+        else:
+            exp_list.append("⚖️ Dengeli Akış (Anlamlı şut veya korner kırılması bekleniyor)")
+
+    return " • ".join(exp_list)
+
 def calc_projected_score(m):
     h_m, a_m = m["h_mom"], m["a_mom"]
     tg = m["tg"]
@@ -404,23 +460,16 @@ def generate_card_comment_and_score(m):
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
 def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t):
-    lines = [f"### 🧠 Delta Pulse v4.9.5 Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
+    lines = [f"### 🧠 Delta Pulse v4.9.6 Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
 
     if live_m:
-        lines.append("#### 🔴 1. Canlı Tünel, Keskinlik (`SOT%`) & Korner Pususu Radarı")
+        lines.append("#### 🔴 1. Canlı Tünel & Anlık Beklenti Pusulası")
         for lm in live_m:
-            tot_sh = lm["h_sh"] + lm["a_sh"]
-            if "🚩GerideBaskı->Korner" in lm["sot_tag"]:
-                c_advice = "🚩 **GERİDEKİ TAKIM KORNER BASKISI:** Geride olan takım oyunu rakip yarı sahaya yıktı! Canlıdan **Takım / Maç Korner Üst** fırsatı çok yüksek."
-            elif "📐KörŞut->Korner" in lm["sot_tag"]:
-                c_advice = "📐 **KÖR ŞUT BASKISI:** Çok şut atılıyor ama çerçeve bulunamıyor; **Canlı Korner Üst** pususu öne çıkıyor."
-            elif "🎯KeskinGol" in lm["sot_tag"]:
-                c_advice = "🔥 **KESKİN GOL SİNYALİ:** Kaleyi bulan şut yüzdesi çok yüksek! Canlıdan **Sıradaki Gol / +0.5 Gol Üst** değerlendirilir."
-            elif tot_sh >= 12 and (lm["h_score"] + lm["a_score"]) == 0:
-                c_advice = "⚡ **0-0 ŞUT ANOMALİSİ:** Sahada yüksek şut temposu var; **Canlı 0.5 Gol Üst & Korner Üst** pususu uygun."
-            else:
-                c_advice = f"📌 **Kilitli Hedef Takibi:** Maç önü `{lm['pick']}` hedefi izleniyor (`Top: %{lm['h_poss']}`)."
-            lines.append(f"* **⏱️ {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** (`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']}): {c_advice}")
+            lines.append(
+                f"* **⏱️ {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
+                f"(`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']}) "
+                f"➔ 🔮 **{lm['live_exp']}**"
+            )
         lines.append("")
 
     ak_list = [m for m in pre_m if "Ana Kasa" in m["pick"]]
@@ -537,21 +586,26 @@ def fetch_all_matches():
 
             delta_str = ""
             sot_tag = ""
+            live_exp = ""
             if state == "in":
                 cur_min = detail_clock.replace("'", "").replace("HT", "45").split("+")[0].strip()
                 m_int = safe_int(cur_min, 45)
                 h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
                 a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
 
-                h_trailing_push = (h_score < a_score and (h_sh >= 6 or h_cor >= 4 or h_poss >= 60))
-                a_trailing_push = (a_score < h_score and (a_sh >= 6 or a_cor >= 4 or (h_poss > 0 and (100 - h_poss) >= 60)))
+                h_trailing_push = (h_score < a_score and (h_sh >= 5 or h_cor >= 3 or h_poss >= 58))
+                a_trailing_push = (a_score < h_score and (a_sh >= 5 or a_cor >= 3 or (h_poss > 0 and (100 - h_poss) >= 58)))
 
                 if h_trailing_push or a_trailing_push:
                     sot_tag += "|🚩GerideBaskı->Korner"
-                if (h_sh >= 6 and h_sot_pct >= 45) or (a_sh >= 6 and a_sot_pct >= 45):
+                if (h_sh >= 5 and h_sot_pct >= 50) or (a_sh >= 5 and a_sot_pct >= 50):
                     sot_tag += "|🎯KeskinGol"
-                elif (h_sh >= 8 and h_sot_pct <= 15) or (a_sh >= 8 and a_sot_pct <= 15):
+                elif (h_sh >= 8 and h_sot_pct <= 18) or (a_sh >= 8 and a_sot_pct <= 18):
                     sot_tag += "|📐KörŞut->Korner"
+
+                live_exp = build_live_expectations(
+                    h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int
+                )
 
                 snap = MEM["live_snapshots"].get(match_title)
                 if not snap:
@@ -576,7 +630,8 @@ def fetch_all_matches():
                 "h_mom": h_mom, "a_mom": a_mom, "odd_str": disp_odd, "tg": ou_val,
                 "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
                 "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
-                "cards": cards, "h_poss": h_poss, "delta_str": delta_str, "sot_tag": sot_tag
+                "cards": cards, "h_poss": h_poss, "delta_str": delta_str,
+                "sot_tag": sot_tag, "live_exp": live_exp
             })
     return results
 
@@ -641,16 +696,19 @@ with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
 if live_m:
     st.markdown("### 🔴 Canlı Tünel, Keskinlik & Korner Radar")
     for m in live_m:
+        is_hot_exp = any(k in m["live_exp"] for k in ["⚡", "🚩", "📐"])
+        exp_cls = "dp-exp-alert" if is_hot_exp else "dp-exp-calm"
         st.markdown(
             f"<div class='dp-card dp-live'><b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
             f"<span class='dp-badge'>{m['lig']}</span><br>"
             f"🎯 Şut: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']}</b> | "
             f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']} {m['sot_tag']}<br>"
-            f"📌 <b>Kilitli Hedef:</b> {m['pick']}</div>",
+            f"📌 <b>Kilitli Hedef:</b> {m['pick']}<br>"
+            f"<div class='{exp_cls}'>🔮 <b>Canlı Beklenti:</b> {m['live_exp']}</div></div>",
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.9.5 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v4.9.6 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
