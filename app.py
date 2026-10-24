@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9.6 AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v4.9.7 AI", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -78,7 +78,12 @@ def get_persistent_memory():
             "Córdoba vs Eibar": {"conf": 62, "pick": "Maç 2.5 Gol Üst", "warn": False},
             "Augsburg vs Union Berlin": {"conf": 77, "pick": "Augsburg Takım Golü 1.5 Üst", "warn": False},
             "RB Leipzig vs Elversberg": {"conf": 56, "pick": "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
-            "Cardiff vs Birmingham": {"conf": 71, "pick": "Maç 2.5 Gol Üst", "warn": False}
+            "Cardiff vs Birmingham": {"conf": 71, "pick": "Maç 2.5 Gol Üst", "warn": False},
+            "Como vs Sassuolo": {"conf": 75, "pick": "Como Takım Golü 1.5 Üst", "warn": False},
+            "Modena vs Cesena": {"conf": 50, "pick": "Modena Takım Golü 1.5 Üst", "warn": False},
+            "FC Utrecht vs PEC Zwolle": {"conf": 71, "pick": "FC Utrecht Takım Golü 1.5 Üst", "warn": False},
+            "Dortmund vs Frankfurt": {"conf": 80, "pick": "Dortmund Takım Golü 1.5 Üst", "warn": False},
+            "Chelsea vs Spurs": {"conf": 72, "pick": "Maç 2.5 Gol Üst", "warn": False}
         },
         "live_snapshots": {},
         "settled_results": {},
@@ -303,6 +308,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     dog_mom = h_mom if is_away_fav else a_mom
     mom_diff = abs(h_mom - a_mom)
     form_clash = (dog_mom - fav_mom >= 20)
+    cs_code = "X2" if is_away_fav else "1X"
 
     raw_conf = 50 + (int(mom_diff * 0.35) if not form_clash else -4)
     if ou_val >= 3.5:
@@ -315,11 +321,13 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
         raw_conf += 6
     if h_mom >= 65 and a_mom >= 65 and ou_val >= 3.5:
         raw_conf += 12
+    if fav_mom < 50 and dog_mom < 40 and fav_val <= -150:
+        raw_conf -= 5
 
     conf = int(round(raw_conf * min(1.05, max(0.78, kademe)))) + bonus_conf
     conf = max(25, min(97, conf))
 
-    is_strong_market_fav = (fav_val <= -140)
+    is_strong_market_fav = (fav_val <= -140 and fav_mom >= 55)
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
     if ana_kasa_veto or form_clash or not (is_strong_market_fav or is_elite_shootout):
@@ -330,24 +338,25 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
         conf = 25
         pick = "Maç 3.5 Gol Alt"
     elif conf >= 83 and kademe >= 0.88 and not ana_kasa_veto:
-        if dog_mom >= 58 and ou_val >= 3.5:
+        if (dog_mom >= 58 and ou_val >= 3.5) or fav_mom < 55:
             pick = "Maç 2.5 Gol Üst (Ana Kasa)"
         else:
             pick = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
             pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
-        elif dog_mom < 45 and fav_val <= -145 and (fav_mom >= 58 or fav_val <= -195) and not form_clash and not any_drift_warning:
+        elif fav_mom < 50 and dog_mom < 40 and fav_val <= -150 and not tg_jumped:
+            pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
+        elif dog_mom < 45 and fav_val <= -165 and fav_mom >= 55 and not form_clash and not any_drift_warning:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
             pick = "Maç 2.5 Gol Üst"
     else:
         if (h_mom >= 58 and a_mom >= 58) or (form_clash and dog_mom >= 65 and fav_val <= -110):
             pick = "Karşılıklı Gol Var (KG Var)"
-        elif (fav_val <= -185 or (dog_mom < 20 and fav_val <= -160 and fav_mom >= 50)) and not form_clash and not any_drift_warning:
+        elif (fav_val <= -185 or (dog_mom < 20 and fav_val <= -165)) and fav_mom >= 55 and not form_clash and not any_drift_warning:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
-        elif mom_diff >= 25 and fav_mom > dog_mom:
-            cs_code = "X2" if is_away_fav else "1X"
+        elif (mom_diff >= 25 and fav_mom > dog_mom) or (fav_val <= -150 and fav_mom < 55 and not form_clash):
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
         else:
             pick = "Maç 3.5 Gol Alt"
@@ -386,19 +395,19 @@ def build_live_expectations(h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot,
     a_poss = (100 - h_poss) if h_poss > 0 else 0
 
     if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
-        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (Şut isabeti çok keskin: %{tot_sot_pct} [{tot_sot}/{tot_sh}])")
+        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (İsabet: %{tot_sot_pct} [{tot_sot}/{tot_sh}] ➔ Öneri: Canlı +0.5 Gol Üst)")
     elif tot_sh >= 13 and (h_score + a_score) <= 1:
-        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (Sahada {tot_sh} şut birikti, kilit kırılabilir)")
+        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK ({tot_sh} şut birikti ➔ Öneri: Canlı +0.5 Gol Üst)")
 
     if h_score < a_score and (h_sh >= 5 or h_cor >= 3 or h_poss >= 58):
-        exp_list.append(f"🚩 KORNER ARTABİLİR ({h_name} geriye düştü; %{h_poss} top ve {h_sh} şutla yükleniyor)")
+        exp_list.append(f"🚩 KORNER ARTABİLİR ({h_name} geride, %{h_poss} top ve {h_sh} şutla baskıda ➔ Öneri: Korner Üst / {h_name} Gol)")
     elif a_score < h_score and (a_sh >= 5 or a_cor >= 3 or a_poss >= 58):
-        exp_list.append(f"🚩 KORNER ARTABİLİR ({a_name} geriye düştü; {a_sh} şut ve {a_cor} kornerle baskıda)")
+        exp_list.append(f"🚩 KORNER ARTABİLİR ({a_name} geride, {a_sh} şut ve {a_cor} kornerle baskıda ➔ Öneri: Korner Üst / {a_name} Gol)")
     elif (h_sh >= 8 and h_sot_pct <= 20) or (a_sh >= 8 and a_sot_pct <= 20):
         dom_t = h_name if h_sh >= a_sh else a_name
-        exp_list.append(f"📐 KORNER ARTABİLİR ({dom_t} çok şut deniyor ama çerçeve kapalı, toplar kornere gidiyor)")
+        exp_list.append(f"📐 KORNER ARTABİLİR ({dom_t} çok şut deniyor ama çerçeve kapalı ➔ Öneri: Canlı Korner Üst)")
     elif (m_int <= 45 and tot_cor >= 6) or (m_int > 45 and tot_cor >= 10):
-        exp_list.append(f"🚩 KORNER TEMPOSU YÜKSEK ({h_cor}-{a_cor} toplam {tot_cor} korner oldu, devamı gelebilir)")
+        exp_list.append(f"🚩 KORNER TEMPOSU YÜKSEK ({h_cor}-{a_cor} toplam {tot_cor} korner ➔ Öneri: Canlı Korner Üst)")
 
     if not exp_list:
         if m_int >= 22 and tot_sh <= 4 and tot_sot <= 1:
@@ -414,10 +423,10 @@ def calc_projected_score(m):
     pick = m["pick"]
     away_fav = (m["a_name"] in pick) or (a_m > h_m + 15)
 
-    if "3.5 Gol Alt" in pick:
+    if "3.5 Gol Alt" in pick and "Çifte Şans" not in pick:
         return ("1-1", "1-0") if h_m >= a_m else ("0-1", "1-1")
     elif "Çifte Şans" in pick:
-        return ("1-2", "0-2") if "X2" in pick else ("2-0", "2-1")
+        return ("1-2", "0-2") if "X2" in pick else ("2-0", "1-0")
     elif "Takım Golü 1.5 Üst" in pick:
         if away_fav:
             return ("1-3", "0-2") if tg >= 3.5 else ("0-2", "1-2")
@@ -440,7 +449,7 @@ def generate_card_comment_and_score(m):
         notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf/1.5 Üst bahsinden uzak dur")
     elif "⚠️Δ+" in odd_s:
         d_val = odd_s.split("⚠️Δ+")[1].split(" ")[0]
-        notes.append(f"Oranda +{d_val}p gevşeme var, maç öncesi kadrolar beklenmeli")
+        notes.append(f"Oranda +{d_val}p gevşeme var, koruma çizgisinde kal")
 
     if "💥TG↑" in odd_s:
         notes.append("Toplam gol baremi yukarı kırıldı (Yüksek gol temposu)")
@@ -452,6 +461,8 @@ def generate_card_comment_and_score(m):
         notes.append(f"{strong_t} form momentumunda (+{abs(h_m - a_m)} fark) üstün")
     elif h_m >= 60 and a_m >= 60:
         notes.append(f"İki takım da yüksek hücum formunda ({h_m} vs {a_m})")
+    elif max(h_m, a_m) < 50:
+        notes.append(f"Hücum formları düşük ({h_m}-{a_m}), 1.5 Üst yerine koruma devrede")
 
     if not notes:
         notes.append("Oranlar ve form dengesi 00:01 başlangıç çizgisini koruyor")
@@ -460,7 +471,7 @@ def generate_card_comment_and_score(m):
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
 def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t):
-    lines = [f"### 🧠 Delta Pulse v4.9.6 Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
+    lines = [f"### 🧠 Delta Pulse v4.9.7 Keskin Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
 
     if live_m:
         lines.append("#### 🔴 1. Canlı Tünel & Anlık Beklenti Pusulası")
@@ -708,7 +719,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.9.6 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v4.9.7 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
