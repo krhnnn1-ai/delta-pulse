@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v4.9.7 AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v5.0 LIVE PRO", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -14,7 +14,9 @@ st.markdown("""
     .dp-ak { border-left: 4px solid #f0b90b; background: #1c2128; }
     .dp-warn { border-left: 4px solid #f85149; background: #1f1619; }
     .dp-live { border-left: 4px solid #2f81f7; background: #161b22; }
+    .dp-live-hot { border-left: 5px solid #f0b90b; background: #1c1d24; }
     .dp-badge { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #8b949e; }
+    .dp-heat { background: #3d2800; color: #ffd33d; border: 1px solid #f0b90b; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; }
     @keyframes dpPulse {
         0% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
         50% { opacity: 0.35; box-shadow: 0 0 2px rgba(240, 185, 11, 0.1); border-color: #d29922; }
@@ -72,97 +74,64 @@ LEAGUES = {
 def get_persistent_memory():
     return {
         "locked_pre": {
-            "Eyupspor vs Kasimpasa": {"conf": 50, "pick": "Kasimpasa Takım Golü 1.5 Üst", "warn": True},
-            "Heidenheim vs Cottbus": {"conf": 69, "pick": "Heidenheim Takım Golü 1.5 Üst", "warn": False},
-            "Hertha vs Bielefeld": {"conf": 49, "pick": "Hertha Çifte Şans (1X) & 3.5 Alt", "warn": False},
-            "Córdoba vs Eibar": {"conf": 62, "pick": "Maç 2.5 Gol Üst", "warn": False},
-            "Augsburg vs Union Berlin": {"conf": 77, "pick": "Augsburg Takım Golü 1.5 Üst", "warn": False},
-            "RB Leipzig vs Elversberg": {"conf": 56, "pick": "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]", "warn": True},
-            "Cardiff vs Birmingham": {"conf": 71, "pick": "Maç 2.5 Gol Üst", "warn": False},
-            "Como vs Sassuolo": {"conf": 75, "pick": "Como Takım Golü 1.5 Üst", "warn": False},
-            "Modena vs Cesena": {"conf": 50, "pick": "Modena Takım Golü 1.5 Üst", "warn": False},
-            "FC Utrecht vs PEC Zwolle": {"conf": 71, "pick": "FC Utrecht Takım Golü 1.5 Üst", "warn": False},
-            "Dortmund vs Frankfurt": {"conf": 80, "pick": "Dortmund Takım Golü 1.5 Üst", "warn": False},
-            "Chelsea vs Spurs": {"conf": 72, "pick": "Maç 2.5 Gol Üst", "warn": False}
+            "Inter Milan vs Fiorentina": {"conf": 81, "pick": "Maç 2.5 Gol Üst", "warn": False},
+            "Fortuna vs Excelsior": {"conf": 55, "pick": "Fortuna Çifte Şans (1X) & 3.5 Alt", "warn": False}
         },
         "live_snapshots": {},
+        "live_signals": {},
         "settled_results": {},
-        "settled_date": "20261023",
-        "base_wins": 48,
-        "base_total": 64,
+        "settled_date": "20261024",
+        "base_wins": 88,
+        "base_total": 128,
         "base_ak_wins": 9,
         "base_ak_total": 11,
         "opening_odds": {
-            "Atlético vs Deportivo": {"fav": "ATM", "val": -350, "tg": 3.5},
-            "Chelsea vs Spurs": {"fav": "CHE", "val": -120, "tg": 3.5},
-            "Aston Villa vs Man City": {"fav": "MNC", "val": -160, "tg": 3.5},
-            "Dortmund vs Frankfurt": {"fav": "DOR", "val": -215, "tg": 3.5},
-            "Como vs Sassuolo": {"fav": "COMO", "val": -220, "tg": 3.5},
-            "RB Leipzig vs Elversberg": {"fav": "RBL", "val": -240, "tg": 3.5},
-            "Augsburg vs Union Berlin": {"fav": "FCA", "val": -120, "tg": 3.5},
-            "Lazio vs Parma": {"fav": "LAZ", "val": -260, "tg": 2.5},
-            "Rangers vs St Johnstone": {"fav": "RAN", "val": -475, "tg": 3.5},
-            "FC Utrecht vs PEC Zwolle": {"fav": "UTR", "val": -160, "tg": 3.5},
-            "Mainz vs Bremen": {"fav": "M05", "val": -140, "tg": 3.5},
-            "Hertha vs Bielefeld": {"fav": "BSC", "val": -120, "tg": 3.5},
-            "Bromley vs Peterborough": {"fav": "PET", "val": 100, "tg": 3.5},
-            "ADO Den Haag vs Heerenveen": {"fav": "HEE", "val": 100, "tg": 3.5},
-            "Wolves vs Watford": {"fav": "WOL", "val": -270, "tg": 2.5},
-            "Antwerp vs Royal Charleroi": {"fav": "CHA", "val": -125, "tg": 2.5},
-            "Westerlo vs Waasland-Beveren": {"fav": "KVCW", "val": 110, "tg": 3.5},
-            "Magdeburg vs Karlsruher": {"fav": "FCM", "val": -120, "tg": 3.5},
-            "Huddersfield vs Wigan": {"fav": "HUD", "val": -300, "tg": 2.5},
-            "Arsenal vs Everton": {"fav": "ARS", "val": -220, "tg": 2.5},
-            "Valencia vs Villarreal": {"fav": "VIL", "val": 120, "tg": 2.5},
-            "Eyupspor vs Kasimpasa": {"fav": "KAS", "val": -160, "tg": 2.5},
-            "Gil Vicente vs FC Porto": {"fav": "FCP", "val": -220, "tg": 2.5},
-            "Luton vs Leicester": {"fav": "LTN", "val": 120, "tg": 3.5},
-            "Rayo vs Elche": {"fav": "RAY", "val": -130, "tg": 2.5},
-            "Heidenheim vs Cottbus": {"fav": "HDH", "val": -135, "tg": 3.5},
-            "Cologne vs Schalke": {"fav": "KOE", "val": 105, "tg": 2.5},
-            "Willem II vs Cambuur": {"fav": "WIL", "val": 150, "tg": 3.5},
-            "Lens vs Paris FC": {"fav": "RCL", "val": 145, "tg": 2.5},
-            "Alverca vs Arouca": {"fav": "ALV", "val": 115, "tg": 2.5},
-            "Stoke vs Bristol City": {"fav": "STK", "val": 145, "tg": 2.5},
-            "Coventry vs Fulham": {"fav": "FUL", "val": 130, "tg": 2.5},
-            "1. FC Nürnberg vs Kaiserslautern": {"fav": "FCN", "val": 105, "tg": 3.5},
-            "Almería vs Real Oviedo": {"fav": "ALM", "val": -145, "tg": 2.5},
-            "Racing vs Espanyol": {"fav": "RAC", "val": 140, "tg": 2.5},
-            "Napoli vs AS Roma": {"fav": "ROMA", "val": 150, "tg": 2.5},
-            "Gaziantep vs Erzurum": {"fav": "GAZ", "val": 145, "tg": 2.5},
-            "Cardiff vs Birmingham": {"fav": "BIR", "val": 140, "tg": 2.5},
-            "Modena vs Cesena": {"fav": "MOD", "val": -185, "tg": 2.5},
-            "West Ham vs Southampton": {"fav": "WHU", "val": -150, "tg": 3.5},
-            "Wimbledon vs Wycombe": {"fav": "WYC", "val": -120, "tg": 2.5},
-            "Notts County vs Stockport": {"fav": "STO", "val": -170, "tg": 2.5},
-            "Arezzo vs Benevento": {"fav": "BEN", "val": 140, "tg": 2.5},
-            "Cagliari vs Bologna": {"fav": "BOL", "val": 145, "tg": 2.5},
-            "Estrela vs Casa Pia": {"fav": "EST", "val": -130, "tg": 2.5},
-            "Cremonese vs Juve Stabia": {"fav": "CRE", "val": -115, "tg": 2.5},
-            "Avellino vs Padova": {"fav": "AVE", "val": 125, "tg": 2.5},
-            "Preston vs West Brom": {"fav": "WBA", "val": 105, "tg": 2.5},
-            "Sheffield Utd vs Derby": {"fav": "SHU", "val": -120, "tg": 2.5},
-            "OH Leuven vs Lommel SK": {"fav": "OHL", "val": -110, "tg": 2.5},
-            "Dundee Utd vs Aberdeen": {"fav": "DUN", "val": 115, "tg": 2.5},
-            "Oxford Utd vs Bradford": {"fav": "BRD", "val": 160, "tg": 2.5},
-            "Leganés vs Mallorca": {"fav": "MLL", "val": 130, "tg": 2.5},
-            "Portsmouth vs Millwall": {"fav": "POR", "val": 150, "tg": 2.5},
-            "Sudtirol vs Sampdoria": {"fav": "SAM", "val": 160, "tg": 2.5},
-            "Lincoln City vs Burnley": {"fav": "BUR", "val": 145, "tg": 2.5},
-            "La Louvière vs Zulte-Waregem": {"fav": "ZUL", "val": 130, "tg": 2.5},
-            "Falkirk vs Kilmarnock": {"fav": "FALK", "val": -115, "tg": 2.5},
-            "Blackpool vs Mansfield": {"fav": "MNF", "val": 140, "tg": 2.5},
-            "Stevenage vs MK Dons": {"fav": "STE", "val": 105, "tg": 2.5},
-            "Las Palmas vs Real Sociedad II": {"fav": "LPA", "val": 100, "tg": 2.5},
-            "Virtus Entella vs Mantova": {"fav": "ENT", "val": 125, "tg": 2.5},
-            "Cambridge vs Plymouth": {"fav": "CAM", "val": 135, "tg": 2.5},
-            "Doncaster vs Sheffield Wed": {"fav": "SHW", "val": 140, "tg": 2.5},
-            "Charlton vs Norwich City": {"fav": "NOR", "val": 120, "tg": 2.5},
-            "Blackburn vs Wrexham": {"fav": "WXM", "val": 165, "tg": 2.5},
-            "QPR vs Swansea": {"fav": "QPR", "val": 150, "tg": 2.5},
-            "St Mirren vs Dundee": {"fav": "STM", "val": 125, "tg": 2.5},
-            "Córdoba vs Eibar": {"fav": "COR", "val": 115, "tg": 2.5},
-            "Catanzaro vs Ascoli": {"fav": "CAT", "val": 160, "tg": 2.5}
+            "Real Sociedad vs Levante": {"fav": "RSO", "val": -175, "tg": 3.5},
+            "Inter Milan vs Fiorentina": {"fav": "INT", "val": -310, "tg": 3.5},
+            "Union SG vs Cercle Brugge": {"fav": "USG", "val": -310, "tg": 3.5},
+            "Barcelona vs Real Madrid": {"fav": "BAR", "val": -150, "tg": 4.5},
+            "Hoffenheim vs Leverkusen": {"fav": "B04", "val": 110, "tg": 3.5},
+            "Club Brugge vs Sint-Truidense": {"fav": "BRU", "val": -275, "tg": 3.5},
+            "Freiburg vs Bayern": {"fav": "MUN", "val": -255, "tg": 3.5},
+            "Udinese vs Milan": {"fav": "MIL", "val": -125, "tg": 2.5},
+            "Marseille vs Le Havre AC": {"fav": "OLM", "val": -195, "tg": 3.5},
+            "Liverpool vs Brighton": {"fav": "LIV", "val": 115, "tg": 3.5},
+            "C Palace vs Newcastle": {"fav": "NEW", "val": 140, "tg": 3.5},
+            "Lecce vs Juventus": {"fav": "JUV", "val": -205, "tg": 2.5},
+            "Atalanta vs Frosinone": {"fav": "ATA", "val": -120, "tg": 3.5},
+            "Genoa vs Venezia": {"fav": "GEN", "val": 110, "tg": 2.5},
+            "Hull vs Brentford": {"fav": "BRE", "val": -145, "tg": 2.5},
+            "Sporting vs Académico": {"fav": "SCP", "val": -425, "tg": 3.5},
+            "Sparta vs Ajax": {"fav": "AJA", "val": -230, "tg": 3.5},
+            "Rennes vs Strasbourg": {"fav": "REN", "val": -125, "tg": 3.5},
+            "Toulouse vs Troyes": {"fav": "TOU", "val": -190, "tg": 2.5},
+            "Athletic vs Getafe": {"fav": "ATH", "val": -175, "tg": 2.5},
+            "Palermo vs Carrarese": {"fav": "PAL", "val": -215, "tg": 2.5},
+            "Monaco vs Lille": {"fav": "MON", "val": 100, "tg": 2.5},
+            "AZ Alkmaar vs FC Twente": {"fav": "AZ", "val": 115, "tg": 3.5},
+            "Angers vs Lorient": {"fav": "LOR", "val": 150, "tg": 2.5},
+            "Fortuna vs Excelsior": {"fav": "FOR", "val": 135, "tg": 2.5},
+            "Man United vs Bournemouth": {"fav": "MAN", "val": 130, "tg": 2.5},
+            "Konyaspor vs Genclerbirli": {"fav": "KNY", "val": -110, "tg": 2.5},
+            "Hibernian vs Celtic": {"fav": "CEL", "val": -185, "tg": 3.5},
+            "Sunderland vs Leeds": {"fav": "LEE", "val": 150, "tg": 2.5},
+            "NEC vs FC Groningen": {"fav": "NEC", "val": 120, "tg": 3.5},
+            "PSV vs Feyenoord": {"fav": "PSV", "val": 105, "tg": 3.5},
+            "Motherwell vs Hearts": {"fav": "HOM", "val": 110, "tg": 2.5},
+            "CD Sabadell vs Tenerife": {"fav": "CDS", "val": -110, "tg": 1.5},
+            "Celta Vigo vs Betis": {"fav": "BET", "val": 125, "tg": 2.5},
+            "Auxerre vs Le Mans": {"fav": "AUX", "val": 105, "tg": 2.5},
+            "Nacional vs Braga": {"fav": "SCB", "val": -175, "tg": 2.5},
+            "Rio Ave vs FC Famalicao": {"fav": "FCF", "val": 110, "tg": 2.5},
+            "KAA Gent vs Anderlecht": {"fav": "GENT", "val": 135, "tg": 2.5},
+            "Osnabruck vs Greuther Furth": {"fav": "OSN", "val": 115, "tg": 2.5},
+            "Castellón vs Gijón": {"fav": "CAS", "val": -200, "tg": 2.5},
+            "Verona vs Pisa": {"fav": "VER", "val": 125, "tg": 2.5},
+            "Genk vs Standard Liege": {"fav": "GENK", "val": -135, "tg": 2.5},
+            "Cádiz vs Ceuta": {"fav": "CAD", "val": -110, "tg": 2.5},
+            "Estoril vs Moreirense": {"fav": "EPF", "val": -105, "tg": 2.5},
+            "Holstein Kiel vs D Dresden": {"fav": "KSV", "val": 130, "tg": 2.5},
+            "Albacete vs Eldense": {"fav": "ALB", "val": 140, "tg": 2.5}
         },
         "last_valid_odds": {}
     }
@@ -384,8 +353,8 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     return False
 # ==================== 2. PARÇA SONU ====================
 # ==================== 3. PARÇA BAŞLANGICI ====================
-def build_live_expectations(h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int):
-    exp_list = []
+def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val):
+    tot_goals = h_score + a_score
     tot_sh = h_sh + a_sh
     tot_sot = h_sot + a_sot
     tot_cor = h_cor + a_cor
@@ -394,28 +363,124 @@ def build_live_expectations(h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot,
     tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
     a_poss = (100 - h_poss) if h_poss > 0 else 0
 
-    if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
-        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK (İsabet: %{tot_sot_pct} [{tot_sot}/{tot_sh}] ➔ Öneri: Canlı +0.5 Gol Üst)")
-    elif tot_sh >= 13 and (h_score + a_score) <= 1:
-        exp_list.append(f"⚡ GOL İHTİMALİ YÜKSEK ({tot_sh} şut birikti ➔ Öneri: Canlı +0.5 Gol Üst)")
+    is_away_fav = False
+    if fav_abbr:
+        if fav_abbr.upper() == a_abbr.upper() or fav_abbr.upper() in a_name.upper()[:4]:
+            is_away_fav = True
+    elif a_mom > h_mom + 12:
+        is_away_fav = True
 
-    if h_score < a_score and (h_sh >= 5 or h_cor >= 3 or h_poss >= 58):
-        exp_list.append(f"🚩 KORNER ARTABİLİR ({h_name} geride, %{h_poss} top ve {h_sh} şutla baskıda ➔ Öneri: Korner Üst / {h_name} Gol)")
-    elif a_score < h_score and (a_sh >= 5 or a_cor >= 3 or a_poss >= 58):
-        exp_list.append(f"🚩 KORNER ARTABİLİR ({a_name} geride, {a_sh} şut ve {a_cor} kornerle baskıda ➔ Öneri: Korner Üst / {a_name} Gol)")
-    elif (h_sh >= 8 and h_sot_pct <= 20) or (a_sh >= 8 and a_sot_pct <= 20):
+    h_is_strong_fav = (not is_away_fav and (fav_val <= -140 or h_mom >= 65))
+    a_is_strong_fav = (is_away_fav and (fav_val <= -140 or a_mom >= 65))
+
+    goal_line = f"{tot_goals + 0.5}"
+    rem_mins = max(1, 90 - m_int)
+    cor_add = 2.5 if rem_mins >= 25 else 1.5
+    cor_line = f"{tot_cor + cor_add}"
+
+    heat = 20 + int((tot_sh / max(12, m_int)) * 28) + (tot_sot * 4) + int(tot_cor * 2.2)
+    sot_tag = ""
+    exp_list = []
+    sig_type = ""
+
+    h_pressing = (h_sh >= 5 or h_cor >= 3 or h_poss >= 58)
+    a_pressing = (a_sh >= 5 or a_cor >= 3 or a_poss >= 58)
+
+    if h_is_strong_fav and h_score <= a_score and h_pressing and m_int >= 18:
+        if h_score < a_score:
+            sot_tag += "|💎FavGeride->Pusu"
+            heat += 22
+            sig_type = "KORNER" if h_cor >= 3 else "GOL"
+            exp_list.append(
+                f"💎 ELMAS PUSU ({h_name} Favori Geride!): %{h_poss} top, {h_sh} şut, {h_cor} kornerle yükleniyor "
+                f"➔ 🎯 HAMLE: Maç {goal_line} Gol Üst & Toplam {cor_line} Korner Üst"
+            )
+        elif m_int >= 25:
+            sot_tag += "|💎FavKilitli->Pusu"
+            heat += 16
+            sig_type = "GOL"
+            exp_list.append(
+                f"💎 FAVORİ ABLUKASI ({h_name} {h_score}-{a_score}): %{h_poss} top, {h_sh}({h_sot}) şut, {h_cor} korner "
+                f"➔ 🎯 HAMLE: {h_name} {h_score + 0.5} Gol Üst / Toplam {cor_line} Korner Üst"
+            )
+    elif a_is_strong_fav and a_score <= h_score and a_pressing and m_int >= 18:
+        if a_score < h_score:
+            sot_tag += "|💎FavGeride->Pusu"
+            heat += 22
+            sig_type = "KORNER" if a_cor >= 3 else "GOL"
+            exp_list.append(
+                f"💎 ELMAS PUSU ({a_name} Favori Geride!): %{a_poss} top, {a_sh} şut, {a_cor} kornerle yükleniyor "
+                f"➔ 🎯 HAMLE: Maç {goal_line} Gol Üst & Toplam {cor_line} Korner Üst"
+            )
+        elif m_int >= 25:
+            sot_tag += "|💎FavKilitli->Pusu"
+            heat += 16
+            sig_type = "GOL"
+            exp_list.append(
+                f"💎 FAVORİ ABLUKASI ({a_name} {h_score}-{a_score}): %{a_poss} top, {a_sh}({a_sot}) şut, {a_cor} korner "
+                f"➔ 🎯 HAMLE: {a_name} {a_score + 0.5} Gol Üst / Toplam {cor_line} Korner Üst"
+            )
+
+    if (h_score < a_score and h_pressing) or (a_score < h_score and a_pressing):
+        if "|💎FavGeride->Pusu" not in sot_tag:
+            sot_tag += "|🚩GerideBaskı->Korner"
+            heat += 14
+            sig_type = sig_type or "KORNER"
+            p_name = h_name if h_score < a_score else a_name
+            p_sh = h_sh if h_score < a_score else a_sh
+            p_cor = h_cor if h_score < a_score else a_cor
+            exp_list.append(
+                f"🚩 GERİDEKİ BASKISI ({p_name}): {p_sh} şut ve {p_cor} kornerle kanatları zorluyor "
+                f"➔ 🎯 HAMLE: Toplam {cor_line} Korner Üst"
+            )
+
+    if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
+        sot_tag += "|🎯KeskinGol"
+        heat += 12
+        sig_type = sig_type or "GOL"
+        exp_list.append(
+            f"⚡ KESKİN ŞUT (%{tot_sot_pct} İsabet [{tot_sot}/{tot_sh}]) ➔ 🎯 HAMLE: Canlı Maç {goal_line} Gol Üst"
+        )
+    elif (h_sh >= 8 and h_sot_pct <= 18) or (a_sh >= 8 and a_sot_pct <= 18):
+        sot_tag += "|📐KörŞut->Korner"
+        heat += 10
+        sig_type = sig_type or "KORNER"
         dom_t = h_name if h_sh >= a_sh else a_name
-        exp_list.append(f"📐 KORNER ARTABİLİR ({dom_t} çok şut deniyor ama çerçeve kapalı ➔ Öneri: Canlı Korner Üst)")
-    elif (m_int <= 45 and tot_cor >= 6) or (m_int > 45 and tot_cor >= 10):
-        exp_list.append(f"🚩 KORNER TEMPOSU YÜKSEK ({h_cor}-{a_cor} toplam {tot_cor} korner ➔ Öneri: Canlı Korner Üst)")
+        exp_list.append(
+            f"📐 KÖR ŞUT BASKISI ({dom_t} çerçeveyi bulamıyor, toplar kornere gidiyor) ➔ 🎯 HAMLE: Toplam {cor_line} Korner Üst"
+        )
+
+    heat = max(15, min(99, heat))
+
+    if 15 <= m_int <= 75 and heat >= 68 and sig_type and match_title not in MEM["live_signals"]:
+        if sig_type == "GOL":
+            MEM["live_signals"][match_title] = {
+                "type": "GOL", "min": m_int, "base": tot_goals, "need": 1,
+                "label": f"{m_int}' ({h_score}-{a_score}) ➔ Maç {tot_goals + 0.5} Üst", "status": "WAIT"
+            }
+        else:
+            need_c = 2 if m_int <= 65 else 2
+            MEM["live_signals"][match_title] = {
+                "type": "KORNER", "min": m_int, "base": tot_cor, "need": need_c,
+                "label": f"{m_int}' ({h_cor}-{a_cor}K) ➔ +{need_c} Korner", "status": "WAIT"
+            }
+
+    if match_title in MEM["live_signals"]:
+        sig = MEM["live_signals"][match_title]
+        if sig["type"] == "GOL" and tot_goals >= sig["base"] + sig["need"]:
+            sig["status"] = "WON"
+        elif sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]:
+            sig["status"] = "WON"
+        if sig["status"] == "WON":
+            exp_list.insert(0, f"✅ CANLI SİNYAL GELDİ! [{sig['label']}]")
 
     if not exp_list:
         if m_int >= 22 and tot_sh <= 4 and tot_sot <= 1:
-            exp_list.append(f"🛡️ Düşük Tempo ({m_int}' itibarıyla sadece {tot_sot} isabetli şut var, canlı üst riskli)")
+            exp_list.append(f"🛡️ Düşük Tempo ({m_int}' itibarıyla {tot_sot} isabetli şut var, canlı üstten uzak dur)")
         else:
-            exp_list.append("⚖️ Dengeli Akış (Anlamlı şut veya korner kırılması bekleniyor)")
+            exp_list.append(f"⚖️ Dengeli Akış (Baskı: %{heat} — Şut veya korner kırılması bekleniyor)")
 
-    return " • ".join(exp_list)
+    return heat, sot_tag, " • ".join(exp_list)
 
 def calc_projected_score(m):
     h_m, a_m = m["h_mom"], m["a_mom"]
@@ -443,7 +508,7 @@ def generate_card_comment_and_score(m):
 
     if "🔥Δ-" in odd_s:
         d_val = odd_s.split("🔥Δ-")[1].split(" ")[0]
-        notes.append(f"00:01 baz oranına göre favoriye -{d_val}p Akıllı Para girişi var")
+        notes.append(f"Sabah baz oranına göre favoriye -{d_val}p Akıllı Para girişi var")
     elif "🚨Δ+" in odd_s:
         d_val = odd_s.split("🚨Δ+")[1].split(" ")[0]
         notes.append(f"DİKKAT! Oranda +{d_val}p sert erime var, taraf/1.5 Üst bahsinden uzak dur")
@@ -465,19 +530,22 @@ def generate_card_comment_and_score(m):
         notes.append(f"Hücum formları düşük ({h_m}-{a_m}), 1.5 Üst yerine koruma devrede")
 
     if not notes:
-        notes.append("Oranlar ve form dengesi 00:01 başlangıç çizgisini koruyor")
+        notes.append("Oranlar ve form dengesi sabah başlangıç çizgisini koruyor")
 
     s1, s2 = calc_projected_score(m)
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
-def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t):
-    lines = [f"### 🧠 Delta Pulse v4.9.7 Keskin Denetçi — Otonom Strateji Raporu (`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t}`)\n"]
+def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t):
+    lines = [
+        f"### 🧠 Delta Pulse v5.0 LIVE PRO — Otonom Strateji Raporu "
+        f"(`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t} | CanlıPusu: {lv_w}/{lv_t}`)\n"
+    ]
 
     if live_m:
-        lines.append("#### 🔴 1. Canlı Tünel & Anlık Beklenti Pusulası")
+        lines.append("#### 🔴 1. Canlı Baskı Sıralaması & Net Barem Pusulası")
         for lm in live_m:
             lines.append(
-                f"* **⏱️ {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
+                f"* **🔥 [Baskı: %{lm['heat']}] {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
                 f"(`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']}) "
                 f"➔ 🔮 **{lm['live_exp']}**"
             )
@@ -491,8 +559,8 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         s1, s2 = calc_projected_score(m)
         lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}` | `Mom: {m['h_mom']}-{m['a_mom']}`) ➔ 🎯 **{m['pick']}** *(Skor: `{s1} / {s2}`)*")
     if smart_list:
-        lines.append("\n**🔥 Gün İçi Para Girişi Alan Yan Adaylar:**")
-        for m in smart_list[:5]:
+        lines.append("\n**🔥 Gün İçi Para Girişi Alan En Güçlü Adaylar:**")
+        for m in smart_list[:6]:
             s1, s2 = calc_projected_score(m)
             lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}`) ➔ **{m['pick']}** *(Skor: `{s1}`)*")
 
@@ -501,14 +569,6 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         lines.append("\n#### 🚨 3. Otonom Erime Freni (Oranı Gevşeyen / Tuzak Maçlar)")
         for m in drift_list[:5]:
             lines.append(f"* **⚠️ [{m['saat']}] {m['mac']}** (`{m['odd_str']}` | Güven: `%{m['conf']}`): Favoriden para çıkışı tespit edildi. Takım 1.5 Üst veya taraf bahsine girilmemeli!")
-
-    if pre_m:
-        lines.append("\n#### 🎯 4. Öne Çıkan Maçlar İçin Tahmini Skor Matrisi")
-        lines.append("| Saat | Karşılaşma | Güven & Oran | Net Hedef | Birincil Skor | Alternatif |")
-        lines.append("| :--- | :--- | :--- | :--- | :---: | :---: |")
-        for m in pre_m[:10]:
-            s1, s2 = calc_projected_score(m)
-            lines.append(f"| **{m['saat']}** | **{m['mac']}** | `%{m['conf']}` ({m['odd_str']}) | **{m['pick']}** | **{s1}** | `{s2}` |")
 
     return "\n".join(lines)
 
@@ -598,24 +658,15 @@ def fetch_all_matches():
             delta_str = ""
             sot_tag = ""
             live_exp = ""
+            heat = 0
             if state == "in":
                 cur_min = detail_clock.replace("'", "").replace("HT", "45").split("+")[0].strip()
                 m_int = safe_int(cur_min, 45)
-                h_sot_pct = int((h_sot / h_sh) * 100) if h_sh > 0 else 0
-                a_sot_pct = int((a_sot / a_sh) * 100) if a_sh > 0 else 0
 
-                h_trailing_push = (h_score < a_score and (h_sh >= 5 or h_cor >= 3 or h_poss >= 58))
-                a_trailing_push = (a_score < h_score and (a_sh >= 5 or a_cor >= 3 or (h_poss > 0 and (100 - h_poss) >= 58)))
-
-                if h_trailing_push or a_trailing_push:
-                    sot_tag += "|🚩GerideBaskı->Korner"
-                if (h_sh >= 5 and h_sot_pct >= 50) or (a_sh >= 5 and a_sot_pct >= 50):
-                    sot_tag += "|🎯KeskinGol"
-                elif (h_sh >= 8 and h_sot_pct <= 18) or (a_sh >= 8 and a_sot_pct <= 18):
-                    sot_tag += "|📐KörŞut->Korner"
-
-                live_exp = build_live_expectations(
-                    h_name, a_name, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int
+                heat, sot_tag, live_exp = analyze_live_pro(
+                    match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score,
+                    h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int,
+                    h_mom, a_mom, fav_abbr, fav_val
                 )
 
                 snap = MEM["live_snapshots"].get(match_title)
@@ -630,9 +681,19 @@ def fetch_all_matches():
                     d_ac = max(0, a_cor - snap["a_cor"])
                     delta_str = f"|Δ({snap['min']}'->{m_int}'):+{d_hs}/{d_as}Ş,+{d_hc}/{d_ac}K"
 
-            if state == "post" and date_str != MEM.get("settled_date", ""):
-                won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-                MEM["settled_results"][match_title] = {"won": won, "is_ak": ("Ana Kasa" in pick)}
+            if state == "post":
+                if match_title in MEM["live_signals"]:
+                    sig = MEM["live_signals"][match_title]
+                    if sig["type"] == "GOL" and (h_score + a_score) >= sig["base"] + sig["need"]:
+                        sig["status"] = "WON"
+                    elif sig["type"] == "KORNER" and (h_cor + a_cor) >= sig["base"] + sig["need"]:
+                        sig["status"] = "WON"
+                    elif sig["status"] == "WAIT":
+                        sig["status"] = "LOST"
+
+                if date_str != MEM.get("settled_date", ""):
+                    won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
+                    MEM["settled_results"][match_title] = {"won": won, "is_ak": ("Ana Kasa" in pick)}
 
             results.append({
                 "state": state, "saat": saat_str, "clock": detail_clock, "lig": lig_adi,
@@ -642,7 +703,7 @@ def fetch_all_matches():
                 "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
                 "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
                 "cards": cards, "h_poss": h_poss, "delta_str": delta_str,
-                "sot_tag": sot_tag, "live_exp": live_exp
+                "sot_tag": sot_tag, "live_exp": live_exp, "heat": heat
             })
     return results
 
@@ -659,17 +720,24 @@ tot_pct = int(round((tot_w / tot_t) * 100)) if tot_t > 0 else 0
 ak_w = MEM["base_ak_wins"] + today_ak_w
 ak_t = MEM["base_ak_total"] + today_ak_t
 
-now_str = datetime.now(TR_TZ).strftime("%Y%m%d %H:%M")
-mini_lines = [f"⚡ DP-MİNİ [{now_str}] Karne:{tot_w}/{tot_t}(%{tot_pct}) AK:{ak_w}/{ak_t}"]
+lv_settled = [s for s in MEM["live_signals"].values() if s["status"] in ("WON", "LOST")]
+lv_w = sum(1 for s in lv_settled if s["status"] == "WON")
+lv_t = len(lv_settled)
+lv_active = sum(1 for s in MEM["live_signals"].values() if s["status"] == "WAIT")
 
-live_m = [m for m in matches if m["state"] == "in"]
+now_str = datetime.now(TR_TZ).strftime("%Y%m%d %H:%M")
+mini_lines = [
+    f"⚡ DP-MİNİ [{now_str}] Karne:{tot_w}/{tot_t}(%{tot_pct}) AK:{ak_w}/{ak_t} CanlıPusu:{lv_w}/{lv_t}(Aktif:{lv_active})"
+]
+
+live_m = sorted([m for m in matches if m["state"] == "in"], key=lambda x: x["heat"], reverse=True)
 pre_m = sorted([m for m in matches if m["state"] == "pre"], key=lambda x: x["conf"], reverse=True)
 post_m = [m for m in matches if m["state"] == "post"]
 
 for m in live_m:
     clk = str(m["clock"]).replace(" ", "")
     mini_lines.append(
-        f"CANLI|{clk}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|"
+        f"CANLI|{clk}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|"
         f"Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|"
         f"Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}"
         f"{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}"
@@ -687,12 +755,15 @@ for m in post_m:
 
 full_dp_text = "\n".join(mini_lines)
 
-st.markdown(f"**📊 Dürüst Karne:** `{tot_w}/{tot_t} (%{tot_pct})` | **💎 Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Canlı:** `{len(live_m)}` | **⏳ Maç Önü:** `{len(pre_m)}`")
+st.markdown(
+    f"**📊 Karne:** `{tot_w}/{tot_t} (%{tot_pct})` | **💎 Ana Kasa:** `{ak_w}/{ak_t}` | "
+    f"**🎯 Canlı Pusu:** `{lv_w}/{lv_t} (Aktif: {lv_active})` | **🔥 Canlı:** `{len(live_m)}`"
+)
 
 col_btn1, col_btn2 = st.columns([3, 1])
 with col_btn1:
-    if st.button("🧠 GEMİNİ MERKEZ ÜS YORUMUNU ÇIKAR (CANLI & MAÇ ÖNÜ)", use_container_width=True):
-        MEM["last_ai_report"] = build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t)
+    if st.button("🧠 GEMİNİ v5.0 LIVE PRO RAPORUNU ÇIKAR", use_container_width=True):
+        MEM["last_ai_report"] = build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t)
 with col_btn2:
     if st.button("🔄 Verileri Yenile", use_container_width=True):
         st.cache_data.clear()
@@ -705,21 +776,23 @@ with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code(full_dp_text, language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı Tünel, Keskinlik & Korner Radar")
+    st.markdown("### 🔴 Canlı PRO Radar (Baskı Puanına Göre En Sıcaktan Sıralı)")
     for m in live_m:
-        is_hot_exp = any(k in m["live_exp"] for k in ["⚡", "🚩", "📐"])
+        is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "✅"])
         exp_cls = "dp-exp-alert" if is_hot_exp else "dp-exp-calm"
+        card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
         st.markdown(
-            f"<div class='dp-card dp-live'><b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
+            f"<div class='{card_c}'><span class='dp-heat'>🔥 Baskı: %{m['heat']}</span> "
+            f"<b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
             f"<span class='dp-badge'>{m['lig']}</span><br>"
             f"🎯 Şut: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']}</b> | "
             f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']} {m['sot_tag']}<br>"
             f"📌 <b>Kilitli Hedef:</b> {m['pick']}<br>"
-            f"<div class='{exp_cls}'>🔮 <b>Canlı Beklenti:</b> {m['live_exp']}</div></div>",
+            f"<div class='{exp_cls}'>🔮 <b>Canlı PRO:</b> {m['live_exp']}</div></div>",
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v4.9.7 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v5.0 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
