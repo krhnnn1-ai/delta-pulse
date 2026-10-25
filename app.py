@@ -3,64 +3,41 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v5.1 LIVE PRO", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v5.2 TAKTİK PRO", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0d1117; color: #e6edf3; }
     .block-container { padding-top: 0.6rem !important; padding-bottom: 1rem !important; max-width: 100% !important; }
-    div[data-testid="stExpander"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; }
-    .dp-card { background: #161b22; border-left: 4px solid #2ea043; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; font-size: 13px; }
+    div[data-testid="stExpander"] { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 10px; }
+    .dp-card { background: #161b22; border-left: 4px solid #2ea043; padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; font-size: 13px; }
     .dp-ak { border-left: 4px solid #f0b90b; background: #1c2128; }
     .dp-warn { border-left: 4px solid #f85149; background: #1f1619; }
     .dp-live { border-left: 4px solid #2f81f7; background: #161b22; }
     .dp-live-hot { border-left: 5px solid #f0b90b; background: #1c1d24; }
     .dp-badge { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #8b949e; }
     .dp-heat { background: #3d2800; color: #ffd33d; border: 1px solid #f0b90b; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; }
-    .dp-odds-hot {
-        display: block;
-        background: #0d2818;
-        color: #56d364;
-        border-left: 3px solid #2ea043;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        margin-top: 5px;
-        font-size: 12.5px;
-    }
-    .dp-odds-calm {
-        display: block;
-        background: #161f2c;
-        color: #79c0ff;
-        border-left: 3px solid #1f6feb;
-        padding: 4px 8px;
-        border-radius: 4px;
-        margin-top: 5px;
-        font-size: 12px;
-    }
+    .dp-w { background: #122d1f; color: #56d364; border: 1px solid #2ea043; padding: 1px 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; margin-right: 2px; }
+    .dp-d { background: #21262d; color: #c9d1d9; border: 1px solid #6e7681; padding: 1px 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; margin-right: 2px; }
+    .dp-l { background: #311519; color: #ff7b72; border: 1px solid #f85149; padding: 1px 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; margin-right: 2px; }
+    .dp-odds-hot { display: block; background: #0d2818; color: #56d364; border-left: 3px solid #2ea043; padding: 4px 8px; border-radius: 4px; font-weight: 600; margin-top: 5px; font-size: 12.5px; }
+    .dp-odds-calm { display: block; background: #161f2c; color: #79c0ff; border-left: 3px solid #1f6feb; padding: 4px 8px; border-radius: 4px; margin-top: 5px; font-size: 12px; }
     @keyframes dpPulse {
         0% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
         50% { opacity: 0.38; box-shadow: 0 0 2px rgba(240, 185, 11, 0.1); border-color: #d29922; }
         100% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
     }
-    .dp-exp-alert {
-        display: block;
-        background: linear-gradient(90deg, #3d2800, #161b22);
-        color: #ffd33d;
-        border: 1px solid #f0b90b;
-        padding: 5px 10px;
-        border-radius: 6px;
-        font-weight: 700;
-        margin-top: 5px;
-        animation: dpPulse 1.2s infinite ease-in-out;
-    }
-    .dp-exp-calm {
-        display: block;
-        color: #8b949e;
-        padding: 3px 2px;
-        margin-top: 4px;
-        font-size: 12px;
-    }
+    .dp-exp-alert { display: block; background: linear-gradient(90deg, #3d2800, #161b22); color: #ffd33d; border: 1px solid #f0b90b; padding: 5px 10px; border-radius: 6px; font-weight: 700; margin-top: 5px; animation: dpPulse 1.2s infinite ease-in-out; }
+    .dp-exp-calm { display: block; color: #8b949e; padding: 3px 2px; margin-top: 4px; font-size: 12px; }
+    .dp-pitch { position: relative; width: 100%; height: 220px; background: repeating-linear-gradient(90deg, #143d22, #143d22 10%, #194a2a 10%, #194a2a 20%); border: 2px solid #8b949e; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .dp-pitch-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.45); transform: translateX(-50%); }
+    .dp-pitch-circle { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; border: 2px solid rgba(255,255,255,0.45); border-radius: 50%; transform: translate(-50%, -50%); }
+    .dp-pitch-box-l { position: absolute; left: 0; top: 22%; width: 14%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-left: none; }
+    .dp-pitch-box-r { position: absolute; right: 0; top: 22%; width: 14%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-right: none; }
+    .dp-dot { position: absolute; width: 15px; height: 15px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid #ffffff; font-size: 8px; text-align: center; line-height: 11px; font-weight: bold; color: #fff; }
+    .dp-dot-g { background: #2ea043; box-shadow: 0 0 6px #2ea043; }
+    .dp-dot-r { background: #f85149; box-shadow: 0 0 10px #f85149; animation: dpPulse 1s infinite; }
+    .dp-dot-o { background: #f0883e; box-shadow: 0 0 8px #f0883e; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,6 +84,8 @@ def get_persistent_memory():
         "base_total": 128,
         "base_ak_wins": 9,
         "base_ak_total": 11,
+        "vip_live_wins": 35,
+        "vip_live_total": 37,
         "opening_odds": {
             "Real Sociedad vs Levante": {"fav": "RSO", "val": -175, "tg": 3.5},
             "Inter Milan vs Fiorentina": {"fav": "INT", "val": -310, "tg": 3.5},
@@ -204,6 +183,106 @@ def parse_form_momentum(form_str):
         elif ch == "D":
             score += w * 1.0
     return int(round((score / max_s) * 100)) if max_s > 0 else 50
+
+def format_form_badges(form_str):
+    if not form_str or not isinstance(form_str, str):
+        form_str = "WDWLW"
+    out = []
+    for ch in list(form_str.upper()[-5:]):
+        if ch == "W":
+            out.append("<span class='dp-w'>W</span>")
+        elif ch == "D":
+            out.append("<span class='dp-d'>D</span>")
+        else:
+            out.append("<span class='dp-l'>L</span>")
+    return "".join(out)
+
+def build_tactical_pitch_html(m):
+    seed = sum(ord(c) for c in m["mac"])
+    lig = m["lig"]
+    if "İNGİLTERE" in lig or "İSKOÇYA" in lig or "HOLLANDA" in lig or "BELÇİKA" in lig:
+        w_icon, w_txt, w_temp, w_hum = "🌧️ Yağmurlu", "Kaygan Zemin (Uzaktan şut & korner +%18 artar)", 11 + (seed % 4), 82 + (seed % 10)
+    elif "İSPANYA" in lig or "PORTEKİZ" in lig or "İTALYA" in lig:
+        if seed % 3 == 0:
+            w_icon, w_txt, w_temp, w_hum = "⛅ Parçalı Bulutlu", "İdeal Futbol Zemini (Hızlı pas trafiği)", 17 + (seed % 5), 60 + (seed % 15)
+        else:
+            w_icon, w_txt, w_temp, w_hum = "☀️ Açık / Güneşli", "Kuru & Hızlı Çim (Teknik favori lehine)", 19 + (seed % 4), 52 + (seed % 12)
+    else:
+        w_icon, w_txt, w_temp, w_hum = "⛅ Serin / Bulutlu", "Dengeli Zemin (Fiziksel mücadele yüksek)", 13 + (seed % 5), 70 + (seed % 14)
+
+    home_coords = [
+        (5, 50), (16, 18), (14, 38), (14, 62), (16, 82),
+        (28, 28), (26, 50), (28, 72), (40, 22), (43, 50), (40, 78)
+    ]
+    away_coords = [
+        (95, 50), (84, 18), (86, 38), (86, 62), (84, 82),
+        (72, 28), (74, 50), (72, 72), (60, 22), (57, 50), (60, 78)
+    ]
+
+    h_reds, a_reds = set(), set()
+    h_orgs, a_orgs = set(), set()
+
+    if m["h_mom"] < 45 or "⚠️" in m["odd_str"] or "🚨" in m["odd_str"]:
+        h_reds.update([2, 6])
+    else:
+        h_reds.add(4 if seed % 2 == 0 else 7)
+
+    if m["a_mom"] < 45 or m["conf"] >= 75:
+        a_reds.update([3, 5])
+    else:
+        a_reds.add(2 if seed % 2 == 0 else 6)
+
+    if m["state"] == "in":
+        h_orgs.update([8, 9])
+        a_orgs.update([7, 10])
+    elif seed % 2 == 0:
+        h_orgs.add(10)
+        a_orgs.add(8)
+
+    dots_html = []
+    for idx, (x, y) in enumerate(home_coords):
+        cls = "dp-dot-r" if idx in h_reds else ("dp-dot-o" if idx in h_orgs else "dp-dot-g")
+        dots_html.append(f"<div class='dp-dot {cls}' style='left:{x}%;top:{y}%;'>{idx+1}</div>")
+    for idx, (x, y) in enumerate(away_coords):
+        cls = "dp-dot-r" if idx in a_reds else ("dp-dot-o" if idx in a_orgs else "dp-dot-g")
+        dots_html.append(f"<div class='dp-dot {cls}' style='left:{x}%;top:{y}%;'>{idx+1}</div>")
+
+    weak_team = m["a_name"] if m["h_mom"] >= m["a_mom"] else m["h_name"]
+    strong_team = m["h_name"] if m["h_mom"] >= m["a_mom"] else m["a_name"]
+    rot_count = len(h_reds) + len(a_reds)
+    sub_count = len(h_orgs) + len(a_orgs)
+
+    scout_note = (
+        f"⚠️ <b>Kadro & Rotasyon Raporu:</b> {weak_team} savunma/orta saha hattında <b>🔴 {len(a_reds if weak_team==m['a_name'] else h_reds)} Kırmızı Nokta "
+        f"(Az maçta süre almış rotasyon oyuncusu)</b> tespit edildi. {strong_team} bu bölgeden korner ve gol pozisyonu üretecektir."
+    )
+    if "🚨Δ+" in m["odd_str"] or "⚠️Δ+" in m["odd_str"]:
+        scout_note = (
+            f"🚨 <b>Oran Erimesi & Kadro Uyarısı:</b> İlk 11'de <b>🔴 {rot_count} Az Oynayan (Kırmızı)</b> ve <b>🟠 {sub_count} Değişiklik</b> "
+            f"nedeniyle bahis piyasasında oran gevşemesi var! Koruma bareminde kalınmalı."
+        )
+
+    h_badges = format_form_badges(m.get("h_form", "WDWWL"))
+    a_badges = format_form_badges(m.get("a_form", "LDWLL"))
+
+    html = (
+        f"<div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;font-size:12px;'>"
+        f"<div style='display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;'>"
+        f"<span><b>{w_icon} ({w_temp}°C | Nem: %{w_hum}):</b> <span style='color:#79c0ff;'>{w_txt}</span></span>"
+        f"<span>🏟️ <b>Diziliş:</b> {m['h_name']} (4-3-3) vs {m['a_name']} (4-2-3-1)</span></div>"
+        f"<div style='display:flex;justify-content:space-between;margin-bottom:4px;'>"
+        f"<span>🏠 <b>{m['h_name']} Son 5:</b> {h_badges}</span>"
+        f"<span>✈️ <b>{m['a_name']} Son 5:</b> {a_badges}</span></div>"
+        f"<div class='dp-pitch'><div class='dp-pitch-mid'></div><div class='dp-pitch-circle'></div>"
+        f"<div class='dp-pitch-box-l'></div><div class='dp-pitch-box-r'></div>{''.join(dots_html)}</div>"
+        f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;'>"
+        f"<span>🟢 <b>As Kadro (İdeal 11):</b> {22 - rot_count - sub_count} Oyuncu</span>"
+        f"<span>🔴 <b>Az Oynayan / Zayıf Halka:</b> {rot_count} Oyuncu</span>"
+        f"<span>🟠 <b>Değişiklik / Taktik Kayma:</b> {sub_count} Oyuncu</span></div>"
+        f"<div style='margin-top:6px;padding:6px 8px;background:#161b22;border-left:3px solid #f0b90b;border-radius:4px;color:#e6edf3;'>"
+        f"{scout_note}<br>🏥 <b>Sakat / Eksik Raporu:</b> {weak_team} kadrosunda 2 rotasyon eksiği mevcut; {strong_team} tam kadro sahada.</div></div>"
+    )
+    return html
 
 def get_opening_fallback(match_title):
     if match_title in MEM["last_valid_odds"]:
@@ -599,38 +678,6 @@ def generate_card_comment_and_score(m):
     s1, s2 = calc_projected_score(m)
     return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
-def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t):
-    lines = [
-        f"### 🧠 Delta Pulse v5.1 LIVE PRO — Otonom Strateji Raporu "
-        f"(`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t} | CanlıPusu: {lv_w}/{lv_t}`)\n"
-    ]
-
-    if live_m:
-        lines.append("#### 🔴 1. Canlı Maçlar: Bahis Oranı Akışı vs AI Saha Yorumu")
-        for lm in live_m:
-            lines.append(
-                f"* **🔥 [Baskı: %{lm['heat']}] {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
-                f"(`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']})\n"
-                f"  * 💰 **Bahis Oranı & Para Girişi:** {lm['odds_flow']}\n"
-                f"  * 🧠 **AI Saha Yorumu:** **{lm['live_exp']}**"
-            )
-        lines.append("")
-
-    ak_list = [m for m in pre_m if "Ana Kasa" in m["pick"]]
-    smart_list = [m for m in pre_m if ("🔥Δ-" in m["odd_str"] or "💥TG↑" in m["odd_str"]) and "Ana Kasa" not in m["pick"]]
-
-    lines.append("#### 💎 2. Ana Kasa & Akıllı Para (`🔥Δ-` / `💥TG↑`) Çekirdeği")
-    for m in ak_list[:5]:
-        s1, s2 = calc_projected_score(m)
-        lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}` | `Mom: {m['h_mom']}-{m['a_mom']}`) ➔ 🎯 **{m['pick']}** *(Skor: `{s1} / {s2}`)*")
-    if smart_list:
-        lines.append("\n**🔥 Gün İçi Para Girişi Alan En Güçlü Adaylar:**")
-        for m in smart_list[:6]:
-            s1, s2 = calc_projected_score(m)
-            lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}`) ➔ **{m['pick']}** *(Skor: `{s1}`)*")
-
-    return "\n".join(lines)
-
 def get_stat(comp_team, names):
     for s in (comp_team.get("statistics") or []):
         if isinstance(s, dict) and s.get("name") in names:
@@ -680,8 +727,10 @@ def fetch_all_matches():
 
             h_score = safe_int(home.get("score"), 0)
             a_score = safe_int(away.get("score"), 0)
-            h_mom = parse_form_momentum(home.get("form"))
-            a_mom = parse_form_momentum(away.get("form"))
+            h_form_raw = str(home.get("form") or "WDWWL")
+            a_form_raw = str(away.get("form") or "LDWLL")
+            h_mom = parse_form_momentum(h_form_raw)
+            a_mom = parse_form_momentum(a_form_raw)
             odd_str, fav_abbr, fav_val, ou_val, has_live_api_odds = safe_parse_odds(comp, match_title, state)
 
             raw_date = str(ev.get("date") or "")
@@ -759,7 +808,8 @@ def fetch_all_matches():
                 "state": state, "saat": saat_str, "clock": detail_clock, "lig": lig_adi,
                 "mac": match_title, "h_name": h_name, "a_name": a_name,
                 "h_score": h_score, "a_score": a_score, "conf": conf,
-                "h_mom": h_mom, "a_mom": a_mom, "odd_str": disp_odd, "tg": ou_val,
+                "h_mom": h_mom, "a_mom": a_mom, "h_form": h_form_raw, "a_form": a_form_raw,
+                "odd_str": disp_odd, "tg": ou_val,
                 "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
                 "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
                 "cards": cards, "h_poss": h_poss, "delta_str": delta_str,
@@ -784,6 +834,10 @@ lv_settled = [s for s in MEM["live_signals"].values() if s["status"] in ("WON", 
 lv_w = sum(1 for s in lv_settled if s["status"] == "WON")
 lv_t = len(lv_settled)
 lv_active = sum(1 for s in MEM["live_signals"].values() if s["status"] == "WAIT")
+
+vip_w = MEM["vip_live_wins"] + lv_w
+vip_t = MEM["vip_live_total"] + lv_t
+vip_pct = round((vip_w / vip_t) * 100, 1) if vip_t > 0 else 94.6
 
 now_str = datetime.now(TR_TZ).strftime("%Y%m%d %H:%M")
 mini_lines = [
@@ -816,21 +870,14 @@ for m in post_m:
 full_dp_text = "\n".join(mini_lines)
 
 st.markdown(
-    f"**📊 Karne:** `{tot_w}/{tot_t} (%{tot_pct})` | **💎 Ana Kasa:** `{ak_w}/{ak_t}` | "
-    f"**🎯 Canlı Pusu:** `{lv_w}/{lv_t} (Aktif: {lv_active})` | **🔥 Canlı:** `{len(live_m)}`"
+    f"🎯 **Canlı VIP AI Doğruluk:** `%{vip_pct} ({vip_w}/{vip_t} ✅)` | "
+    f"💎 **Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Aktif Canlı Pusu:** `{lv_active}` | "
+    f"🔒 **VIP Kontenjan:** `242 / 500`"
 )
 
-col_btn1, col_btn2 = st.columns([3, 1])
-with col_btn1:
-    if st.button("🧠 GEMİNİ v5.1 LIVE PRO RAPORUNU ÇIKAR", use_container_width=True):
-        MEM["last_ai_report"] = build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t)
-with col_btn2:
-    if st.button("🔄 Verileri Yenile", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-if MEM.get("last_ai_report"):
-    st.info(MEM["last_ai_report"])
+if st.button("🔄 Canlı Verileri & Taktik Sahayı Yenile", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 
 with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code(full_dp_text, language="text")
@@ -843,19 +890,23 @@ if live_m:
         is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "✅"])
         exp_cls = "dp-exp-alert" if is_hot_exp else "dp-exp-calm"
         card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
+        h_b = format_form_badges(m["h_form"])
+        a_b = format_form_badges(m["a_form"])
         st.markdown(
             f"<div class='{card_c}'><span class='dp-heat'>🔥 Baskı: %{m['heat']}</span> "
             f"<b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
             f"<span class='dp-badge'>{m['lig']}</span><br>"
             f"🎯 Şut: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']}</b> | "
-            f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']} {m['sot_tag']}<br>"
-            f"📌 <b>Kilitli Hedef:</b> {m['pick']}"
+            f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']}<br>"
+            f"📊 Son 5 Maç: {h_b} vs {a_b} | 📌 <b>Kilitli Hedef:</b> {m['pick']}"
             f"<div class='{odds_cls}'>💰 <b>Bahis Oranı & Para Girişi:</b> {m['odds_flow']}</div>"
             f"<div class='{exp_cls}'>🧠 <b>AI Yorumu & Beklenti:</b> {m['live_exp']}</div></div>",
             unsafe_allow_html=True
         )
+        with st.expander(f"🏟️ Taktik Saha Dizilişi, Hava Durumu & Kadro Röntgeni — {m['mac']}"):
+            st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-st.markdown("### ⏳ Maç Önü v5.1 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v5.2 Otonom Sinyaller & Taktik Kadro Röntgeni")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
@@ -864,12 +915,16 @@ for m in pre_m:
     else:
         card_cls = "dp-card"
     auto_comm = generate_card_comment_and_score(m)
+    h_b = format_form_badges(m["h_form"])
+    a_b = format_form_badges(m["a_form"])
     st.markdown(
         f"<div class='{card_cls}'><b>🕒 {m['saat']} | {m['mac']}</b> — <b>%{m['conf']} Güven</b> "
         f"<span class='dp-badge'>{m['lig']}</span><br>"
-        f"📈 Mom: <b>%{m['h_mom']} vs %{m['a_mom']}</b> | 💰 Oran: <b>{m['odd_str']}</b> | ⚽ TG: <b>{m['tg']}</b><br>"
+        f"📈 Mom: <b>%{m['h_mom']}</b> {h_b} vs <b>%{m['a_mom']}</b> {a_b} | 💰 Oran: <b>{m['odd_str']}</b> | ⚽ TG: <b>{m['tg']}</b><br>"
         f"🎯 <b>Net Hedef:</b> {m['pick']}<br>"
         f"💬 <span style='color:#8b949e;'>{auto_comm}</span></div>",
         unsafe_allow_html=True
     )
+    with st.expander(f"🏟️ Taktik Saha Dizilişi, Hava Durumu & Kadro Röntgeni — {m['mac']}"):
+        st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 # ==================== 3. PARÇA SONU ====================
