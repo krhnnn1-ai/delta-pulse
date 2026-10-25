@@ -321,9 +321,60 @@ def parse_single_team_roster(roster_obj, fallback_tac):
     }
 # ==================== 2. PARÇA SONU ====================
 # ==================== 3. PARÇA BAŞLANGICI ====================
+MEM["roster_cache"].clear()
+
+def parse_single_team_roster(roster_obj, fallback_tac, state="pre"):
+    tac = str(roster_obj.get("formation") or "").strip()
+    if "-" not in tac:
+        tac = fallback_tac
+    entries = roster_obj.get("roster") or []
+    starters = [p for p in entries if isinstance(p, dict) and p.get("starter")]
+    is_live = (state == "in")
+    subs_in = [p for p in entries if isinstance(p, dict) and not p.get("starter") and p.get("subbedIn")] if is_live else []
+
+    dots, red_names, org_names = [], [], []
+    def_weak, att_weak, atk_subs = 0, 0, 0
+
+    for idx, p in enumerate(starters[:11]):
+        ath = p.get("athlete") or {}
+        s_name = str(ath.get("shortName") or ath.get("displayName") or f"Oyuncu {idx+1}")
+        jersey = safe_int(p.get("jersey"), idx + 1)
+        pos_abbr = str((p.get("position") or {}).get("abbreviation") or "").upper()
+        sub_out = bool(p.get("subbedOut")) if is_live else False
+        has_card = any(isinstance(st_i, dict) and st_i.get("name") in ("yellowCards", "redCards") and safe_int(st_i.get("value"), 0) > 0 for st_i in (p.get("stats") or [])) if is_live else False
+        is_rot = (jersey >= 27) or (idx == 0 and jersey not in (1, 13, 23, 25, 31, 99)) or (1 <= idx <= 4 and jersey >= 24)
+        if is_rot:
+            status = "R"
+            red_names.append(f"#{jersey} {s_name}")
+            if idx <= 5 or "D" in pos_abbr or "G" in pos_abbr:
+                def_weak += 1
+            else:
+                att_weak += 1
+        elif is_live and (sub_out or has_card):
+            status = "O"
+            org_names.append(f"#{jersey} {s_name} ({'Çıktı' if sub_out else 'Kart'})")
+        else:
+            status = "G"
+        dots.append({"num": jersey, "name": s_name, "status": status})
+
+    for sp in subs_in:
+        ath = sp.get("athlete") or {}
+        s_name = str(ath.get("shortName") or ath.get("displayName") or "Yedek")
+        jersey = safe_int(sp.get("jersey"), 99)
+        pos_abbr = str((sp.get("position") or {}).get("abbreviation") or "").upper()
+        org_names.append(f"#{jersey} {s_name} (Girdi)")
+        if "F" in pos_abbr or "M" in pos_abbr or "A" in pos_abbr or len(subs_in) >= 2:
+            atk_subs += 1
+
+    return {
+        "official": len(starters) >= 11, "tac": tac, "dots": dots,
+        "red_names": red_names[:3], "org_names": org_names[:3],
+        "def_weak": def_weak, "att_weak": att_weak, "atk_subs": atk_subs
+    }
+
 def fetch_and_analyze_roster(task):
     slug, ev_id, m_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task
-    cache_key = f"{ev_id}_{state}"
+    cache_key = f"{ev_id}_{state}_v2"
     if cache_key in MEM["roster_cache"]:
         return m_title, MEM["roster_cache"][cache_key]
 
@@ -348,22 +399,22 @@ def fetch_and_analyze_roster(task):
             elif r_item.get("homeAway") == "away":
                 a_rost_raw = r_item
 
-    h_info = parse_single_team_roster(h_rost_raw, h_tac_fb)
-    a_info = parse_single_team_roster(a_rost_raw, a_tac_fb)
+    h_info = parse_single_team_roster(h_rost_raw, h_tac_fb, state)
+    a_info = parse_single_team_roster(a_rost_raw, a_tac_fb, state)
+    both_official = (h_info["official"] and a_info["official"])
 
-    if not h_info["official"]:
-        h_info["dots"] = [{"num": i+1, "name": f"{h_name} #{i+1}", "status": "G"} for i in range(11)]
-        a_info["dots"] = [{"num": i+1, "name": f"{a_name} #{i+1}", "status": "G"} for i in range(11)]
-        h_info["def_weak"], a_info["def_weak"] = 0, 0
-        h_info["att_weak"], a_info["att_weak"] = 0, 0
-        h_info["red_names"], a_info["red_names"] = [], []
+    if not both_official:
+        for inf, t_n in ((h_info, h_name), (a_info, a_name)):
+            inf["dots"] = [{"num": i+1, "name": f"{t_n} #{i+1}", "status": "G"} for i in range(11)]
+            inf["def_weak"], inf["att_weak"], inf["atk_subs"] = 0, 0, 0
+            inf["red_names"], inf["org_names"] = [], []
 
     is_away_fav = bool(fav_abbr and (fav_abbr.upper() == a_abbr.upper() or fav_abbr.upper() in a_name.upper()[:4]))
     h_info["pwr"] = calc_team_5powers(h_name, h_mom, kademe, not is_away_fav, fav_val, h_info["def_weak"], h_info["att_weak"], h_info["atk_subs"])
     a_info["pwr"] = calc_team_5powers(a_name, a_mom, kademe, is_away_fav, fav_val, a_info["def_weak"], a_info["att_weak"], a_info["atk_subs"])
 
-    res = {"h": h_info, "a": a_info, "official": (h_info["official"] and a_info["official"])}
-    if res["official"] or state == "in":
+    res = {"h": h_info, "a": a_info, "official": both_official}
+    if both_official or state == "in":
         MEM["roster_cache"][cache_key] = res
     return m_title, res
 
@@ -388,10 +439,8 @@ def build_power_bars_html(h_name, a_name, h_p, a_p):
         h_col = "#56d364" if hv >= av + 4 else ("#58a6ff" if hv >= av else "#8b949e")
         a_col = "#ffd33d" if av >= hv + 4 else ("#d29922" if av >= hv else "#8b949e")
         rows.append(
-            f"<div class='dp-pbar-row'>"
-            f"<b style='color:{h_col};width:28px;'>{hv}</b>"
-            f"<div class='dp-pbar-track'>"
-            f"<div style='width:{h_pct}%;background:{h_col};'></div>"
+            f"<div class='dp-pbar-row'><b style='color:{h_col};width:28px;'>{hv}</b>"
+            f"<div class='dp-pbar-track'><div style='width:{h_pct}%;background:{h_col};'></div>"
             f"<div style='width:{a_pct}%;background:{a_col};'></div></div>"
             f"<span style='width:155px;text-align:center;color:#c9d1d9;font-size:10.5px;'>{label}</span>"
             f"<b style='color:{a_col};width:28px;text-align:right;'>{av}</b></div>"
@@ -410,7 +459,7 @@ def build_tactical_pitch_html(m):
 
     r_data = m.get("roster_data") or {}
     h_inf, a_inf = r_data.get("h") or {}, r_data.get("a") or {}
-    is_off = r_data.get("official", False)
+    is_off = bool(r_data.get("official", False))
     h_tac, a_tac = m.get("h_tac", "4-3-3"), m.get("a_tac", "4-2-3-1")
     home_coords = generate_formation_coords(h_tac, is_home=True)
     away_coords = generate_formation_coords(a_tac, is_home=False)
@@ -421,7 +470,9 @@ def build_tactical_pitch_html(m):
     rot_count, sub_count = 0, 0
     for idx, (x, y) in enumerate(home_coords):
         d = h_dots_data[idx] if idx < len(h_dots_data) else {"num": idx+1, "status": "G"}
-        st_code = d.get("status", "G")
+        st_code = d.get("status", "G") if is_off else "G"
+        if m["state"] != "in" and st_code == "O":
+            st_code = "G"
         cls = "dp-dot-r" if st_code == "R" else ("dp-dot-o" if st_code == "O" else "dp-dot-g")
         rot_count += (1 if st_code == "R" else 0)
         sub_count += (1 if st_code == "O" else 0)
@@ -429,7 +480,9 @@ def build_tactical_pitch_html(m):
 
     for idx, (x, y) in enumerate(away_coords):
         d = a_dots_data[idx] if idx < len(a_dots_data) else {"num": idx+1, "status": "G"}
-        st_code = d.get("status", "G")
+        st_code = d.get("status", "G") if is_off else "G"
+        if m["state"] != "in" and st_code == "O":
+            st_code = "G"
         cls = "dp-dot-r" if st_code == "R" else ("dp-dot-o" if st_code == "O" else "dp-dot-g")
         rot_count += (1 if st_code == "R" else 0)
         sub_count += (1 if st_code == "O" else 0)
@@ -441,19 +494,19 @@ def build_tactical_pitch_html(m):
         h_r_str = ", ".join(h_inf.get("red_names") or []) or "Tam Kadro"
         a_r_str = ", ".join(a_inf.get("red_names") or []) or "Tam Kadro"
         all_orgs = (h_inf.get("org_names") or []) + (a_inf.get("org_names") or [])
-        org_str = ", ".join(all_orgs[:4]) if all_orgs else "Henüz değişiklik/kart yok"
+        org_str = ", ".join(all_orgs[:4]) if (m["state"] == "in" and all_orgs) else "Maç Başlamadı (Değişiklik Yok)"
         status_line = (
             f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;'>"
             f"<span>🟢 <b>As Kadro:</b> {22 - rot_count - sub_count}</span>"
             f"<span>🔴 <b>Rotasyon/Zaaf ({rot_count}):</b> Ev: {h_r_str} | Dep: {a_r_str}</span>"
-            f"<span>🟠 <b>Değişiklik/Kart ({sub_count}):</b> {org_str}</span></div>"
+            f"<span>🟠 <b>Canlı Değişiklik/Kart ({sub_count}):</b> {org_str}</span></div>"
         )
     else:
         off_badge = "<span style='color:#ffd33d;font-weight:700;'>⏳ Resmi Kadro Henüz Belli Değil</span>"
         status_line = (
             "<div style='margin-top:6px;padding:6px 8px;background:#3d2800;border:1px solid #f0b90b;border-radius:5px;color:#ffd33d;font-size:11.5px;'>"
-            "⏳ <b>KADRO UYARISI:</b> Bu maçın resmi ilk 11'leri henüz açıklanmadı. Maç saatine <b>son 1 saat / 45 dakika kala</b> "
-            "lütfen tekrar kontrol ediniz (Yukarıdan ⭐ Favorilere ekleyerek bildirim alabilirsiniz).</div>"
+            "⏳ <b>KADRO UYARISI:</b> Bu maçın resmi ilk 11'leri henüz açıklanmadı (Sahadaki noktalar standart diziliş şablonudur). "
+            "Maç saatine <b>son 1 saat / 45 dakika kala</b> lütfen tekrar kontrol ediniz.</div>"
         )
 
     return (
@@ -474,6 +527,7 @@ def build_tactical_pitch_html(m):
         f"🧬 <b>Model Karar Özeti:</b> {m.get('squad_model_note','')}</div></div>"
     )
 # ==================== 3. PARÇA SONU ====================
+
 # ==================== 4. PARÇA BAŞLANGICI ====================
 def get_opening_fallback(match_title):
     if match_title in MEM["last_valid_odds"]:
