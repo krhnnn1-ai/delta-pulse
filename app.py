@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v5.0 LIVE PRO", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v5.1 LIVE PRO", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -75,7 +75,8 @@ def get_persistent_memory():
     return {
         "locked_pre": {
             "Inter Milan vs Fiorentina": {"conf": 81, "pick": "Maç 2.5 Gol Üst", "warn": False},
-            "Fortuna vs Excelsior": {"conf": 55, "pick": "Fortuna Çifte Şans (1X) & 3.5 Alt", "warn": False}
+            "Fortuna vs Excelsior": {"conf": 55, "pick": "Fortuna Çifte Şans (1X) & 3.5 Alt", "warn": False},
+            "Hibernian vs Celtic": {"conf": 39, "pick": "Celtic Çifte Şans (X2) & 3.5 Alt", "warn": False}
         },
         "live_snapshots": {},
         "live_signals": {},
@@ -133,6 +134,7 @@ def get_persistent_memory():
             "Holstein Kiel vs D Dresden": {"fav": "KSV", "val": 130, "tg": 2.5},
             "Albacete vs Eldense": {"fav": "ALB", "val": 140, "tg": 2.5}
         },
+        "kickoff_odds": {},
         "last_valid_odds": {}
     }
 
@@ -191,21 +193,21 @@ def get_opening_fallback(match_title):
         return (f"{op['fav']} {v_str}", op["fav"], op["val"], op["tg"])
     return ("Veri Yok", "", 0, 2.5)
 
-def safe_parse_odds(comp, match_title):
+def safe_parse_odds(comp, match_title, state="pre"):
     fallback = get_opening_fallback(match_title)
     if not isinstance(comp, dict):
-        return fallback
+        return fallback[0], fallback[1], fallback[2], fallback[3], False
     odds_list = comp.get("odds")
     if not odds_list or not isinstance(odds_list, list):
-        return fallback
+        return fallback[0], fallback[1], fallback[2], fallback[3], False
     o = next((item for item in odds_list if isinstance(item, dict)), None)
     if not isinstance(o, dict):
-        return fallback
+        return fallback[0], fallback[1], fallback[2], fallback[3], False
 
     raw_det = o.get("details")
     details = str(raw_det).strip() if raw_det is not None else ""
     if not details or details.lower() == "none":
-        return fallback
+        return fallback[0], fallback[1], fallback[2], fallback[3], False
 
     ou_val = safe_float(o.get("overUnder"), fallback[3])
     fav_abbr, fav_val = "", 0
@@ -217,7 +219,9 @@ def safe_parse_odds(comp, match_title):
     res = (details, fav_abbr, fav_val, ou_val)
     if fav_val != 0:
         MEM["last_valid_odds"][match_title] = res
-    return res
+        if state == "pre":
+            MEM["kickoff_odds"][match_title] = {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
+    return details, fav_abbr, fav_val, ou_val, (fav_val != 0)
 
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe):
     match_key = f"{h_name} vs {a_name}"
@@ -353,7 +357,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     return False
 # ==================== 2. PARÇA SONU ====================
 # ==================== 3. PARÇA BAŞLANGICI ====================
-def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val):
+def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds):
     tot_goals = h_score + a_score
     tot_sh = h_sh + a_sh
     tot_sot = h_sot + a_sot
@@ -363,15 +367,21 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
     a_poss = (100 - h_poss) if h_poss > 0 else 0
 
+    base_ref = MEM["kickoff_odds"].get(match_title) or MEM["opening_odds"].get(match_title) or {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
+    ref_fav = base_ref.get("fav", fav_abbr)
+    ref_val = base_ref.get("val", fav_val)
+    ref_tg = base_ref.get("tg", ou_val)
+
     is_away_fav = False
-    if fav_abbr:
-        if fav_abbr.upper() == a_abbr.upper() or fav_abbr.upper() in a_name.upper()[:4]:
+    if ref_fav:
+        if ref_fav.upper() == a_abbr.upper() or ref_fav.upper() in a_name.upper()[:4]:
             is_away_fav = True
     elif a_mom > h_mom + 12:
         is_away_fav = True
 
-    h_is_strong_fav = (not is_away_fav and (fav_val <= -140 or h_mom >= 65))
-    a_is_strong_fav = (is_away_fav and (fav_val <= -140 or a_mom >= 65))
+    fav_team_name = a_name if is_away_fav else h_name
+    h_is_strong_fav = (not is_away_fav and (ref_val <= -140 or h_mom >= 65))
+    a_is_strong_fav = (is_away_fav and (ref_val <= -140 or a_mom >= 65))
 
     goal_line = f"{tot_goals + 0.5}"
     rem_mins = max(1, 90 - m_int)
@@ -382,6 +392,17 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     sot_tag = ""
     exp_list = []
     sig_type = ""
+
+    if has_live_api_odds and ref_val != 0 and fav_val != 0:
+        live_diff = calc_true_odds_delta(ref_val, fav_val)
+        if live_diff <= -15:
+            sot_tag += f"|📈CanlıOran({live_diff})"
+            heat += 10
+            exp_list.append(f"📈 CANLI ORAN BASKISI ({fav_team_name} canlı oranı {live_diff}p daha sertleşti!)")
+        elif m_int >= 25 and tot_goals == 0 and ou_val >= ref_tg and ref_tg >= 2.5:
+            sot_tag += f"|📈CanlıTG({ou_val})"
+            heat += 8
+            exp_list.append(f"📈 CANLI BAREM DİRENCİ (Dk {m_int}' 0-0 ama canlı barem {ou_val} seviyesinde tutuldu!)")
 
     h_pressing = (h_sh >= 5 or h_cor >= 3 or h_poss >= 58)
     a_pressing = (a_sh >= 5 or a_cor >= 3 or a_poss >= 58)
@@ -450,6 +471,15 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
             f"📐 KÖR ŞUT BASKISI ({dom_t} çerçeveyi bulamıyor, toplar kornere gidiyor) ➔ 🎯 HAMLE: Toplam {cor_line} Korner Üst"
         )
 
+    if 22 <= m_int <= 78 and tot_goals <= 1 and (ref_tg >= 3.5 or ref_val <= -175) and heat >= 62:
+        sot_tag += "|💹DeğerFırsatı"
+        heat += 7
+        sig_type = sig_type or "GOL"
+        exp_list.append(
+            f"💹 DEĞER FIRSATI (VALUE): Maç önü beklentisi yüksek (TG:{ref_tg} / {ref_fav} {ref_val}); "
+            f"Dk {m_int}' itibarıyla canlı oranlar şişti ama saha baskısı çok güçlü!"
+        )
+
     heat = max(15, min(99, heat))
 
     if 15 <= m_int <= 75 and heat >= 68 and sig_type and match_title not in MEM["live_signals"]:
@@ -459,10 +489,9 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
                 "label": f"{m_int}' ({h_score}-{a_score}) ➔ Maç {tot_goals + 0.5} Üst", "status": "WAIT"
             }
         else:
-            need_c = 2 if m_int <= 65 else 2
             MEM["live_signals"][match_title] = {
-                "type": "KORNER", "min": m_int, "base": tot_cor, "need": need_c,
-                "label": f"{m_int}' ({h_cor}-{a_cor}K) ➔ +{need_c} Korner", "status": "WAIT"
+                "type": "KORNER", "min": m_int, "base": tot_cor, "need": 2,
+                "label": f"{m_int}' ({h_cor}-{a_cor}K) ➔ +2 Korner", "status": "WAIT"
             }
 
     if match_title in MEM["live_signals"]:
@@ -537,12 +566,12 @@ def generate_card_comment_and_score(m):
 
 def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t):
     lines = [
-        f"### 🧠 Delta Pulse v5.0 LIVE PRO — Otonom Strateji Raporu "
+        f"### 🧠 Delta Pulse v5.1 LIVE PRO — Otonom Strateji Raporu "
         f"(`Karne: {tot_w}/{tot_t} %{tot_pct} | AK: {ak_w}/{ak_t} | CanlıPusu: {lv_w}/{lv_t}`)\n"
     ]
 
     if live_m:
-        lines.append("#### 🔴 1. Canlı Baskı Sıralaması & Net Barem Pusulası")
+        lines.append("#### 🔴 1. Canlı Baskı, Canlı Oran & Net Barem Pusulası")
         for lm in live_m:
             lines.append(
                 f"* **🔥 [Baskı: %{lm['heat']}] {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
@@ -623,7 +652,7 @@ def fetch_all_matches():
             a_score = safe_int(away.get("score"), 0)
             h_mom = parse_form_momentum(home.get("form"))
             a_mom = parse_form_momentum(away.get("form"))
-            odd_str, fav_abbr, fav_val, ou_val = safe_parse_odds(comp, match_title)
+            odd_str, fav_abbr, fav_val, ou_val, has_live_api_odds = safe_parse_odds(comp, match_title, state)
 
             raw_date = str(ev.get("date") or "")
             saat_str = "00:00"
@@ -666,7 +695,7 @@ def fetch_all_matches():
                 heat, sot_tag, live_exp = analyze_live_pro(
                     match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score,
                     h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int,
-                    h_mom, a_mom, fav_abbr, fav_val
+                    h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds
                 )
 
                 snap = MEM["live_snapshots"].get(match_title)
@@ -762,7 +791,7 @@ st.markdown(
 
 col_btn1, col_btn2 = st.columns([3, 1])
 with col_btn1:
-    if st.button("🧠 GEMİNİ v5.0 LIVE PRO RAPORUNU ÇIKAR", use_container_width=True):
+    if st.button("🧠 GEMİNİ v5.1 LIVE PRO RAPORUNU ÇIKAR", use_container_width=True):
         MEM["last_ai_report"] = build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w, ak_t, lv_w, lv_t)
 with col_btn2:
     if st.button("🔄 Verileri Yenile", use_container_width=True):
@@ -776,9 +805,9 @@ with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code(full_dp_text, language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı PRO Radar (Baskı Puanına Göre En Sıcaktan Sıralı)")
+    st.markdown("### 🔴 Canlı PRO Radar (Baskı Puanı & Canlı Değer Sıralı)")
     for m in live_m:
-        is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "✅"])
+        is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "📈", "💹", "✅"])
         exp_cls = "dp-exp-alert" if is_hot_exp else "dp-exp-calm"
         card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
         st.markdown(
@@ -792,7 +821,7 @@ if live_m:
             unsafe_allow_html=True
         )
 
-st.markdown("### ⏳ Maç Önü v5.0 Otonom Sinyaller & Otomatik Yorumlar")
+st.markdown("### ⏳ Maç Önü v5.1 Otonom Sinyaller & Otomatik Yorumlar")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
