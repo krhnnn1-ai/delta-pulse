@@ -17,26 +17,47 @@ st.markdown("""
     .dp-live-hot { border-left: 5px solid #f0b90b; background: #1c1d24; }
     .dp-badge { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 11px; color: #8b949e; }
     .dp-heat { background: #3d2800; color: #ffd33d; border: 1px solid #f0b90b; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .dp-odds-hot {
+        display: block;
+        background: #0d2818;
+        color: #56d364;
+        border-left: 3px solid #2ea043;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        margin-top: 5px;
+        font-size: 12.5px;
+    }
+    .dp-odds-calm {
+        display: block;
+        background: #161f2c;
+        color: #79c0ff;
+        border-left: 3px solid #1f6feb;
+        padding: 4px 8px;
+        border-radius: 4px;
+        margin-top: 5px;
+        font-size: 12px;
+    }
     @keyframes dpPulse {
         0% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
-        50% { opacity: 0.35; box-shadow: 0 0 2px rgba(240, 185, 11, 0.1); border-color: #d29922; }
+        50% { opacity: 0.38; box-shadow: 0 0 2px rgba(240, 185, 11, 0.1); border-color: #d29922; }
         100% { opacity: 1; box-shadow: 0 0 10px rgba(240, 185, 11, 0.75); border-color: #f0b90b; }
     }
     .dp-exp-alert {
-        display: inline-block;
+        display: block;
         background: linear-gradient(90deg, #3d2800, #161b22);
         color: #ffd33d;
         border: 1px solid #f0b90b;
         padding: 5px 10px;
         border-radius: 6px;
         font-weight: 700;
-        margin-top: 6px;
+        margin-top: 5px;
         animation: dpPulse 1.2s infinite ease-in-out;
     }
     .dp-exp-calm {
-        display: inline-block;
+        display: block;
         color: #8b949e;
-        padding: 3px 0px;
+        padding: 3px 2px;
         margin-top: 4px;
         font-size: 12px;
     }
@@ -367,10 +388,13 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
     a_poss = (100 - h_poss) if h_poss > 0 else 0
 
-    base_ref = MEM["kickoff_odds"].get(match_title) or MEM["opening_odds"].get(match_title) or {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
-    ref_fav = base_ref.get("fav", fav_abbr)
-    ref_val = base_ref.get("val", fav_val)
-    ref_tg = base_ref.get("tg", ou_val)
+    open_ref = MEM["opening_odds"].get(match_title) or {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
+    kick_ref = MEM["kickoff_odds"].get(match_title) or open_ref
+    ref_fav = kick_ref.get("fav", fav_abbr)
+    ref_val = kick_ref.get("val", fav_val)
+    ref_tg = kick_ref.get("tg", ou_val)
+    open_val = open_ref.get("val", ref_val)
+    open_tg = open_ref.get("tg", ref_tg)
 
     is_away_fav = False
     if ref_fav:
@@ -390,19 +414,30 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
 
     heat = 20 + int((tot_sh / max(12, m_int)) * 28) + (tot_sot * 4) + int(tot_cor * 2.2)
     sot_tag = ""
-    exp_list = []
+    ai_notes = []
+    odds_notes = []
     sig_type = ""
 
-    if has_live_api_odds and ref_val != 0 and fav_val != 0:
-        live_diff = calc_true_odds_delta(ref_val, fav_val)
-        if live_diff <= -15:
-            sot_tag += f"|📈CanlıOran({live_diff})"
-            heat += 10
-            exp_list.append(f"📈 CANLI ORAN BASKISI ({fav_team_name} canlı oranı {live_diff}p daha sertleşti!)")
-        elif m_int >= 25 and tot_goals == 0 and ou_val >= ref_tg and ref_tg >= 2.5:
-            sot_tag += f"|📈CanlıTG({ou_val})"
-            heat += 8
-            exp_list.append(f"📈 CANLI BAREM DİRENCİ (Dk {m_int}' 0-0 ama canlı barem {ou_val} seviyesinde tutuldu!)")
+    tot_odd_diff = calc_true_odds_delta(open_val, fav_val) if (open_val != 0 and fav_val != 0) else 0
+    live_odd_diff = calc_true_odds_delta(ref_val, fav_val) if (has_live_api_odds and ref_val != 0 and fav_val != 0) else 0
+    v_str = f"+{fav_val}" if fav_val > 0 else (str(fav_val) if fav_val != 0 else "Veri Yok")
+
+    if ou_val > open_tg or ref_tg >= 3.5 or ou_val >= 3.5:
+        odds_notes.append(f"🔥 Üst Oranında Para Girişi Yüksek (TG: {ou_val} baremi güçlü)")
+        heat += 6
+        sot_tag += "|💰ÜstParaGirişi"
+    elif ou_val < open_tg:
+        odds_notes.append(f"📉 Alt Oranına Para Girişi Var (Gol baremi {open_tg} ➔ {ou_val} çekildi)")
+
+    if live_odd_diff <= -10 or tot_odd_diff <= -10:
+        d_show = live_odd_diff if live_odd_diff <= -10 else tot_odd_diff
+        odds_notes.append(f"🔥 {fav_team_name} Oranında Sert Para Girişi ({ref_fav} {v_str}, Δ{d_show}p)")
+        heat += 8
+        sot_tag += f"|📈OranBaskısı({d_show})"
+    elif tot_odd_diff >= 15:
+        odds_notes.append(f"⚠️ Favori Oranında Gevşeme Var ({ref_fav} {v_str}, Δ+{tot_odd_diff}p para çıkışı)")
+    elif fav_val <= -175:
+        odds_notes.append(f"💎 {fav_team_name} Ağır Favori Oranını Koruyor ({ref_fav} {v_str} | TG: {ou_val})")
 
     h_pressing = (h_sh >= 5 or h_cor >= 3 or h_poss >= 58)
     a_pressing = (a_sh >= 5 or a_cor >= 3 or a_poss >= 58)
@@ -412,34 +447,34 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
             sot_tag += "|💎FavGeride->Pusu"
             heat += 22
             sig_type = "KORNER" if h_cor >= 3 else "GOL"
-            exp_list.append(
-                f"💎 ELMAS PUSU ({h_name} Favori Geride!): %{h_poss} top, {h_sh} şut, {h_cor} kornerle yükleniyor "
-                f"➔ 🎯 HAMLE: Maç {goal_line} Gol Üst & Toplam {cor_line} Korner Üst"
+            ai_notes.append(
+                f"💎 Baskı Çok Yüksek! Favori {h_name} geriye düştü (%{h_poss} top, {h_sh} şut, {h_cor} korner); "
+                f"korner beklentisi ve gol ihtimali çok yüksek ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst & Maç {goal_line} Gol Üst"
             )
         elif m_int >= 25:
             sot_tag += "|💎FavKilitli->Pusu"
             heat += 16
             sig_type = "GOL"
-            exp_list.append(
-                f"💎 FAVORİ ABLUKASI ({h_name} {h_score}-{a_score}): %{h_poss} top, {h_sh}({h_sot}) şut, {h_cor} korner "
-                f"➔ 🎯 HAMLE: {h_name} {h_score + 0.5} Gol Üst / Toplam {cor_line} Korner Üst"
+            ai_notes.append(
+                f"💎 Favori Ablukası ({h_name} {h_score}-{a_score}): %{h_poss} top, {h_sh}({h_sot}) şut ve {h_cor} kornerle "
+                f"baskı yüksek; gol ve korner beklentisi arttı ➔ 🎯 Hamle: {h_name} {h_score + 0.5} Gol Üst / {cor_line} Korner Üst"
             )
     elif a_is_strong_fav and a_score <= h_score and a_pressing and m_int >= 18:
         if a_score < h_score:
             sot_tag += "|💎FavGeride->Pusu"
             heat += 22
             sig_type = "KORNER" if a_cor >= 3 else "GOL"
-            exp_list.append(
-                f"💎 ELMAS PUSU ({a_name} Favori Geride!): %{a_poss} top, {a_sh} şut, {a_cor} kornerle yükleniyor "
-                f"➔ 🎯 HAMLE: Maç {goal_line} Gol Üst & Toplam {cor_line} Korner Üst"
+            ai_notes.append(
+                f"💎 Baskı Çok Yüksek! Favori {a_name} geriye düştü (%{a_poss} top, {a_sh} şut, {a_cor} korner); "
+                f"korner beklentisi ve gol ihtimali çok yüksek ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst & Maç {goal_line} Gol Üst"
             )
         elif m_int >= 25:
             sot_tag += "|💎FavKilitli->Pusu"
             heat += 16
             sig_type = "GOL"
-            exp_list.append(
-                f"💎 FAVORİ ABLUKASI ({a_name} {h_score}-{a_score}): %{a_poss} top, {a_sh}({a_sot}) şut, {a_cor} korner "
-                f"➔ 🎯 HAMLE: {a_name} {a_score + 0.5} Gol Üst / Toplam {cor_line} Korner Üst"
+            ai_notes.append(
+                f"💎 Favori Ablukası ({a_name} {h_score}-{a_score}): %{a_poss} top, {a_sh}({a_sot}) şut ve {a_cor} kornerle "
+                f"baskı yüksek; gol ve korner beklentisi arttı ➔ 🎯 Hamle: {a_name} {a_score + 0.5} Gol Üst / {cor_line} Korner Üst"
             )
 
     if (h_score < a_score and h_pressing) or (a_score < h_score and a_pressing):
@@ -450,37 +485,37 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
             p_name = h_name if h_score < a_score else a_name
             p_sh = h_sh if h_score < a_score else a_sh
             p_cor = h_cor if h_score < a_score else a_cor
-            exp_list.append(
-                f"🚩 GERİDEKİ BASKISI ({p_name}): {p_sh} şut ve {p_cor} kornerle kanatları zorluyor "
-                f"➔ 🎯 HAMLE: Toplam {cor_line} Korner Üst"
+            ai_notes.append(
+                f"🚩 Baskı Yüksek ({p_name} geride): {p_sh} şut ve {p_cor} kornerle yükleniyor, "
+                f"korner beklentisi yüksek ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst"
             )
 
     if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
         sot_tag += "|🎯KeskinGol"
         heat += 12
         sig_type = sig_type or "GOL"
-        exp_list.append(
-            f"⚡ KESKİN ŞUT (%{tot_sot_pct} İsabet [{tot_sot}/{tot_sh}]) ➔ 🎯 HAMLE: Canlı Maç {goal_line} Gol Üst"
+        ai_notes.append(
+            f"⚡ Şut Kalitesi Çok Keskin (%{tot_sot_pct} İsabet [{tot_sot}/{tot_sh}]); "
+            f"gol olması ihtimali çok yüksek ➔ 🎯 Hamle: Canlı Maç {goal_line} Gol Üst"
         )
     elif (h_sh >= 8 and h_sot_pct <= 18) or (a_sh >= 8 and a_sot_pct <= 18):
         sot_tag += "|📐KörŞut->Korner"
         heat += 10
         sig_type = sig_type or "KORNER"
         dom_t = h_name if h_sh >= a_sh else a_name
-        exp_list.append(
-            f"📐 KÖR ŞUT BASKISI ({dom_t} çerçeveyi bulamıyor, toplar kornere gidiyor) ➔ 🎯 HAMLE: Toplam {cor_line} Korner Üst"
-        )
-
-    if 22 <= m_int <= 78 and tot_goals <= 1 and (ref_tg >= 3.5 or ref_val <= -175) and heat >= 62:
-        sot_tag += "|💹DeğerFırsatı"
-        heat += 7
-        sig_type = sig_type or "GOL"
-        exp_list.append(
-            f"💹 DEĞER FIRSATI (VALUE): Maç önü beklentisi yüksek (TG:{ref_tg} / {ref_fav} {ref_val}); "
-            f"Dk {m_int}' itibarıyla canlı oranlar şişti ama saha baskısı çok güçlü!"
+        ai_notes.append(
+            f"📐 Kör Şut Baskısı ({dom_t} çok şut deniyor ama çerçeve kapalı); "
+            f"korner beklentisi yüksek ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst"
         )
 
     heat = max(15, min(99, heat))
+
+    if 20 <= m_int <= 78 and tot_goals <= 1 and (ref_tg >= 3.5 or ref_val <= -175) and heat >= 60:
+        sot_tag += "|💹CanlıDeğer"
+        odds_notes.append(f"💹 Canlı Üst ({goal_line} Üst) Oranı Şişti — Saha Baskısına Göre Değer (Value) Çok Yüksek!")
+
+    if not odds_notes:
+        odds_notes.append(f"⚖️ Bahis Oranları Dengeli ({ref_fav} {v_str} | TG: {ou_val}) — Anormal para kayması yok")
 
     if 15 <= m_int <= 75 and heat >= 68 and sig_type and match_title not in MEM["live_signals"]:
         if sig_type == "GOL":
@@ -501,15 +536,15 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
         elif sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]:
             sig["status"] = "WON"
         if sig["status"] == "WON":
-            exp_list.insert(0, f"✅ CANLI SİNYAL GELDİ! [{sig['label']}]")
+            ai_notes.insert(0, f"✅ CANLI SİNYAL GELDİ! [{sig['label']}]")
 
-    if not exp_list:
+    if not ai_notes:
         if m_int >= 22 and tot_sh <= 4 and tot_sot <= 1:
-            exp_list.append(f"🛡️ Düşük Tempo ({m_int}' itibarıyla {tot_sot} isabetli şut var, canlı üstten uzak dur)")
+            ai_notes.append(f"🛡️ Saha Temposu Düşük ({m_int}' itibarıyla {tot_sot} isabetli şut var, canlı üst riskli)")
         else:
-            exp_list.append(f"⚖️ Dengeli Akış (Baskı: %{heat} — Şut veya korner kırılması bekleniyor)")
+            ai_notes.append(f"⚖️ Dengeli Saha Akışı (Baskı: %{heat} — Şut veya korner kırılması bekleniyor)")
 
-    return heat, sot_tag, " • ".join(exp_list)
+    return heat, sot_tag, " • ".join(odds_notes), " • ".join(ai_notes)
 
 def calc_projected_score(m):
     h_m, a_m = m["h_mom"], m["a_mom"]
@@ -546,7 +581,7 @@ def generate_card_comment_and_score(m):
         notes.append(f"Oranda +{d_val}p gevşeme var, koruma çizgisinde kal")
 
     if "💥TG↑" in odd_s:
-        notes.append("Toplam gol baremi yukarı kırıldı (Yüksek gol temposu)")
+        notes.append("Üst oranında para girişi yüksek (Gol baremi yukarı kırıldı)")
     elif "📉TG↓" in odd_s:
         notes.append("Gol baremi geri çekildi (Kontrollü tempo)")
 
@@ -571,12 +606,13 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
     ]
 
     if live_m:
-        lines.append("#### 🔴 1. Canlı Baskı, Canlı Oran & Net Barem Pusulası")
+        lines.append("#### 🔴 1. Canlı Maçlar: Bahis Oranı Akışı vs AI Saha Yorumu")
         for lm in live_m:
             lines.append(
                 f"* **🔥 [Baskı: %{lm['heat']}] {lm['clock']} | {lm['h_name']} {lm['h_score']}-{lm['a_score']} {lm['a_name']}** "
-                f"(`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']}) "
-                f"➔ 🔮 **{lm['live_exp']}**"
+                f"(`Şut: {lm['h_sh']}({lm['h_sot']})-{lm['a_sh']}({lm['a_sot']})` | `Korner: {lm['h_cor']}-{lm['a_cor']}` {lm['delta_str']})\n"
+                f"  * 💰 **Bahis Oranı & Para Girişi:** {lm['odds_flow']}\n"
+                f"  * 🧠 **AI Saha Yorumu:** **{lm['live_exp']}**"
             )
         lines.append("")
 
@@ -592,12 +628,6 @@ def build_autonomous_merkez_us_report(pre_m, live_m, tot_w, tot_t, tot_pct, ak_w
         for m in smart_list[:6]:
             s1, s2 = calc_projected_score(m)
             lines.append(f"* **[{m['saat']} | %{m['conf']}] {m['mac']}** (`{m['odd_str']}`) ➔ **{m['pick']}** *(Skor: `{s1}`)*")
-
-    drift_list = [m for m in pre_m if ("🚨Δ+" in m["odd_str"] or "⚠️Δ+" in m["odd_str"] or m["warn"])]
-    if drift_list:
-        lines.append("\n#### 🚨 3. Otonom Erime Freni (Oranı Gevşeyen / Tuzak Maçlar)")
-        for m in drift_list[:5]:
-            lines.append(f"* **⚠️ [{m['saat']}] {m['mac']}** (`{m['odd_str']}` | Güven: `%{m['conf']}`): Favoriden para çıkışı tespit edildi. Takım 1.5 Üst veya taraf bahsine girilmemeli!")
 
     return "\n".join(lines)
 
@@ -686,13 +716,14 @@ def fetch_all_matches():
 
             delta_str = ""
             sot_tag = ""
+            odds_flow = ""
             live_exp = ""
             heat = 0
             if state == "in":
                 cur_min = detail_clock.replace("'", "").replace("HT", "45").split("+")[0].strip()
                 m_int = safe_int(cur_min, 45)
 
-                heat, sot_tag, live_exp = analyze_live_pro(
+                heat, sot_tag, odds_flow, live_exp = analyze_live_pro(
                     match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score,
                     h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int,
                     h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds
@@ -732,7 +763,7 @@ def fetch_all_matches():
                 "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
                 "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
                 "cards": cards, "h_poss": h_poss, "delta_str": delta_str,
-                "sot_tag": sot_tag, "live_exp": live_exp, "heat": heat
+                "sot_tag": sot_tag, "odds_flow": odds_flow, "live_exp": live_exp, "heat": heat
             })
     return results
 
@@ -805,9 +836,11 @@ with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code(full_dp_text, language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı PRO Radar (Baskı Puanı & Canlı Değer Sıralı)")
+    st.markdown("### 🔴 Canlı PRO Radar (Baskı Puanı & Para Girişi Sıralı)")
     for m in live_m:
-        is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "📈", "💹", "✅"])
+        is_hot_odds = any(k in m["odds_flow"] for k in ["🔥", "💹", "💎"])
+        odds_cls = "dp-odds-hot" if is_hot_odds else "dp-odds-calm"
+        is_hot_exp = any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "✅"])
         exp_cls = "dp-exp-alert" if is_hot_exp else "dp-exp-calm"
         card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
         st.markdown(
@@ -816,8 +849,9 @@ if live_m:
             f"<span class='dp-badge'>{m['lig']}</span><br>"
             f"🎯 Şut: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']}</b> | "
             f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']} {m['sot_tag']}<br>"
-            f"📌 <b>Kilitli Hedef:</b> {m['pick']}<br>"
-            f"<div class='{exp_cls}'>🔮 <b>Canlı PRO:</b> {m['live_exp']}</div></div>",
+            f"📌 <b>Kilitli Hedef:</b> {m['pick']}"
+            f"<div class='{odds_cls}'>💰 <b>Bahis Oranı & Para Girişi:</b> {m['odds_flow']}</div>"
+            f"<div class='{exp_cls}'>🧠 <b>AI Yorumu & Beklenti:</b> {m['live_exp']}</div></div>",
             unsafe_allow_html=True
         )
 
