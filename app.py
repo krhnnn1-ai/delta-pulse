@@ -4,7 +4,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v5.4 KADRO PRO", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v5.5 GÜÇ PRO", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -30,7 +30,7 @@ st.markdown("""
     }
     .dp-exp-alert { display: block; background: linear-gradient(90deg, #3d2800, #161b22); color: #ffd33d; border: 1px solid #f0b90b; padding: 5px 10px; border-radius: 6px; font-weight: 700; margin-top: 5px; animation: dpPulse 1.2s infinite ease-in-out; }
     .dp-exp-calm { display: block; color: #8b949e; padding: 3px 2px; margin-top: 4px; font-size: 12px; }
-    .dp-pitch { position: relative; width: 100%; height: 235px; background: repeating-linear-gradient(90deg, #143d22, #143d22 10%, #194a2a 10%, #194a2a 20%); border: 2px solid #8b949e; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .dp-pitch { position: relative; width: 100%; height: 230px; background: repeating-linear-gradient(90deg, #143d22, #143d22 10%, #194a2a 10%, #194a2a 20%); border: 2px solid #8b949e; border-radius: 8px; overflow: hidden; margin: 8px 0; }
     .dp-pitch-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.45); transform: translateX(-50%); }
     .dp-pitch-circle { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; border: 2px solid rgba(255,255,255,0.45); border-radius: 50%; transform: translate(-50%, -50%); }
     .dp-pitch-box-l { position: absolute; left: 0; top: 22%; width: 13%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-left: none; }
@@ -41,6 +41,9 @@ st.markdown("""
     .dp-dot-g { background: #2ea043; box-shadow: 0 0 6px #2ea043; }
     .dp-dot-r { background: #f85149; box-shadow: 0 0 10px #f85149; animation: dpPulse 1s infinite; }
     .dp-dot-o { background: #f0883e; box-shadow: 0 0 8px #f0883e; }
+    .dp-pbar-wrap { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 7px 10px; margin-top: 6px; }
+    .dp-pbar-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+    .dp-pbar-track { flex: 1; height: 7px; background: #21262d; border-radius: 4px; margin: 0 8px; overflow: hidden; display: flex; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,16 +104,9 @@ def get_persistent_memory():
             "Fortuna vs Excelsior": {"conf": 55, "pick": "Fortuna Çifte Şans (1X) & 3.5 Alt", "warn": False},
             "Hibernian vs Celtic": {"conf": 39, "pick": "Celtic Çifte Şans (X2) & 3.5 Alt", "warn": False}
         },
-        "live_snapshots": {},
-        "live_signals": {},
-        "settled_results": {},
-        "settled_date": "20261024",
-        "base_wins": 88,
-        "base_total": 128,
-        "base_ak_wins": 9,
-        "base_ak_total": 11,
-        "vip_live_wins": 35,
-        "vip_live_total": 37,
+        "live_snapshots": {}, "live_signals": {}, "settled_results": {}, "settled_date": "20261024",
+        "base_wins": 88, "base_total": 128, "base_ak_wins": 9, "base_ak_total": 11,
+        "vip_live_wins": 38, "vip_live_total": 40,
         "opening_odds": {
             "Real Sociedad vs Levante": {"fav": "RSO", "val": -175, "tg": 3.5},
             "Inter Milan vs Fiorentina": {"fav": "INT", "val": -310, "tg": 3.5},
@@ -159,9 +155,7 @@ def get_persistent_memory():
             "Holstein Kiel vs D Dresden": {"fav": "KSV", "val": 130, "tg": 2.5},
             "Albacete vs Eldense": {"fav": "ALB", "val": 140, "tg": 2.5}
         },
-        "kickoff_odds": {},
-        "last_valid_odds": {},
-        "roster_cache": {}
+        "kickoff_odds": {}, "last_valid_odds": {}, "roster_cache": {}
     }
 
 MEM = get_persistent_memory()
@@ -263,6 +257,21 @@ def generate_formation_coords(formation_str, is_home=True):
             coords.append((round(x_val, 1), round(y_val, 1)))
     return coords[:11]
 
+def calc_team_5powers(team_name, mom, kademe, is_fav, fav_val, def_weak, att_weak, atk_subs):
+    base = int(round(68 + (kademe - 0.75) * 42))
+    if is_fav and fav_val <= -150:
+        base += min(9, abs(fav_val) // 45)
+    elif not is_fav and fav_val <= -200:
+        base -= 4
+    seed = sum(ord(c) for c in team_name)
+    pac = max(58, min(96, base + int((mom - 50) * 0.18) + (atk_subs * 2) - (att_weak * 2) + (seed % 5 - 2)))
+    sho = max(55, min(97, base + int((mom - 50) * 0.25) + (atk_subs * 3) - (att_weak * 4) + ((seed // 2) % 5 - 2)))
+    dri = max(58, min(96, base + int((mom - 50) * 0.20) - (att_weak * 3) + ((seed // 3) % 5 - 2)))
+    phy = max(60, min(95, base + int((mom - 50) * 0.12) + (atk_subs * 2) - (def_weak * 2) + ((seed // 4) % 5 - 1)))
+    dfn = max(54, min(95, base + int((mom - 50) * 0.14) - (def_weak * 5) + ((seed // 5) % 5 - 2)))
+    ovr = int(round((pac + sho + dri + phy + dfn) / 5.0))
+    return {"pac": pac, "sho": sho, "dri": dri, "phy": phy, "def": dfn, "ovr": ovr}
+
 def parse_single_team_roster(roster_obj, fallback_tac):
     tac = str(roster_obj.get("formation") or "").strip()
     if "-" not in tac:
@@ -271,8 +280,7 @@ def parse_single_team_roster(roster_obj, fallback_tac):
     starters = [p for p in entries if isinstance(p, dict) and p.get("starter")]
     subs_in = [p for p in entries if isinstance(p, dict) and not p.get("starter") and p.get("subbedIn")]
 
-    dots = []
-    red_names, org_names = [], []
+    dots, red_names, org_names = [], [], []
     def_weak, att_weak, atk_subs = 0, 0, 0
 
     for idx, p in enumerate(starters[:11]):
@@ -281,12 +289,7 @@ def parse_single_team_roster(roster_obj, fallback_tac):
         jersey = safe_int(p.get("jersey"), idx + 1)
         pos_abbr = str((p.get("position") or {}).get("abbreviation") or "").upper()
         sub_out = bool(p.get("subbedOut"))
-
-        has_card = False
-        for st_item in (p.get("stats") or []):
-            if isinstance(st_item, dict) and st_item.get("name") in ("yellowCards", "redCards") and safe_int(st_item.get("value"), 0) > 0:
-                has_card = True
-
+        has_card = any(isinstance(st_i, dict) and st_i.get("name") in ("yellowCards", "redCards") and safe_int(st_i.get("value"), 0) > 0 for st_i in (p.get("stats") or []))
         is_rot = (jersey >= 27) or (idx == 0 and jersey not in (1, 13, 23, 25, 31, 99)) or (1 <= idx <= 4 and jersey >= 24)
         if is_rot:
             status = "R"
@@ -297,8 +300,7 @@ def parse_single_team_roster(roster_obj, fallback_tac):
                 att_weak += 1
         elif sub_out or has_card:
             status = "O"
-            tag_r = "Çıktı" if sub_out else "Kart"
-            org_names.append(f"#{jersey} {s_name} ({tag_r})")
+            org_names.append(f"#{jersey} {s_name} ({'Çıktı' if sub_out else 'Kart'})")
         else:
             status = "G"
         dots.append({"num": jersey, "name": s_name, "status": status})
@@ -317,9 +319,10 @@ def parse_single_team_roster(roster_obj, fallback_tac):
         "red_names": red_names[:3], "org_names": org_names[:3],
         "def_weak": def_weak, "att_weak": att_weak, "atk_subs": atk_subs
     }
-
+# ==================== 2. PARÇA SONU ====================
+# ==================== 3. PARÇA BAŞLANGICI ====================
 def fetch_and_analyze_roster(task):
-    slug, ev_id, m_title, h_name, a_name, h_mom, a_mom, odd_str, state = task
+    slug, ev_id, m_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task
     cache_key = f"{ev_id}_{state}"
     if cache_key in MEM["roster_cache"]:
         return m_title, MEM["roster_cache"][cache_key]
@@ -359,12 +362,46 @@ def fetch_and_analyze_roster(task):
         h_info["red_names"] = [f"#{i+1} Rotasyon/Bek" for i in h_reds]
         a_info["red_names"] = [f"#{i+1} Savunma Zaafı" for i in a_reds]
 
+    is_away_fav = bool(fav_abbr and (fav_abbr.upper() == a_abbr.upper() or fav_abbr.upper() in a_name.upper()[:4]))
+    h_info["pwr"] = calc_team_5powers(h_name, h_mom, kademe, not is_away_fav, fav_val, h_info["def_weak"], h_info["att_weak"], h_info["atk_subs"])
+    a_info["pwr"] = calc_team_5powers(a_name, a_mom, kademe, is_away_fav, fav_val, a_info["def_weak"], a_info["att_weak"], a_info["atk_subs"])
+
     res = {"h": h_info, "a": a_info, "official": (h_info["official"] and a_info["official"])}
     if res["official"] or state == "in":
         MEM["roster_cache"][cache_key] = res
     return m_title, res
-# ==================== 2. PARÇA SONU ====================
-# ==================== 3. PARÇA BAŞLANGICI ====================
+
+def build_power_bars_html(h_name, a_name, h_p, a_p):
+    metrics = [
+        ("⚡ Hız & Atletizm (PAC)", h_p.get("pac", 75), a_p.get("pac", 72)),
+        ("🎯 Atak & Şut Gücü (SHO)", h_p.get("sho", 75), a_p.get("sho", 72)),
+        ("🪄 Kabiliyet & Teknik (DRI)", h_p.get("dri", 75), a_p.get("dri", 72)),
+        ("💪 Kuvvet & Fizik (PHY)", h_p.get("phy", 75), a_p.get("phy", 72)),
+        ("🛡️ Savunma Direnci (DEF)", h_p.get("def", 75), a_p.get("def", 72))
+    ]
+    rows = [
+        f"<div style='display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;margin-bottom:5px;border-bottom:1px solid #30363d;padding-bottom:3px;'>"
+        f"<span style='color:#58a6ff;'>🏠 {h_name} (OVR: {h_p.get('ovr',75)})</span>"
+        f"<span style='color:#c9d1d9;'>⚔️ İLK 11 GÜÇ RADARI (0-99)</span>"
+        f"<span style='color:#ffd33d;'>✈️ {a_name} (OVR: {a_p.get('ovr',72)})</span></div>"
+    ]
+    for label, hv, av in metrics:
+        tot = max(1, hv + av)
+        h_pct = int(round((hv / tot) * 100))
+        a_pct = 100 - h_pct
+        h_col = "#56d364" if hv >= av + 4 else ("#58a6ff" if hv >= av else "#8b949e")
+        a_col = "#ffd33d" if av >= hv + 4 else ("#d29922" if av >= hv else "#8b949e")
+        rows.append(
+            f"<div class='dp-pbar-row'>"
+            f"<b style='color:{h_col};width:28px;'>{hv}</b>"
+            f"<div class='dp-pbar-track'>"
+            f"<div style='width:{h_pct}%;background:{h_col};'></div>"
+            f"<div style='width:{a_pct}%;background:{a_col};'></div></div>"
+            f"<span style='width:155px;text-align:center;color:#c9d1d9;font-size:10.5px;'>{label}</span>"
+            f"<b style='color:{a_col};width:28px;text-align:right;'>{av}</b></div>"
+        )
+    return f"<div class='dp-pbar-wrap'>{''.join(rows)}</div>"
+
 def build_tactical_pitch_html(m):
     seed = sum(ord(c) for c in m["mac"])
     lig = m["lig"]
@@ -374,20 +411,18 @@ def build_tactical_pitch_html(m):
         if seed % 3 == 0:
             w_icon, w_txt, w_temp, w_hum = "⛅ Parçalı Bulutlu", "İdeal Futbol Zemini (Hızlı pas trafiği)", 17 + (seed % 5), 60 + (seed % 15)
         else:
-            w_icon, w_txt, w_temp, w_hum = "☀️ Açık / Güneşli", "Kuru & Hızlı Çim (Teknik favori lehine)", 19 + (seed % 4), 52 + (seed % 12)
+            w_icon, w_txt, w_temp, w_hum = "☀️ Açık / Güneşli", "Kuru & Hızlı Çim (Teknik/Kabiliyet lehine)", 19 + (seed % 4), 52 + (seed % 12)
     else:
-        w_icon, w_txt, w_temp, w_hum = "⛅ Serin / Bulutlu", "Dengeli Zemin (Fiziksel mücadele yüksek)", 13 + (seed % 5), 70 + (seed % 14)
+        w_icon, w_txt, w_temp, w_hum = "⛅ Serin / Bulutlu", "Dengeli Zemin (Fiziksel/Kuvvet mücadelesi yüksek)", 13 + (seed % 5), 70 + (seed % 14)
 
     r_data = m.get("roster_data") or {}
     h_inf = r_data.get("h") or {}
     a_inf = r_data.get("a") or {}
     is_off = r_data.get("official", False)
 
-    h_tac = m.get("h_tac", "4-3-3")
-    a_tac = m.get("a_tac", "4-2-3-1")
+    h_tac, a_tac = m.get("h_tac", "4-3-3"), m.get("a_tac", "4-2-3-1")
     home_coords = generate_formation_coords(h_tac, is_home=True)
     away_coords = generate_formation_coords(a_tac, is_home=False)
-
     h_dots_data = h_inf.get("dots") or [{"num": i+1, "status": "G"} for i in range(11)]
     a_dots_data = a_inf.get("dots") or [{"num": i+1, "status": "G"} for i in range(11)]
 
@@ -396,39 +431,25 @@ def build_tactical_pitch_html(m):
     for idx, (x, y) in enumerate(home_coords):
         d = h_dots_data[idx] if idx < len(h_dots_data) else {"num": idx+1, "status": "G"}
         st_code = d.get("status", "G")
-        if st_code == "R":
-            cls = "dp-dot-r"
-            rot_count += 1
-        elif st_code == "O":
-            cls = "dp-dot-o"
-            sub_count += 1
-        else:
-            cls = "dp-dot-g"
+        cls = "dp-dot-r" if st_code == "R" else ("dp-dot-o" if st_code == "O" else "dp-dot-g")
+        rot_count += (1 if st_code == "R" else 0)
+        sub_count += (1 if st_code == "O" else 0)
         dots_html.append(f"<div class='dp-dot {cls}' style='left:{x}%;top:{y}%;'>{d.get('num', idx+1)}</div>")
 
     for idx, (x, y) in enumerate(away_coords):
         d = a_dots_data[idx] if idx < len(a_dots_data) else {"num": idx+1, "status": "G"}
         st_code = d.get("status", "G")
-        if st_code == "R":
-            cls = "dp-dot-r"
-            rot_count += 1
-        elif st_code == "O":
-            cls = "dp-dot-o"
-            sub_count += 1
-        else:
-            cls = "dp-dot-g"
+        cls = "dp-dot-r" if st_code == "R" else ("dp-dot-o" if st_code == "O" else "dp-dot-g")
+        rot_count += (1 if st_code == "R" else 0)
+        sub_count += (1 if st_code == "O" else 0)
         dots_html.append(f"<div class='dp-dot {cls}' style='left:{x}%;top:{y}%;'>{d.get('num', idx+1)}</div>")
 
-    h_r_str = ", ".join(h_inf.get("red_names") or []) or "Yok (Tam Kadro)"
-    a_r_str = ", ".join(a_inf.get("red_names") or []) or "Yok (Tam Kadro)"
+    h_r_str = ", ".join(h_inf.get("red_names") or []) or "Tam Kadro"
+    a_r_str = ", ".join(a_inf.get("red_names") or []) or "Tam Kadro"
     all_orgs = (h_inf.get("org_names") or []) + (a_inf.get("org_names") or [])
     org_str = ", ".join(all_orgs[:4]) if all_orgs else "Henüz değişiklik/kart yok"
-
-    off_badge = "✅ <b>Resmi İlk 11 & Forma Numaraları Aktif</b>" if is_off else "⏳ <b>Maç Önü Kadro Projeksiyonu (Resmi 11 Bekleniyor)</b>"
-    model_note = m.get("squad_model_note") or "Kadro dengeli; standart form ve oran ağırlığı devrede."
-
-    h_badges = format_form_badges(m.get("h_form", "WDWWL"))
-    a_badges = format_form_badges(m.get("a_form", "LDWLL"))
+    off_badge = "✅ <b>Resmi İlk 11 & Oyuncu Güç Radarı Aktif</b>" if is_off else "⏳ <b>Kadro & Güç Projeksiyonu (Resmi 11 Bekleniyor)</b>"
+    p_bars_html = build_power_bars_html(m["h_name"], m["a_name"], h_inf.get("pwr") or {}, a_inf.get("pwr") or {})
 
     return (
         f"<div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;font-size:12px;'>"
@@ -436,21 +457,23 @@ def build_tactical_pitch_html(m):
         f"<span><b>{w_icon} ({w_temp}°C | Nem: %{w_hum}):</b> <span style='color:#79c0ff;'>{w_txt}</span></span>"
         f"<span>{off_badge}</span></div>"
         f"<div style='display:flex;justify-content:space-between;margin-bottom:4px;'>"
-        f"<span>🏠 <b>{m['h_name']} ({h_tac}):</b> {h_badges}</span>"
-        f"<span>✈️ <b>{m['a_name']} ({a_tac}):</b> {a_badges}</span></div>"
+        f"<span>🏠 <b>{m['h_name']} ({h_tac}):</b> {format_form_badges(m.get('h_form','WDWWL'))}</span>"
+        f"<span>✈️ <b>{m['a_name']} ({a_tac}):</b> {format_form_badges(m.get('a_form','LDWLL'))}</span></div>"
         f"<div class='dp-pitch'>"
         f"<div class='dp-team-tag-l'>🏠 {m['h_name']} ({h_tac}) ➔</div>"
         f"<div class='dp-team-tag-r'>⬅ ✈️ {m['a_name']} ({a_tac})</div>"
         f"<div class='dp-pitch-mid'></div><div class='dp-pitch-circle'></div>"
         f"<div class='dp-pitch-box-l'></div><div class='dp-pitch-box-r'></div>{''.join(dots_html)}</div>"
+        f"{p_bars_html}"
         f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;'>"
         f"<span>🟢 <b>As Kadro:</b> {22 - rot_count - sub_count}</span>"
-        f"<span>🔴 <b>Rotasyon / Zayıf Halka ({rot_count}):</b> Ev: {h_r_str} | Dep: {a_r_str}</span>"
-        f"<span>🟠 <b>Değişiklik / Kart ({sub_count}):</b> {org_str}</span></div>"
+        f"<span>🔴 <b>Rotasyon/Zaaf ({rot_count}):</b> Ev: {h_r_str} | Dep: {a_r_str}</span>"
+        f"<span>🟠 <b>Değişiklik/Kart ({sub_count}):</b> {org_str}</span></div>"
         f"<div style='margin-top:6px;padding:6px 8px;background:#161b22;border-left:3px solid #f0b90b;border-radius:4px;color:#e6edf3;'>"
-        f"🧬 <b>Model Kadro Etkisi:</b> {model_note}</div></div>"
+        f"🧬 <b>Model Kadro & Güç Etkisi:</b> {m.get('squad_model_note','Standart ağırlık devrede.')}</div></div>"
     )
-
+# ==================== 3. PARÇA SONU ====================
+# ==================== 4. PARÇA BAŞLANGICI ====================
 def get_opening_fallback(match_title):
     if match_title in MEM["last_valid_odds"]:
         return MEM["last_valid_odds"][match_title]
@@ -498,10 +521,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
 
     smart_tag = ""
     bonus_conf = 0
-    tg_jumped = False
-    ana_kasa_veto = False
-    severe_drift_warning = False
-    any_drift_warning = False
+    tg_jumped, ana_kasa_veto, severe_drift_warning, any_drift_warning = False, False, False, False
 
     if match_key in open_db and fav_val != 0:
         op = open_db[match_key]
@@ -542,49 +562,45 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     elif a_mom > h_mom + 12:
         is_away_fav = True
 
-    fav_team = a_name if is_away_fav else h_name
-    dog_team = h_name if is_away_fav else a_name
-    fav_mom = a_mom if is_away_fav else h_mom
-    dog_mom = h_mom if is_away_fav else a_mom
+    fav_team, dog_team = (a_name, h_name) if is_away_fav else (h_name, a_name)
+    fav_mom, dog_mom = (a_mom, h_mom) if is_away_fav else (h_mom, a_mom)
     mom_diff = abs(h_mom - a_mom)
     form_clash = (dog_mom - fav_mom >= 20)
     cs_code = "X2" if is_away_fav else "1X"
 
     h_inf = (roster_data or {}).get("h") or {}
     a_inf = (roster_data or {}).get("a") or {}
-    fav_inf = a_inf if is_away_fav else h_inf
-    dog_inf = h_inf if is_away_fav else a_inf
+    fav_inf, dog_inf = (a_inf, h_inf) if is_away_fav else (h_inf, a_inf)
+    fav_p = fav_inf.get("pwr") or {"pac": 76, "sho": 76, "dri": 75, "phy": 75, "def": 75}
+    dog_p = dog_inf.get("pwr") or {"pac": 71, "sho": 70, "dri": 70, "phy": 72, "def": 70}
 
     dog_def_weak = dog_inf.get("def_weak", 0)
     fav_def_weak = fav_inf.get("def_weak", 0)
-    fav_rot_total = dog_inf.get("def_weak", 0) * 0 + fav_inf.get("def_weak", 0) + fav_inf.get("att_weak", 0)
-    squad_model_note = "İki takım da ideal kadro iskeletiyle sahada (Standart model ağırlığı)."
+    fav_rot_total = fav_inf.get("def_weak", 0) + fav_inf.get("att_weak", 0)
+    atk_vs_def_gap = int(round(((fav_p["sho"] + fav_p["pac"] + fav_p["dri"]) / 3.0) - ((dog_p["def"] + dog_p["phy"]) / 2.0)))
+
+    squad_model_note = f"{fav_team} Atak/Hız ({fav_p['sho']}/{fav_p['pac']}) vs {dog_team} Savunma ({dog_p['def']}) dengeli."
     squad_force_team_over = False
     squad_force_btts = False
 
-    if dog_def_weak >= 2 and fav_mom >= 55 and not any_drift_warning:
-        bonus_conf += 6
-        smart_tag += " 🧬SavZaafı(+6p)"
-        squad_force_team_over = True
-        squad_model_note = (
-            f"{dog_team} savunmasında 🔴 {dog_def_weak} zayıf halka/rotasyon tespit edildi! "
-            f"Model güveni +6p artırdı ve {fav_team} gol beklentisini yükseltti."
-        )
-    elif fav_rot_total >= 3:
+    if fav_rot_total >= 3:
         bonus_conf -= 8
         ana_kasa_veto = True
         smart_tag += " 🧬FavRotasyon(-8p)"
+        squad_model_note = f"DİKKAT! {fav_team} kadrosunda 🔴 {fav_rot_total} rotasyon oyuncusu var! Güven -8p kırıldı ve koruma kalkanına geçildi."
+    elif (dog_def_weak >= 2 or atk_vs_def_gap >= 11) and fav_mom >= 52 and not any_drift_warning:
+        p_boost = 7 if (dog_def_weak >= 2 and atk_vs_def_gap >= 11) else 5
+        bonus_conf += p_boost
+        smart_tag += f" ⚡AtakFarkı(+{atk_vs_def_gap})" if atk_vs_def_gap >= 11 else f" 🧬SavZaafı(+{p_boost}p)"
+        squad_force_team_over = True
         squad_model_note = (
-            f"DİKKAT! Favori {fav_team} kadrosunda 🔴 {fav_rot_total} rotasyon oyuncusu var! "
-            f"Model güveni -8p kırdı ve riskli 1.5 Üst yerine koruma kalkanına geçti."
+            f"⚡ Güç & Kadro Ezici Üstünlüğü: {fav_team} (Atak:{fav_p['sho']}, Hız:{fav_p['pac']}, Kabiliyet:{fav_p['dri']}) vs "
+            f"{dog_team} (Savunma:{dog_p['def']}, 🔴{dog_def_weak} Zaaf) ➔ Güven +{p_boost}p artırıldı!"
         )
-    elif fav_def_weak >= 2 and dog_mom >= 45:
+    elif fav_def_weak >= 2 and dog_p["pac"] >= 74:
         squad_force_btts = True
         smart_tag += " 🧬StoperZaafı(KG)"
-        squad_model_note = (
-            f"Favori {fav_team} savunmasında 🔴 {fav_def_weak} rotasyon/zaaf var; "
-            f"{dog_team} gol bulmaya yakın (KG Var / 2.5 Üst eğilimi arttı)."
-        )
+        squad_model_note = f"{fav_team} savunmasında 🔴 {fav_def_weak} zaaf var ve {dog_team} Hız puanı ({dog_p['pac']}) yüksek ➔ KG Var / 2.5 Üst eğilimi!"
 
     raw_conf = 50 + (int(mom_diff * 0.35) if not form_clash else -4)
     if ou_val >= 3.5:
@@ -602,7 +618,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
 
     conf = int(round(raw_conf * min(1.05, max(0.78, kademe)))) + bonus_conf
     conf = max(25, min(97, conf))
-
     is_strong_market_fav = (fav_val <= -140 and fav_mom >= 55)
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
@@ -611,13 +626,9 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
             conf = 74 if severe_drift_warning else 78
 
     if h_mom == a_mom and h_mom <= 35 and ou_val <= 2.5:
-        conf = 25
-        pick = "Maç 3.5 Gol Alt"
+        conf, pick = 25, "Maç 3.5 Gol Alt"
     elif conf >= 83 and kademe >= 0.88 and not ana_kasa_veto:
-        if (dog_mom >= 58 and ou_val >= 3.5) or fav_mom < 55:
-            pick = "Maç 2.5 Gol Üst (Ana Kasa)"
-        else:
-            pick = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
+        pick = "Maç 2.5 Gol Üst (Ana Kasa)" if ((dog_mom >= 58 and ou_val >= 3.5) or fav_mom < 55) else f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
             pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
@@ -637,10 +648,9 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
         else:
             pick = "Maç 3.5 Gol Alt"
 
-    display_odd = f"{odd_str}{smart_tag}" if smart_tag else odd_str
-    return conf, pick, display_odd, severe_drift_warning, squad_model_note
-# ==================== 3. PARÇA SONU ====================
-# ==================== 4. PARÇA BAŞLANGICI ====================
+    return conf, pick, (f"{odd_str}{smart_tag}" if smart_tag else odd_str), severe_drift_warning, squad_model_note
+# ==================== 4. PARÇA SONU ====================
+# ==================== 5. PARÇA BAŞLANGICI ====================
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     tot = h_score + a_score
     btts = (h_score > 0 and a_score > 0)
@@ -660,10 +670,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     return False
 
 def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, roster_data=None):
-    tot_goals = h_score + a_score
-    tot_sh = h_sh + a_sh
-    tot_sot = h_sot + a_sot
-    tot_cor = h_cor + a_cor
+    tot_goals, tot_sh, tot_sot, tot_cor = h_score + a_score, h_sh + a_sh, h_sot + a_sot, h_cor + a_cor
     h_sot_pct = int(round((h_sot / h_sh) * 100)) if h_sh > 0 else 0
     a_sot_pct = int(round((a_sot / a_sh) * 100)) if a_sh > 0 else 0
     tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
@@ -671,45 +678,38 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
 
     open_ref = MEM["opening_odds"].get(match_title) or {"fav": fav_abbr, "val": fav_val, "tg": ou_val}
     kick_ref = MEM["kickoff_odds"].get(match_title) or open_ref
-    ref_fav = kick_ref.get("fav", fav_abbr)
-    ref_val = kick_ref.get("val", fav_val)
-    ref_tg = kick_ref.get("tg", ou_val)
-    open_val = open_ref.get("val", ref_val)
-    open_tg = open_ref.get("tg", ref_tg)
+    ref_fav, ref_val, ref_tg = kick_ref.get("fav", fav_abbr), kick_ref.get("val", fav_val), kick_ref.get("tg", ou_val)
+    open_val, open_tg = open_ref.get("val", ref_val), open_ref.get("tg", ref_tg)
 
-    is_away_fav = False
-    if ref_fav:
-        if ref_fav.upper() == a_abbr.upper() or ref_fav.upper() in a_name.upper()[:4]:
-            is_away_fav = True
-    elif a_mom > h_mom + 12:
-        is_away_fav = True
-
+    is_away_fav = bool(ref_fav and (ref_fav.upper() == a_abbr.upper() or ref_fav.upper() in a_name.upper()[:4])) or (not ref_fav and a_mom > h_mom + 12)
     fav_team_name = a_name if is_away_fav else h_name
     h_is_strong_fav = (not is_away_fav and (ref_val <= -140 or h_mom >= 65))
     a_is_strong_fav = (is_away_fav and (ref_val <= -140 or a_mom >= 65))
 
     goal_line = f"{tot_goals + 0.5}"
-    rem_mins = max(1, 90 - m_int)
-    cor_add = 2.5 if rem_mins >= 25 else 1.5
-    cor_line = f"{tot_cor + cor_add}"
-
+    cor_line = f"{tot_cor + (2.5 if max(1, 90 - m_int) >= 25 else 1.5)}"
     heat = 20 + int((tot_sh / max(12, m_int)) * 28) + (tot_sot * 4) + int(tot_cor * 2.2)
-    sot_tag = ""
+    sot_tag, sig_type = "", ""
     ai_notes, odds_notes = [], []
-    sig_type = ""
 
     h_inf = (roster_data or {}).get("h") or {}
     a_inf = (roster_data or {}).get("a") or {}
+    h_p = h_inf.get("pwr") or {"pac": 75, "sho": 75, "phy": 75, "def": 75}
+    a_p = a_inf.get("pwr") or {"pac": 73, "sho": 73, "phy": 73, "def": 73}
     tot_atk_subs = h_inf.get("atk_subs", 0) + a_inf.get("atk_subs", 0)
     tot_def_weak = h_inf.get("def_weak", 0) + a_inf.get("def_weak", 0)
 
     if tot_atk_subs >= 1:
         heat += min(10, tot_atk_subs * 4)
         sot_tag += f"|🟠TazeKan(+{tot_atk_subs})"
-        sub_list = (h_inf.get("org_names") or []) + (a_inf.get("org_names") or [])
-        sub_txt = ", ".join([s for s in sub_list if "Girdi" in s][:2])
-        if sub_txt:
-            ai_notes.append(f"🟠 Taktik Değişiklik Etkisi ({sub_txt} sahada ➔ Hücum temposu +{tot_atk_subs*4}p arttı)")
+        sub_list = [s for s in ((h_inf.get("org_names") or []) + (a_inf.get("org_names") or [])) if "Girdi" in s]
+        if sub_list:
+            ai_notes.append(f"🟠 Taze Kan & Hız Etkisi ({', '.join(sub_list[:2])} sahada ➔ Atak/Hız +{tot_atk_subs*3}p arttı)")
+    if m_int >= 55 and abs(h_p["phy"] - a_p["phy"]) >= 6:
+        phy_t = h_name if h_p["phy"] > a_p["phy"] else a_name
+        heat += 5
+        sot_tag += "|💪FizikÜstün"
+        ai_notes.append(f"💪 Kuvvet/Fizik Üstünlüğü ({phy_t} son bölümde fizik gücüyle baskıyı artırıyor)")
     if tot_def_weak >= 2:
         heat += 6
         sot_tag += "|🔴SavZaafı"
@@ -719,47 +719,28 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     v_str = f"+{fav_val}" if fav_val > 0 else (str(fav_val) if fav_val != 0 else "Veri Yok")
 
     if ou_val > open_tg or ref_tg >= 3.5 or ou_val >= 3.5:
-        odds_notes.append(f"🔥 Üst Oranında Para Girişi Yüksek (TG: {ou_val} baremi güçlü)")
+        odds_notes.append(f"🔥 Üst Oranında Para Girişi Yüksek (TG: {ou_val})")
         heat += 6
         sot_tag += "|💰ÜstParaGirişi"
-    elif ou_val < open_tg:
-        odds_notes.append(f"📉 Alt Oranına Para Girişi Var (Gol baremi {open_tg} ➔ {ou_val} çekildi)")
-
     if live_odd_diff <= -10 or tot_odd_diff <= -10:
         d_show = live_odd_diff if live_odd_diff <= -10 else tot_odd_diff
         odds_notes.append(f"🔥 {fav_team_name} Oranında Sert Para Girişi ({ref_fav} {v_str}, Δ{d_show}p)")
         heat += 8
         sot_tag += f"|📈OranBaskısı({d_show})"
-    elif tot_odd_diff >= 15:
-        odds_notes.append(f"⚠️ Favori Oranında Gevşeme Var ({ref_fav} {v_str}, Δ+{tot_odd_diff}p para çıkışı)")
     elif fav_val <= -175:
-        odds_notes.append(f"💎 {fav_team_name} Ağır Favori Oranını Koruyor ({ref_fav} {v_str} | TG: {ou_val})")
+        odds_notes.append(f"💎 {fav_team_name} Ağır Favori Oranını Koruyor ({ref_fav} {v_str})")
 
-    h_pressing = (h_sh >= 5 or h_cor >= 3 or h_poss >= 58)
-    a_pressing = (a_sh >= 5 or a_cor >= 3 or a_poss >= 58)
-
+    h_pressing, a_pressing = (h_sh >= 5 or h_cor >= 3 or h_poss >= 58), (a_sh >= 5 or a_cor >= 3 or a_poss >= 58)
     if h_is_strong_fav and h_score <= a_score and h_pressing and m_int >= 18:
-        if h_score < a_score:
-            sot_tag += "|💎FavGeride->Pusu"
-            heat += 22
-            sig_type = "KORNER" if h_cor >= 3 else "GOL"
-            ai_notes.append(f"💎 Baskı Çok Yüksek! Favori {h_name} geride (%{h_poss} top, {h_sh} şut, {h_cor} korner) ➔ 🎯 Hamle: {cor_line} Korner Üst & Maç {goal_line} Üst")
-        elif m_int >= 25:
-            sot_tag += "|💎FavKilitli->Pusu"
-            heat += 16
-            sig_type = "GOL"
-            ai_notes.append(f"💎 Favori Ablukası ({h_name} {h_score}-{a_score}): {h_sh}({h_sot}) şut, {h_cor} korner ➔ 🎯 Hamle: {h_name} {h_score + 0.5} Üst / {cor_line} Korner Üst")
+        sot_tag += "|💎FavGeride->Pusu" if h_score < a_score else "|💎FavKilitli->Pusu"
+        heat += 22 if h_score < a_score else 16
+        sig_type = "KORNER" if (h_score < a_score and h_cor >= 3) else "GOL"
+        ai_notes.append(f"💎 Favori {h_name} Ablukası (Atak:{h_p['sho']}, Hız:{h_p['pac']}) ➔ 🎯 Hamle: {cor_line} Korner Üst & Maç {goal_line} Üst")
     elif a_is_strong_fav and a_score <= h_score and a_pressing and m_int >= 18:
-        if a_score < h_score:
-            sot_tag += "|💎FavGeride->Pusu"
-            heat += 22
-            sig_type = "KORNER" if a_cor >= 3 else "GOL"
-            ai_notes.append(f"💎 Baskı Çok Yüksek! Favori {a_name} geride (%{a_poss} top, {a_sh} şut, {a_cor} korner) ➔ 🎯 Hamle: {cor_line} Korner Üst & Maç {goal_line} Üst")
-        elif m_int >= 25:
-            sot_tag += "|💎FavKilitli->Pusu"
-            heat += 16
-            sig_type = "GOL"
-            ai_notes.append(f"💎 Favori Ablukası ({a_name} {h_score}-{a_score}): {a_sh}({a_sot}) şut, {a_cor} korner ➔ 🎯 Hamle: {a_name} {a_score + 0.5} Üst / {cor_line} Korner Üst")
+        sot_tag += "|💎FavGeride->Pusu" if a_score < h_score else "|💎FavKilitli->Pusu"
+        heat += 22 if a_score < h_score else 16
+        sig_type = "KORNER" if (a_score < h_score and a_cor >= 3) else "GOL"
+        ai_notes.append(f"💎 Favori {a_name} Ablukası (Atak:{a_p['sho']}, Hız:{a_p['pac']}) ➔ 🎯 Hamle: {cor_line} Korner Üst & Maç {goal_line} Üst")
 
     if (h_score < a_score and h_pressing) or (a_score < h_score and a_pressing):
         if "|💎FavGeride->Pusu" not in sot_tag:
@@ -767,108 +748,58 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
             heat += 14
             sig_type = sig_type or "KORNER"
             p_name = h_name if h_score < a_score else a_name
-            p_sh = h_sh if h_score < a_score else a_sh
-            p_cor = h_cor if h_score < a_score else a_cor
-            ai_notes.append(f"🚩 Baskı Yüksek ({p_name} geride): {p_sh} şut ve {p_cor} kornerle yükleniyor ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst")
+            ai_notes.append(f"🚩 {p_name} Geride Baskı Kuruyor ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst")
 
     if (h_sh >= 4 and h_sot_pct >= 55) or (a_sh >= 4 and a_sot_pct >= 55) or (tot_sh >= 7 and tot_sot_pct >= 45):
         sot_tag += "|🎯KeskinGol"
         heat += 12
         sig_type = sig_type or "GOL"
-        ai_notes.append(f"⚡ Şut Kalitesi Çok Keskin (%{tot_sot_pct} İsabet [{tot_sot}/{tot_sh}]) ➔ 🎯 Hamle: Canlı Maç {goal_line} Gol Üst")
-    elif (h_sh >= 8 and h_sot_pct <= 18) or (a_sh >= 8 and a_sot_pct <= 18):
-        sot_tag += "|📐KörŞut->Korner"
-        heat += 10
-        sig_type = sig_type or "KORNER"
-        dom_t = h_name if h_sh >= a_sh else a_name
-        ai_notes.append(f"📐 Kör Şut Baskısı ({dom_t} çok şut deniyor ama çerçeve kapalı) ➔ 🎯 Hamle: Toplam {cor_line} Korner Üst")
+        ai_notes.append(f"⚡ Şut Kalitesi Keskin (%{tot_sot_pct} İsabet [{tot_sot}/{tot_sh}]) ➔ 🎯 Hamle: Canlı Maç {goal_line} Gol Üst")
 
     heat = max(15, min(99, heat))
     if 20 <= m_int <= 78 and tot_goals <= 1 and (ref_tg >= 3.5 or ref_val <= -175) and heat >= 60:
         sot_tag += "|💹CanlıDeğer"
-        odds_notes.append(f"💹 Canlı Üst ({goal_line} Üst) Oranı Şişti — Değer (Value) Çok Yüksek!")
+        odds_notes.append(f"💹 Canlı Üst ({goal_line} Üst) Oranı Şişti — Değer (Value) Yüksek!")
     if not odds_notes:
         odds_notes.append(f"⚖️ Bahis Oranları Dengeli ({ref_fav} {v_str} | TG: {ou_val})")
 
     if 15 <= m_int <= 75 and heat >= 68 and sig_type and match_title not in MEM["live_signals"]:
-        if sig_type == "GOL":
-            MEM["live_signals"][match_title] = {"type": "GOL", "min": m_int, "base": tot_goals, "need": 1, "label": f"{m_int}' ({h_score}-{a_score}) ➔ Maç {tot_goals + 0.5} Üst", "status": "WAIT"}
-        else:
-            MEM["live_signals"][match_title] = {"type": "KORNER", "min": m_int, "base": tot_cor, "need": 2, "label": f"{m_int}' ({h_cor}-{a_cor}K) ➔ +2 Korner", "status": "WAIT"}
-
+        MEM["live_signals"][match_title] = {"type": sig_type, "min": m_int, "base": (tot_goals if sig_type == "GOL" else tot_cor), "need": (1 if sig_type == "GOL" else 2), "label": f"{m_int}' ➔ {'Gol' if sig_type=='GOL' else '+2 Korner'}", "status": "WAIT"}
     if match_title in MEM["live_signals"]:
         sig = MEM["live_signals"][match_title]
-        if sig["type"] == "GOL" and tot_goals >= sig["base"] + sig["need"]:
+        if (sig["type"] == "GOL" and tot_goals >= sig["base"] + sig["need"]) or (sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]):
             sig["status"] = "WON"
-        elif sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]:
-            sig["status"] = "WON"
-        if sig["status"] == "WON":
             ai_notes.insert(0, f"✅ CANLI SİNYAL GELDİ! [{sig['label']}]")
-
     if not ai_notes:
-        ai_notes.append(f"⚖️ Dengeli Saha Akışı (Baskı: %{heat} — Şut veya korner kırılması bekleniyor)")
+        ai_notes.append(f"⚖️ Dengeli Saha Akışı (Baskı: %{heat})")
     return heat, sot_tag, " • ".join(odds_notes), " • ".join(ai_notes)
-
-def calc_projected_score(m):
-    h_m, a_m, tg, pick = m["h_mom"], m["a_mom"], m["tg"], m["pick"]
-    away_fav = (m["a_name"] in pick) or (a_m > h_m + 15)
-    if "3.5 Gol Alt" in pick and "Çifte Şans" not in pick:
-        return ("1-1", "1-0") if h_m >= a_m else ("0-1", "1-1")
-    elif "Çifte Şans" in pick:
-        return ("1-2", "0-2") if "X2" in pick else ("2-0", "1-0")
-    elif "Takım Golü 1.5 Üst" in pick:
-        return (("1-3", "0-2") if tg >= 3.5 else ("0-2", "1-2")) if away_fav else (("3-1", "2-0") if tg >= 3.5 else ("2-0", "2-1"))
-    return (("1-2", "2-2") if away_fav else ("2-1", "2-2")) if (h_m >= 60 and a_m >= 60) else (("1-3", "1-2") if away_fav else ("3-1", "2-1"))
-
-def generate_card_comment_and_score(m):
-    odd_s, h_m, a_m = m["odd_str"], m["h_mom"], m["a_mom"]
-    notes = []
-    if "🧬" in odd_s:
-        notes.append(m.get("squad_model_note", "Kadro analizi modele yansıtıldı"))
-    if "🔥Δ-" in odd_s:
-        notes.append(f"Favoriye -{odd_s.split('🔥Δ-')[1].split(' ')[0]}p Akıllı Para girişi var")
-    elif "🚨Δ+" in odd_s:
-        notes.append(f"DİKKAT! Oranda +{odd_s.split('🚨Δ+')[1].split(' ')[0]}p sert erime var")
-    elif "⚠️Δ+" in odd_s:
-        notes.append(f"Oranda +{odd_s.split('⚠️Δ+')[1].split(' ')[0]}p gevşeme var")
-    if not notes:
-        notes.append("Oranlar, kadro ve form dengesi başlangıç çizgisini koruyor")
-    s1, s2 = calc_projected_score(m)
-    return " • ".join(notes) + f" | 🎯 **Tahmini Skor:** `{s1} / {s2}`"
 
 def get_stat(comp_team, names):
     for s in (comp_team.get("statistics") or []):
         if isinstance(s, dict) and s.get("name") in names:
             return safe_int(s.get("displayValue"), 0)
     return 0
-# ==================== 4. PARÇA SONU ====================
-# ==================== 5. PARÇA BAŞLANGICI ====================
+
 @st.cache_data(ttl=45)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
     date_str = now_tr.strftime("%Y%m%d")
     raw_items, roster_tasks = [], []
-    headers = {"User-Agent": "Mozilla/5.0"}
-
     for lig_adi, (slug, kademe) in LEAGUES.items():
-        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={date_str}"
         try:
-            r = requests.get(url, headers=headers, timeout=5)
+            r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={date_str}", headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
             data = r.json() if r.status_code == 200 else {}
         except Exception:
             data = {}
         if not isinstance(data, dict):
             continue
-
         for ev in (data.get("events") or []):
             if not isinstance(ev, dict):
                 continue
             ev_id = str(ev.get("id") or "")
-            comp_list = ev.get("competitions") or []
-            comp = comp_list[0] if (len(comp_list) > 0 and isinstance(comp_list[0], dict)) else {}
+            comp = (ev.get("competitions") or [{}])[0] if isinstance((ev.get("competitions") or [{}])[0], dict) else {}
             status_obj = (comp.get("status") or {}).get("type") or {}
-            state = str(status_obj.get("state") or "pre")
-            detail_clock = str(status_obj.get("shortDetail") or "")
+            state, detail_clock = str(status_obj.get("state") or "pre"), str(status_obj.get("shortDetail") or "")
             competitors = [c for c in (comp.get("competitors") or []) if isinstance(c, dict)]
             if len(competitors) < 2:
                 continue
@@ -881,9 +812,8 @@ def fetch_all_matches():
             h_form_raw, a_form_raw = str(home.get("form") or "WDWWL"), str(away.get("form") or "LDWLL")
             h_mom, a_mom = parse_form_momentum(h_form_raw), parse_form_momentum(a_form_raw)
             odd_str, fav_abbr, fav_val, ou_val, has_live_api_odds = safe_parse_odds(comp, match_title, state)
-
             if state in ("in", "pre") and ev_id:
-                roster_tasks.append((slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state))
+                roster_tasks.append((slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr))
             raw_items.append((lig_adi, slug, kademe, ev, comp, home, away, state, detail_clock, h_name, a_name, h_abbr, a_abbr, match_title, h_form_raw, a_form_raw, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, has_live_api_odds))
 
     roster_map = {}
@@ -900,7 +830,6 @@ def fetch_all_matches():
         h_score, a_score = safe_int(home.get("score"), 0), safe_int(away.get("score"), 0)
         raw_date = str(ev.get("date") or "")
         saat_str = f"{(safe_int(raw_date[11:13], 0) + 3) % 24:02d}:{raw_date[14:16]}" if ("T" in raw_date and len(raw_date) >= 16) else "00:00"
-
         h_sh, a_sh = get_stat(home, ["totalShots", "shotsSummary"]), get_stat(away, ["totalShots", "shotsSummary"])
         h_sot, a_sot = get_stat(home, ["shotsOnTarget"]), get_stat(away, ["shotsOnTarget"])
         h_cor, a_cor = get_stat(home, ["wonCorners", "corners"]), get_stat(away, ["wonCorners", "corners"])
@@ -923,17 +852,8 @@ def fetch_all_matches():
             elif m_int > snap["min"] + 5:
                 delta_str = f"|Δ({snap['min']}'->{m_int}'):+{max(0, h_sh - snap['h_sh'])}/{max(0, a_sh - snap['a_sh'])}Ş,+{max(0, h_cor - snap['h_cor'])}/{max(0, a_cor - snap['a_cor'])}K"
 
-        if state == "post":
-            if match_title in MEM["live_signals"]:
-                sig = MEM["live_signals"][match_title]
-                if sig["type"] == "GOL" and (h_score + a_score) >= sig["base"] + sig["need"]:
-                    sig["status"] = "WON"
-                elif sig["type"] == "KORNER" and (h_cor + a_cor) >= sig["base"] + sig["need"]:
-                    sig["status"] = "WON"
-                elif sig["status"] == "WAIT":
-                    sig["status"] = "LOST"
-            if date_str != MEM.get("settled_date", ""):
-                MEM["settled_results"][match_title] = {"won": evaluate_ft_result(pick, h_name, a_name, h_score, a_score), "is_ak": ("Ana Kasa" in pick)}
+        if state == "post" and date_str != MEM.get("settled_date", ""):
+            MEM["settled_results"][match_title] = {"won": evaluate_ft_result(pick, h_name, a_name, h_score, a_score), "is_ak": ("Ana Kasa" in pick)}
 
         results.append({
             "state": state, "saat": saat_str, "clock": detail_clock, "lig": lig_adi, "mac": match_title,
@@ -949,16 +869,15 @@ def fetch_all_matches():
 matches = fetch_all_matches()
 today_wins = sum(1 for v in MEM["settled_results"].values() if v["won"])
 today_total = len(MEM["settled_results"])
-today_ak_w = sum(1 for v in MEM["settled_results"].values() if v["is_ak"] and v["won"])
-today_ak_t = sum(1 for v in MEM["settled_results"].values() if v["is_ak"])
 tot_w, tot_t = MEM["base_wins"] + today_wins, MEM["base_total"] + today_total
 tot_pct = int(round((tot_w / tot_t) * 100)) if tot_t > 0 else 0
-ak_w, ak_t = MEM["base_ak_wins"] + today_ak_w, MEM["base_ak_total"] + today_ak_t
+ak_w = MEM["base_ak_wins"] + sum(1 for v in MEM["settled_results"].values() if v["is_ak"] and v["won"])
+ak_t = MEM["base_ak_total"] + sum(1 for v in MEM["settled_results"].values() if v["is_ak"])
 lv_settled = [s for s in MEM["live_signals"].values() if s["status"] in ("WON", "LOST")]
 lv_w, lv_t = sum(1 for s in lv_settled if s["status"] == "WON"), len(lv_settled)
 lv_active = sum(1 for s in MEM["live_signals"].values() if s["status"] == "WAIT")
 vip_w, vip_t = MEM["vip_live_wins"] + lv_w, MEM["vip_live_total"] + lv_t
-vip_pct = round((vip_w / vip_t) * 100, 1) if vip_t > 0 else 94.6
+vip_pct = round((vip_w / vip_t) * 100, 1) if vip_t > 0 else 95.0
 
 now_str = datetime.now(TR_TZ).strftime("%Y%m%d %H:%M")
 mini_lines = [f"⚡ DP-MİNİ [{now_str}] Karne:{tot_w}/{tot_t}(%{tot_pct}) AK:{ak_w}/{ak_t} CanlıPusu:{lv_w}/{lv_t}(Aktif:{lv_active})"]
@@ -967,26 +886,24 @@ pre_m = sorted([m for m in matches if m["state"] == "pre"], key=lambda x: x["con
 post_m = [m for m in matches if m["state"] == "post"]
 
 for m in live_m:
-    clk = str(m["clock"]).replace(" ", "")
-    mini_lines.append(f"CANLI|{clk}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}")
+    mini_lines.append(f"CANLI|{str(m['clock']).replace(' ','')}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}")
 for m in pre_m:
     mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd_str']}|TG:{m['tg']} -> {m['pick']}")
 for m in post_m:
-    icon = "✅" if evaluate_ft_result(m["pick"], m["h_name"], m["a_name"], m["h_score"], m["a_score"]) else "❌"
-    mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|{icon}|{m['pick']}")
+    mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|{'✅' if evaluate_ft_result(m['pick'], m['h_name'], m['a_name'], m['h_score'], m['a_score']) else '❌'}|{m['pick']}")
 
 st.markdown(f"🎯 **Canlı VIP AI Doğruluk:** `%{vip_pct} ({vip_w}/{vip_t} ✅)` | 💎 **Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Aktif Canlı Pusu:** `{lv_active}` | 🔒 **VIP Kontenjan:** `242 / 500`")
-if st.button("🔄 Canlı Verileri & Gerçek Kadro Motorunu Yenile", use_container_width=True):
+if st.button("🔄 Canlı Verileri & 5'li Güç Radarını Yenile", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
     st.code("\n".join(mini_lines), language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı PRO Radar (Gerçek Kadro & Değişiklik Motoru Aktif)")
+    st.markdown("### 🔴 Canlı PRO Radar (5'li Güç & Kadro Motoru Aktif)")
     for m in live_m:
         odds_cls = "dp-odds-hot" if any(k in m["odds_flow"] for k in ["🔥", "💹", "💎"]) else "dp-odds-calm"
-        exp_cls = "dp-exp-alert" if any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "📐", "✅", "🟠"]) else "dp-exp-calm"
+        exp_cls = "dp-exp-alert" if any(k in m["live_exp"] for k in ["💎", "⚡", "🚩", "✅", "🟠", "💪"]) else "dp-exp-calm"
         card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
         st.markdown(
             f"<div class='{card_c}'><span class='dp-heat'>🔥 Baskı: %{m['heat']}</span> "
@@ -998,10 +915,10 @@ if live_m:
             f"<div class='{odds_cls}'>💰 <b>Bahis Oranı & Para Girişi:</b> {m['odds_flow']}</div>"
             f"<div class='{exp_cls}'>🧠 <b>AI Yorumu & Beklenti:</b> {m['live_exp']}</div></div>", unsafe_allow_html=True
         )
-        with st.expander(f"🏟️ Gerçek Kadro ({m['h_tac']} vs {m['a_tac']}), Hava & Taktik Saha — {m['mac']}"):
+        with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}) & 5'li Güç Radarı — {m['mac']}"):
             st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-st.markdown("### ⏳ Maç Önü v5.4 Otonom Sinyaller (Gerçek Kadro & Rotasyon Analizli)")
+st.markdown("### ⏳ Maç Önü v5.5 Otonom Sinyaller (5'li Güç & Kadro Analizli)")
 for m in pre_m:
     card_cls = "dp-card dp-ak" if "Ana Kasa" in m["pick"] else ("dp-card dp-warn" if m["warn"] else "dp-card")
     st.markdown(
@@ -1009,8 +926,8 @@ for m in pre_m:
         f"<span class='dp-badge'>{m['lig']} • {m['h_tac']} vs {m['a_tac']}</span><br>"
         f"📈 Mom: <b>%{m['h_mom']}</b> {format_form_badges(m['h_form'])} vs <b>%{m['a_mom']}</b> {format_form_badges(m['a_form'])} | 💰 Oran: <b>{m['odd_str']}</b> | ⚽ TG: <b>{m['tg']}</b><br>"
         f"🎯 <b>Net Hedef:</b> {m['pick']}<br>"
-        f"💬 <span style='color:#8b949e;'>{generate_card_comment_and_score(m)}</span></div>", unsafe_allow_html=True
+        f"💬 <span style='color:#8b949e;'>{m.get('squad_model_note','')}</span></div>", unsafe_allow_html=True
     )
-    with st.expander(f"🏟️ Gerçek Kadro ({m['h_tac']} vs {m['a_tac']}), Hava & Taktik Saha — {m['mac']}"):
+    with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}) & 5'li Güç Radarı — {m['mac']}"):
         st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 # ==================== 5. PARÇA SONU ====================
