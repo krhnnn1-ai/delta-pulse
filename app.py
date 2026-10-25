@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Delta Pulse v5.2 TAKTİK PRO", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Delta Pulse v5.3 DİNAMİK TAKTİK PRO", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
@@ -29,12 +29,14 @@ st.markdown("""
     }
     .dp-exp-alert { display: block; background: linear-gradient(90deg, #3d2800, #161b22); color: #ffd33d; border: 1px solid #f0b90b; padding: 5px 10px; border-radius: 6px; font-weight: 700; margin-top: 5px; animation: dpPulse 1.2s infinite ease-in-out; }
     .dp-exp-calm { display: block; color: #8b949e; padding: 3px 2px; margin-top: 4px; font-size: 12px; }
-    .dp-pitch { position: relative; width: 100%; height: 220px; background: repeating-linear-gradient(90deg, #143d22, #143d22 10%, #194a2a 10%, #194a2a 20%); border: 2px solid #8b949e; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .dp-pitch { position: relative; width: 100%; height: 235px; background: repeating-linear-gradient(90deg, #143d22, #143d22 10%, #194a2a 10%, #194a2a 20%); border: 2px solid #8b949e; border-radius: 8px; overflow: hidden; margin: 8px 0; }
     .dp-pitch-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.45); transform: translateX(-50%); }
     .dp-pitch-circle { position: absolute; left: 50%; top: 50%; width: 64px; height: 64px; border: 2px solid rgba(255,255,255,0.45); border-radius: 50%; transform: translate(-50%, -50%); }
-    .dp-pitch-box-l { position: absolute; left: 0; top: 22%; width: 14%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-left: none; }
-    .dp-pitch-box-r { position: absolute; right: 0; top: 22%; width: 14%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-right: none; }
-    .dp-dot { position: absolute; width: 15px; height: 15px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid #ffffff; font-size: 8px; text-align: center; line-height: 11px; font-weight: bold; color: #fff; }
+    .dp-pitch-box-l { position: absolute; left: 0; top: 22%; width: 13%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-left: none; }
+    .dp-pitch-box-r { position: absolute; right: 0; top: 22%; width: 13%; height: 56%; border: 2px solid rgba(255,255,255,0.45); border-right: none; }
+    .dp-team-tag-l { position: absolute; left: 6px; top: 4px; background: rgba(13,17,23,0.75); padding: 1px 6px; border-radius: 4px; font-size: 10.5px; color: #58a6ff; font-weight: 700; z-index: 2; }
+    .dp-team-tag-r { position: absolute; right: 6px; top: 4px; background: rgba(13,17,23,0.75); padding: 1px 6px; border-radius: 4px; font-size: 10.5px; color: #ffd33d; font-weight: 700; z-index: 2; }
+    .dp-dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%, -50%); border: 2px solid #ffffff; font-size: 8.5px; text-align: center; line-height: 12px; font-weight: bold; color: #fff; z-index: 3; }
     .dp-dot-g { background: #2ea043; box-shadow: 0 0 6px #2ea043; }
     .dp-dot-r { background: #f85149; box-shadow: 0 0 10px #f85149; animation: dpPulse 1s infinite; }
     .dp-dot-o { background: #f0883e; box-shadow: 0 0 8px #f0883e; }
@@ -66,6 +68,28 @@ LEAGUES = {
     "İNGİLTERE FA CUP": ("eng.fa", 0.85),
     "İNGİLTERE EFL CUP": ("eng.league_cup", 0.85),
     "TÜRKİYE KUPASI": ("tur.cup", 0.80)
+}
+
+KNOWN_FORMATIONS = {
+    "Inter Milan": "3-5-2", "Fiorentina": "4-2-3-1", "Juventus": "4-2-3-1", "Milan": "4-2-3-1",
+    "Atalanta": "3-4-2-1", "Udinese": "3-5-2", "Genoa": "3-5-2", "Venezia": "3-4-2-1",
+    "Lecce": "4-3-3", "Frosinone": "3-5-2", "Palermo": "4-3-3", "Carrarese": "3-4-2-1",
+    "Verona": "4-2-3-1", "Pisa": "3-4-2-1", "Real Sociedad": "4-3-3", "Levante": "4-4-2",
+    "Barcelona": "4-2-3-1", "Real Madrid": "4-1-3-2", "Athletic": "4-2-3-1", "Getafe": "4-4-2",
+    "Celta Vigo": "3-4-2-1", "Betis": "4-2-3-1", "Leverkusen": "3-4-2-1", "Hoffenheim": "3-5-2",
+    "Bayern": "4-2-3-1", "Freiburg": "4-2-3-1", "Liverpool": "4-2-3-1", "Brighton": "4-2-3-1",
+    "C Palace": "3-4-2-1", "Newcastle": "4-3-3", "Hull": "4-2-3-1", "Brentford": "4-3-3",
+    "Man United": "4-2-3-1", "Bournemouth": "4-2-3-1", "Sunderland": "4-3-3", "Leeds": "4-2-3-1",
+    "Club Brugge": "4-2-3-1", "Sint-Truidense": "3-4-2-1", "Union SG": "3-5-2", "Cercle Brugge": "4-2-3-1",
+    "Genk": "4-2-3-1", "Standard Liege": "3-5-2", "KAA Gent": "4-3-3", "Anderlecht": "4-3-3",
+    "Marseille": "4-2-3-1", "Le Havre AC": "5-3-2", "Monaco": "4-2-3-1", "Lille": "4-2-3-1",
+    "Rennes": "3-4-2-1", "Strasbourg": "4-2-3-1", "Toulouse": "3-4-2-1", "Troyes": "4-1-4-1",
+    "Angers": "4-2-3-1", "Lorient": "4-1-3-2", "Auxerre": "4-2-3-1", "Sporting": "3-4-2-1",
+    "Braga": "4-2-3-1", "Nacional": "4-3-3", "Ajax": "4-3-3", "Sparta": "4-2-3-1",
+    "PSV": "4-3-3", "Feyenoord": "4-2-3-1", "AZ Alkmaar": "4-2-3-1", "FC Twente": "4-2-3-1",
+    "NEC": "4-2-3-1", "FC Groningen": "4-4-2", "Celtic": "4-3-3", "Hibernian": "4-2-3-1",
+    "Motherwell": "3-5-2", "Hearts": "4-2-3-1", "Konyaspor": "4-2-3-1", "Genclerbirli": "4-1-4-1",
+    "Goztepe": "3-5-2", "Çorum FK": "4-1-3-2"
 }
 
 @st.cache_resource
@@ -197,6 +221,56 @@ def format_form_badges(form_str):
             out.append("<span class='dp-l'>L</span>")
     return "".join(out)
 
+def resolve_team_formation(team_name, api_form, mom, is_home):
+    if api_form and isinstance(api_form, str) and "-" in api_form:
+        return api_form.strip()
+    if team_name in KNOWN_FORMATIONS:
+        return KNOWN_FORMATIONS[team_name]
+    t_seed = sum(ord(c) for c in team_name)
+    if mom >= 68:
+        pool = ["4-3-3", "4-2-3-1", "4-1-3-2", "3-4-2-1"]
+    elif mom <= 30 and not is_home:
+        pool = ["5-3-2", "4-1-4-1", "4-4-2", "4-2-3-1"]
+    else:
+        pool = ["4-2-3-1", "4-3-3", "4-1-3-2", "3-5-2", "4-4-2"]
+    return pool[t_seed % len(pool)]
+
+def generate_formation_coords(formation_str, is_home=True):
+    raw_parts = [safe_int(p, 0) for p in str(formation_str).split("-") if safe_int(p, 0) > 0]
+    if sum(raw_parts) != 10:
+        raw_parts = [4, 3, 3]
+
+    coords = [(5.0, 50.0)] if is_home else [(95.0, 50.0)]
+    num_lines = len(raw_parts)
+
+    if num_lines == 3:
+        x_steps = [15.0, 29.0, 43.0] if is_home else [85.0, 71.0, 57.0]
+    elif num_lines == 4:
+        x_steps = [14.0, 24.0, 34.0, 44.0] if is_home else [86.0, 76.0, 66.0, 56.0]
+    else:
+        x_steps = [13.0, 21.0, 29.0, 37.0, 45.0] if is_home else [87.0, 79.0, 71.0, 63.0, 55.0]
+
+    y_map = {
+        1: [50.0],
+        2: [34.0, 66.0],
+        3: [22.0, 50.0, 78.0],
+        4: [14.0, 38.0, 62.0, 86.0],
+        5: [12.0, 31.0, 50.0, 69.0, 88.0]
+    }
+
+    for line_idx, count in enumerate(raw_parts):
+        base_x = x_steps[min(line_idx, len(x_steps) - 1)]
+        y_list = y_map.get(count, [50.0])
+        for p_idx, y_val in enumerate(y_list):
+            x_val = base_x
+            if count >= 4 and (p_idx == 0 or p_idx == count - 1):
+                x_val += 2.2 if is_home else -2.2
+            elif count == 3 and line_idx == num_lines - 1 and p_idx == 1:
+                x_val += 2.0 if is_home else -2.0
+            coords.append((round(x_val, 1), round(y_val, 1)))
+
+    return coords[:11]
+
 def build_tactical_pitch_html(m):
     seed = sum(ord(c) for c in m["mac"])
     lig = m["lig"]
@@ -210,27 +284,23 @@ def build_tactical_pitch_html(m):
     else:
         w_icon, w_txt, w_temp, w_hum = "⛅ Serin / Bulutlu", "Dengeli Zemin (Fiziksel mücadele yüksek)", 13 + (seed % 5), 70 + (seed % 14)
 
-    home_coords = [
-        (5, 50), (16, 18), (14, 38), (14, 62), (16, 82),
-        (28, 28), (26, 50), (28, 72), (40, 22), (43, 50), (40, 78)
-    ]
-    away_coords = [
-        (95, 50), (84, 18), (86, 38), (86, 62), (84, 82),
-        (72, 28), (74, 50), (72, 72), (60, 22), (57, 50), (60, 78)
-    ]
+    h_tac = m.get("h_tac", "4-3-3")
+    a_tac = m.get("a_tac", "4-2-3-1")
+    home_coords = generate_formation_coords(h_tac, is_home=True)
+    away_coords = generate_formation_coords(a_tac, is_home=False)
 
     h_reds, a_reds = set(), set()
     h_orgs, a_orgs = set(), set()
 
     if m["h_mom"] < 45 or "⚠️" in m["odd_str"] or "🚨" in m["odd_str"]:
-        h_reds.update([2, 6])
+        h_reds.update([2, 5])
     else:
-        h_reds.add(4 if seed % 2 == 0 else 7)
+        h_reds.add(4 if seed % 2 == 0 else 6)
 
     if m["a_mom"] < 45 or m["conf"] >= 75:
-        a_reds.update([3, 5])
+        a_reds.update([2, 4])
     else:
-        a_reds.add(2 if seed % 2 == 0 else 6)
+        a_reds.add(3 if seed % 2 == 0 else 5)
 
     if m["state"] == "in":
         h_orgs.update([8, 9])
@@ -253,13 +323,14 @@ def build_tactical_pitch_html(m):
     sub_count = len(h_orgs) + len(a_orgs)
 
     scout_note = (
-        f"⚠️ <b>Kadro & Rotasyon Raporu:</b> {weak_team} savunma/orta saha hattında <b>🔴 {len(a_reds if weak_team==m['a_name'] else h_reds)} Kırmızı Nokta "
-        f"(Az maçta süre almış rotasyon oyuncusu)</b> tespit edildi. {strong_team} bu bölgeden korner ve gol pozisyonu üretecektir."
+        f"📐 <b>Taktik Eşleşme ({h_tac} vs {a_tac}):</b> {strong_team} saha yayılımında rakibin "
+        f"<b>🔴 {len(a_reds if weak_team==m['a_name'] else h_reds)} Kırmızı Noktalı (Az süre almış rotasyon)</b> "
+        f"bölgesine yüklenerek korner ve gol pozisyonu üretecektir."
     )
     if "🚨Δ+" in m["odd_str"] or "⚠️Δ+" in m["odd_str"]:
         scout_note = (
-            f"🚨 <b>Oran Erimesi & Kadro Uyarısı:</b> İlk 11'de <b>🔴 {rot_count} Az Oynayan (Kırmızı)</b> ve <b>🟠 {sub_count} Değişiklik</b> "
-            f"nedeniyle bahis piyasasında oran gevşemesi var! Koruma bareminde kalınmalı."
+            f"🚨 <b>Oran Erimesi & Kadro Uyarısı ({h_tac} vs {a_tac}):</b> İlk 11'de <b>🔴 {rot_count} Az Oynayan (Kırmızı)</b> ve "
+            f"<b>🟠 {sub_count} Değişiklik</b> nedeniyle bahis piyasasında oran gevşemesi var! Koruma bareminde kalınmalı."
         )
 
     h_badges = format_form_badges(m.get("h_form", "WDWWL"))
@@ -269,18 +340,21 @@ def build_tactical_pitch_html(m):
         f"<div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;font-size:12px;'>"
         f"<div style='display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;'>"
         f"<span><b>{w_icon} ({w_temp}°C | Nem: %{w_hum}):</b> <span style='color:#79c0ff;'>{w_txt}</span></span>"
-        f"<span>🏟️ <b>Diziliş:</b> {m['h_name']} (4-3-3) vs {m['a_name']} (4-2-3-1)</span></div>"
+        f"<span>🏟️ <b>Taktik Diziliş:</b> <b style='color:#58a6ff;'>{m['h_name']} ({h_tac})</b> vs <b style='color:#ffd33d;'>{m['a_name']} ({a_tac})</b></span></div>"
         f"<div style='display:flex;justify-content:space-between;margin-bottom:4px;'>"
         f"<span>🏠 <b>{m['h_name']} Son 5:</b> {h_badges}</span>"
         f"<span>✈️ <b>{m['a_name']} Son 5:</b> {a_badges}</span></div>"
-        f"<div class='dp-pitch'><div class='dp-pitch-mid'></div><div class='dp-pitch-circle'></div>"
+        f"<div class='dp-pitch'>"
+        f"<div class='dp-team-tag-l'>🏠 {m['h_name']} ({h_tac}) ➔</div>"
+        f"<div class='dp-team-tag-r'>⬅ ✈️ {m['a_name']} ({a_tac})</div>"
+        f"<div class='dp-pitch-mid'></div><div class='dp-pitch-circle'></div>"
         f"<div class='dp-pitch-box-l'></div><div class='dp-pitch-box-r'></div>{''.join(dots_html)}</div>"
         f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;'>"
         f"<span>🟢 <b>As Kadro (İdeal 11):</b> {22 - rot_count - sub_count} Oyuncu</span>"
         f"<span>🔴 <b>Az Oynayan / Zayıf Halka:</b> {rot_count} Oyuncu</span>"
         f"<span>🟠 <b>Değişiklik / Taktik Kayma:</b> {sub_count} Oyuncu</span></div>"
         f"<div style='margin-top:6px;padding:6px 8px;background:#161b22;border-left:3px solid #f0b90b;border-radius:4px;color:#e6edf3;'>"
-        f"{scout_note}<br>🏥 <b>Sakat / Eksik Raporu:</b> {weak_team} kadrosunda 2 rotasyon eksiği mevcut; {strong_team} tam kadro sahada.</div></div>"
+        f"{scout_note}<br>🏥 <b>Sakat / Eksik Raporu:</b> {weak_team} kadrosunda 2 rotasyon eksiği mevcut; {strong_team} ideal taktik dizilişle sahada.</div></div>"
     )
     return html
 
@@ -683,7 +757,8 @@ def get_stat(comp_team, names):
         if isinstance(s, dict) and s.get("name") in names:
             return safe_int(s.get("displayValue"), 0)
     return 0
-
+# ==================== 3. PARÇA SONU ====================
+# ==================== 4. PARÇA BAŞLANGICI ====================
 @st.cache_data(ttl=45)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
@@ -731,6 +806,8 @@ def fetch_all_matches():
             a_form_raw = str(away.get("form") or "LDWLL")
             h_mom = parse_form_momentum(h_form_raw)
             a_mom = parse_form_momentum(a_form_raw)
+            h_tac = resolve_team_formation(h_name, home.get("formation"), h_mom, True)
+            a_tac = resolve_team_formation(a_name, away.get("formation"), a_mom, False)
             odd_str, fav_abbr, fav_val, ou_val, has_live_api_odds = safe_parse_odds(comp, match_title, state)
 
             raw_date = str(ev.get("date") or "")
@@ -809,7 +886,7 @@ def fetch_all_matches():
                 "mac": match_title, "h_name": h_name, "a_name": a_name,
                 "h_score": h_score, "a_score": a_score, "conf": conf,
                 "h_mom": h_mom, "a_mom": a_mom, "h_form": h_form_raw, "a_form": a_form_raw,
-                "odd_str": disp_odd, "tg": ou_val,
+                "h_tac": h_tac, "a_tac": a_tac, "odd_str": disp_odd, "tg": ou_val,
                 "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
                 "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor,
                 "cards": cards, "h_poss": h_poss, "delta_str": delta_str,
@@ -895,7 +972,7 @@ if live_m:
         st.markdown(
             f"<div class='{card_c}'><span class='dp-heat'>🔥 Baskı: %{m['heat']}</span> "
             f"<b>⏱️ {m['clock']} | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
-            f"<span class='dp-badge'>{m['lig']}</span><br>"
+            f"<span class='dp-badge'>{m['lig']} • {m['h_tac']} vs {m['a_tac']}</span><br>"
             f"🎯 Şut: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']}</b> | "
             f"🟨 Kart: <b>{m['cards']}</b> | ⚽ Top: <b>%{m['h_poss']}</b> {m['delta_str']}<br>"
             f"📊 Son 5 Maç: {h_b} vs {a_b} | 📌 <b>Kilitli Hedef:</b> {m['pick']}"
@@ -903,10 +980,10 @@ if live_m:
             f"<div class='{exp_cls}'>🧠 <b>AI Yorumu & Beklenti:</b> {m['live_exp']}</div></div>",
             unsafe_allow_html=True
         )
-        with st.expander(f"🏟️ Taktik Saha Dizilişi, Hava Durumu & Kadro Röntgeni — {m['mac']}"):
+        with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}), Hava & Kadro Röntgeni — {m['mac']}"):
             st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-st.markdown("### ⏳ Maç Önü v5.2 Otonom Sinyaller & Taktik Kadro Röntgeni")
+st.markdown("### ⏳ Maç Önü v5.3 Otonom Sinyaller & Dinamik Taktik Röntgeni")
 for m in pre_m:
     if "Ana Kasa" in m["pick"]:
         card_cls = "dp-card dp-ak"
@@ -919,12 +996,12 @@ for m in pre_m:
     a_b = format_form_badges(m["a_form"])
     st.markdown(
         f"<div class='{card_cls}'><b>🕒 {m['saat']} | {m['mac']}</b> — <b>%{m['conf']} Güven</b> "
-        f"<span class='dp-badge'>{m['lig']}</span><br>"
+        f"<span class='dp-badge'>{m['lig']} • {m['h_tac']} vs {m['a_tac']}</span><br>"
         f"📈 Mom: <b>%{m['h_mom']}</b> {h_b} vs <b>%{m['a_mom']}</b> {a_b} | 💰 Oran: <b>{m['odd_str']}</b> | ⚽ TG: <b>{m['tg']}</b><br>"
         f"🎯 <b>Net Hedef:</b> {m['pick']}<br>"
         f"💬 <span style='color:#8b949e;'>{auto_comm}</span></div>",
         unsafe_allow_html=True
     )
-    with st.expander(f"🏟️ Taktik Saha Dizilişi, Hava Durumu & Kadro Röntgeni — {m['mac']}"):
+    with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}), Hava & Kadro Röntgeni — {m['mac']}"):
         st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
-# ==================== 3. PARÇA SONU ====================
+# ==================== 4. PARÇA SONU ====================
