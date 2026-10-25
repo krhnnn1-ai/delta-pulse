@@ -527,7 +527,6 @@ def build_tactical_pitch_html(m):
         f"🧬 <b>Model Karar Özeti:</b> {m.get('squad_model_note','')}</div></div>"
     )
 # ==================== 3. PARÇA SONU ====================
-
 # ==================== 4. PARÇA BAŞLANGICI ====================
 def get_opening_fallback(match_title):
     if match_title in MEM["last_valid_odds"]:
@@ -626,6 +625,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     is_off = bool((roster_data or {}).get("official", False))
     h_inf = (roster_data or {}).get("h") or {}
     a_inf = (roster_data or {}).get("a") or {}
+    h_tac = h_inf.get("tac") or resolve_team_formation(h_name, None, h_mom, True)
+    a_tac = a_inf.get("tac") or resolve_team_formation(a_name, None, a_mom, False)
+    fav_tac, dog_tac = (a_tac, h_tac) if is_away_fav else (h_tac, a_tac)
+
     fav_inf, dog_inf = (a_inf, h_inf) if is_away_fav else (h_inf, a_inf)
     fav_p = fav_inf.get("pwr") or {"pac": 76, "sho": 76, "dri": 75, "phy": 75, "def": 75}
     dog_p = dog_inf.get("pwr") or {"pac": 71, "sho": 70, "dri": 70, "phy": 72, "def": 70}
@@ -635,8 +638,31 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     fav_rot_total = (fav_inf.get("def_weak", 0) + fav_inf.get("att_weak", 0)) if is_off else 0
     atk_vs_def_gap = int(round(((fav_p["sho"] + fav_p["pac"] + fav_p["dri"]) / 3.0) - ((dog_p["def"] + dog_p["phy"]) / 2.0)))
 
+    open_line_tacs = ("3-4-2-1", "3-5-2", "4-3-3", "4-2-3-1", "4-1-3-2")
+    fav_high_line = fav_tac in open_line_tacs
+    dog_counter_threat = (dog_p["pac"] >= 73 or dog_p["phy"] >= 74) and dog_mom >= 38
+    buro_btts_sim = (
+        (ou_val >= 3.5 and -240 <= fav_val <= -115 and fav_high_line and dog_mom >= 35)
+        or (fav_high_line and dog_counter_threat and fav_p["def"] <= 79 and dog_mom >= 45)
+    )
+    wing_asymmetry = (h_tac.startswith("3-") and a_tac.startswith("4-")) or (h_tac.startswith("4-") and a_tac.startswith("3-"))
+    buro_xg_trust = (form_clash and fav_val <= -175 and not any_drift_warning)
+
     squad_force_team_over = False
     squad_force_btts = False
+    sim_extra_notes = []
+
+    if buro_btts_sim:
+        squad_force_btts = True
+        bonus_conf += 4
+        smart_tag += " 💥BüroKG-Sim"
+        sim_extra_notes.append(f"💥 Büro KG/Kontra Simülasyonu ({fav_team} {fav_tac} açık çizgi vs {dog_team} ⚡Hız:{dog_p['pac']}/💪Fizik:{dog_p['phy']})")
+    if wing_asymmetry:
+        sim_extra_notes.append(f"📐 Kanat Asimetrisi ({h_tac} vs {a_tac} ➔ Kenarlarda +2.5 Korner beklentisi)")
+    if buro_xg_trust:
+        bonus_conf += 4
+        smart_tag += " 🧠Büro-xG"
+        sim_extra_notes.append(f"🧠 Büro xG Koruması (Form farkına rağmen {fav_team} oranı güçlü tutuluyor)")
 
     if is_off:
         if fav_rot_total >= 3:
@@ -650,7 +676,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
             smart_tag += f" ✅KadroOnay(+{p_boost}p)"
             squad_force_team_over = True
             squad_model_note = f"✅ Resmi Kadro Açıklandı: {fav_team} (Atak:{fav_p['sho']}, Hız:{fav_p['pac']}) vs {dog_team} (Savunma:{dog_p['def']}) ➔ Güven +{p_boost}p!"
-        elif fav_def_weak >= 2 and dog_p["pac"] >= 74:
+        elif fav_def_weak >= 2 and dog_p["pac"] >= 73:
             squad_force_btts = True
             smart_tag += " 🧬StoperZaafı(KG)"
             squad_model_note = f"✅ Resmi Kadro Açıklandı: {fav_team} savunmasında 🔴 {fav_def_weak} rotasyon var ➔ KG Var / Üst eğilimi!"
@@ -666,7 +692,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
             f"İskelet Gücü: {fav_team} (Atak:{fav_p['sho']}/Hız:{fav_p['pac']}) vs {dog_team} (Sav:{dog_p['def']})"
         )
 
-    raw_conf = 50 + (int(mom_diff * 0.35) if not form_clash else -4)
+    if sim_extra_notes:
+        squad_model_note += " • " + " | ".join(sim_extra_notes)
+
+    raw_conf = 50 + (int(mom_diff * 0.35) if (not form_clash or buro_xg_trust) else -4)
     if ou_val >= 3.5:
         raw_conf += 14
     if ou_val >= 4.5:
@@ -682,10 +711,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
 
     conf = int(round(raw_conf * min(1.05, max(0.78, kademe)))) + bonus_conf
     conf = max(25, min(97, conf))
-    is_strong_market_fav = (fav_val <= -140 and fav_mom >= 55)
+    is_strong_market_fav = (fav_val <= -140 and (fav_mom >= 55 or buro_xg_trust))
     is_elite_shootout = (h_mom >= 80 and a_mom >= 80 and ou_val >= 3.5)
 
-    if ana_kasa_veto or form_clash or not (is_strong_market_fav or is_elite_shootout):
+    if ana_kasa_veto or (form_clash and not buro_xg_trust) or not (is_strong_market_fav or is_elite_shootout):
         if conf >= 83:
             conf = 74 if severe_drift_warning else 78
 
@@ -696,16 +725,16 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fa
     elif ou_val >= 3.5 or tg_jumped:
         if severe_drift_warning:
             pick = "Maç 2.5 Gol Üst [⚠️ERİME: KADRO BEKLE]"
-        elif fav_mom < 50 and dog_mom < 40 and fav_val <= -150 and not tg_jumped:
+        elif fav_mom < 50 and dog_mom < 40 and fav_val <= -150 and not tg_jumped and not buro_btts_sim:
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
-        elif (dog_mom < 45 or squad_force_team_over) and fav_val <= -160 and fav_mom >= 55 and not form_clash and not any_drift_warning and fav_rot_total < 3:
+        elif (dog_mom < 45 or squad_force_team_over) and fav_val <= -160 and fav_mom >= 55 and not form_clash and not any_drift_warning and fav_rot_total < 3 and not buro_btts_sim:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         else:
             pick = "Maç 2.5 Gol Üst"
     else:
         if (h_mom >= 58 and a_mom >= 58) or (form_clash and dog_mom >= 65 and fav_val <= -110) or squad_force_btts:
             pick = "Karşılıklı Gol Var (KG Var)"
-        elif (fav_val <= -185 or (dog_mom < 20 and fav_val <= -165) or (squad_force_team_over and fav_val <= -150)) and fav_mom >= 55 and not form_clash and not any_drift_warning and fav_rot_total < 3:
+        elif (fav_val <= -185 or (dog_mom < 20 and fav_val <= -165) or (squad_force_team_over and fav_val <= -150)) and (fav_mom >= 55 or buro_xg_trust) and not any_drift_warning and fav_rot_total < 3:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
         elif (mom_diff >= 25 and fav_mom > dog_mom) or (fav_val <= -150 and fav_mom < 55 and not form_clash) or fav_rot_total >= 3:
             pick = f"{fav_team} Çifte Şans ({cs_code}) & 3.5 Alt"
