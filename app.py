@@ -735,6 +735,20 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
 
 def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, roster_data=None):
     tot_goals, tot_sh, tot_sot, tot_cor = h_score + a_score, h_sh + a_sh, h_sot + a_sot, h_cor + a_cor
+
+    if match_title in MEM["live_signals"]:
+        sig = MEM["live_signals"][match_title]
+        if (sig["type"] == "GOL" and tot_goals >= sig["base"] + sig["need"]) or (sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]):
+            sig["status"] = "WON"
+
+    if m_int >= 86:
+        lock_notes = [
+            "🔒 Son Dakika Kilidi (86'+): Son dakikalarda yüksek kaos ve belirsizlik nedeniyle canlı tahmin/yorum kapatılmıştır (İstatistik Koruması Aktif)."
+        ]
+        if match_title in MEM["live_signals"] and MEM["live_signals"][match_title]["status"] == "WON":
+            lock_notes.insert(0, f"✅ ÖNCEKİ CANLI SİNYAL GELDİ! [{MEM['live_signals'][match_title]['label']}]")
+        return 45, "|🔒SonDkKilidi", "🔒 Maç Sonu Kilidi Devrede (Oran & Canlı Bahis Kapalı)", " • ".join(lock_notes)
+
     h_sot_pct = int(round((h_sot / h_sh) * 100)) if h_sh > 0 else 0
     a_sot_pct = int(round((a_sot / a_sh) * 100)) if a_sh > 0 else 0
     tot_sot_pct = int(round((tot_sot / tot_sh) * 100)) if tot_sh > 0 else 0
@@ -827,11 +841,8 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
 
     if 15 <= m_int <= 75 and heat >= 68 and sig_type and match_title not in MEM["live_signals"]:
         MEM["live_signals"][match_title] = {"type": sig_type, "min": m_int, "base": (tot_goals if sig_type == "GOL" else tot_cor), "need": (1 if sig_type == "GOL" else 2), "label": f"{m_int}' ➔ {'Gol' if sig_type=='GOL' else '+2 Korner'}", "status": "WAIT"}
-    if match_title in MEM["live_signals"]:
-        sig = MEM["live_signals"][match_title]
-        if (sig["type"] == "GOL" and tot_goals >= sig["base"] + sig["need"]) or (sig["type"] == "KORNER" and tot_cor >= sig["base"] + sig["need"]):
-            sig["status"] = "WON"
-            ai_notes.insert(0, f"✅ CANLI SİNYAL GELDİ! [{sig['label']}]")
+    if match_title in MEM["live_signals"] and MEM["live_signals"][match_title]["status"] == "WON":
+        ai_notes.insert(0, f"✅ CANLI SİNYAL GELDİ! [{MEM['live_signals'][match_title]['label']}]")
     if not ai_notes:
         ai_notes.append(f"⚖️ Dengeli Saha Akışı (Baskı: %{heat})")
     return heat, sot_tag, " • ".join(odds_notes), " • ".join(ai_notes)
