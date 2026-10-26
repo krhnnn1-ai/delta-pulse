@@ -811,62 +811,95 @@ USDT_TRC20_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 _SECRET_BYTES = bytes([71, 75, 51, 56, 45, 68, 80, 57, 57, 45, 88, 55, 75, 52, 45, 86, 73, 80, 33])
 _ADMIN_HASH = hashlib.sha256(_SECRET_BYTES).hexdigest()
 
+# Mühürlü Patron Telefon Kimliği: DP-F3CB9C (Kriptolu)
+_PATRON_DEV_ID = bytes([68, 80, 45, 70, 51, 67, 66, 57, 67]).decode("utf-8")
+
 def verify_admin_secret(raw_val):
     s = str(raw_val or "").strip().upper()
     if not s:
         return False
+    if s == _PATRON_DEV_ID:
+        return True
     return hashlib.sha256(s.encode("utf-8")).hexdigest() == _ADMIN_HASH
 
-def get_smart_device_uid():
-    if st.session_state.get("auto_uid"):
-        return st.session_state["auto_uid"]
-    try:
-        qp = dict(st.query_params)
-    except Exception:
-        qp = {}
-    url_uid = str(qp.get("uid", "")).strip().upper()
-    if url_uid.startswith("DP-") and len(url_uid) >= 7:
-        st.session_state["auto_uid"] = url_uid
-        return url_uid
-
-    sig_str = ""
+def _extract_hw_and_net_sigs():
     try:
         hdrs = dict(st.context.headers)
         ua = str(hdrs.get("User-Agent") or hdrs.get("user-agent") or "")
         lang = str(hdrs.get("Accept-Language") or hdrs.get("accept-language") or "")
         plat = str(hdrs.get("Sec-Ch-Ua") or hdrs.get("sec-ch-ua") or "")
         xff = str(hdrs.get("X-Forwarded-For") or hdrs.get("x-forwarded-for") or "").split(",")[0].strip()
-        sig_str = f"{ua}|{lang}|{plat}|{xff}"
+        hw_only = hashlib.sha256(f"{ua}|{lang}|{plat}".encode("utf-8")).hexdigest()[:12].upper()
+        full_sig = f"{ua}|{lang}|{plat}|{xff}"
+        return hw_only, full_sig
     except Exception:
-        sig_str = ""
+        return "", ""
 
-    if not sig_str or len(sig_str) < 12:
-        sig_str = datetime.now(TR_TZ).strftime("%Y%m%d%H%M%S%f")
+def get_smart_device_uid():
+    init_membership_db()
+    hw_only, full_sig = _extract_hw_and_net_sigs()
 
-    h_code = hashlib.sha256(sig_str.encode("utf-8")).hexdigest()[:6].upper()
-    auto_id = f"DP-{h_code}"
+    try:
+        qp = dict(st.query_params)
+    except Exception:
+        qp = {}
+    url_uid = str(qp.get("uid", "")).strip().upper()
+
+    if full_sig and len(full_sig) >= 12:
+        h_code = hashlib.sha256(full_sig.encode("utf-8")).hexdigest()[:6].upper()
+        computed_id = f"DP-{h_code}"
+    else:
+        computed_id = st.session_state.get("auto_uid") or f"DP-{datetime.now(TR_TZ).strftime('%H%M%S')}"
+
+    auto_id = url_uid if (url_uid.startswith("DP-") and len(url_uid) >= 7) else computed_id
+
+    # Patron Cihazı Otomatik Tanıma (DP-F3CB9C veya Kayıtlı Donanım İmzası)
+    if auto_id == _PATRON_DEV_ID or computed_id == _PATRON_DEV_ID or (hw_only and hw_only in MEM.get("patron_hw_sigs", set())):
+        auto_id = _PATRON_DEV_ID
+        st.session_state["patron_unlocked"] = True
+        if hw_only and hw_only not in MEM.get("patron_hw_sigs", set()):
+            MEM.setdefault("patron_hw_sigs", set()).add(hw_only)
+            save_persistent_store()
+        if "users_db" in MEM and _PATRON_DEV_ID in MEM["users_db"]:
+            MEM["users_db"].pop(_PATRON_DEV_ID, None)
+            save_persistent_store()
+
     st.session_state["auto_uid"] = auto_id
     try:
-        st.query_params["uid"] = auto_id
+        if st.query_params.get("uid") != auto_id:
+            st.query_params["uid"] = auto_id
     except Exception:
         pass
     return auto_id
 
 def inject_remember_me_bridge(cur_uid, is_patron=False):
-    p_flag = "1" if is_patron else "0"
+    p_flag = "1" if (is_patron or cur_uid == _PATRON_DEV_ID) else "0"
     js_code = f"""
     <script>
     (function() {{
         try {{
-            const savedUid = localStorage.getItem('dp_auto_uid_v6');
             const curUid = "{cur_uid}";
+            const isPat = "{p_flag}";
+            if (isPat === "1") {{
+                localStorage.setItem('dp_auto_uid_v6', '{_PATRON_DEV_ID}');
+                localStorage.setItem('dp_patron_seal_v6', '1');
+            }}
+            const savedSeal = localStorage.getItem('dp_patron_seal_v6');
+            const savedUid = localStorage.getItem('dp_auto_uid_v6');
+            const url = new URL(window.parent.location.href);
+
+            if (savedSeal === "1" && isPat === "0") {{
+                url.searchParams.set('uid', '{_PATRON_DEV_ID}');
+                url.searchParams.set('program', 'patron');
+                window.parent.location.replace(url.toString());
+                return;
+            }}
             if (!savedUid && curUid.startsWith("DP-")) {{
                 localStorage.setItem('dp_auto_uid_v6', curUid);
-            }} else if (savedUid && savedUid !== curUid && "{p_flag}" === "0") {{
-                const url = new URL(window.parent.location.href);
+            }} else if (savedUid && savedUid !== curUid && isPat === "0") {{
                 if (url.searchParams.get('uid') !== savedUid) {{
                     url.searchParams.set('uid', savedUid);
-                    window.parent.history.replaceState({{}}, '', url.toString());
+                    window.parent.location.replace(url.toString());
                 }}
             }}
         }} catch(e) {{}}
@@ -880,6 +913,7 @@ def save_persistent_store():
         payload = {
             "users_db": MEM.get("users_db", {}),
             "used_txids": list(MEM.get("used_txids", set())),
+            "patron_hw_sigs": list(MEM.get("patron_hw_sigs", set())),
             "trc20_wallet": MEM.get("trc20_wallet", ""),
             "app_public_url": MEM.get("app_public_url", ""),
             "tg_bot_token": MEM.get("tg_bot_token", ""),
@@ -900,6 +934,7 @@ def init_membership_db():
     MEM.setdefault("tg_bot_token", "")
     MEM.setdefault("tg_channel_id", "")
     MEM.setdefault("used_txids", set())
+    MEM.setdefault("patron_hw_sigs", set())
     MEM.setdefault("tg_posted", set())
 
     if os.path.exists(STORE_FILE):
@@ -910,6 +945,7 @@ def init_membership_db():
                 if saved.get("users_db"):
                     MEM["users_db"] = saved["users_db"]
                 MEM["used_txids"] = set(saved.get("used_txids", []))
+                MEM["patron_hw_sigs"] = set(saved.get("patron_hw_sigs", []))
                 MEM["tg_posted"] = set(saved.get("tg_posted", []))
                 for k in ("trc20_wallet", "app_public_url", "tg_bot_token", "tg_channel_id"):
                     if saved.get(k):
@@ -934,6 +970,7 @@ def init_membership_db():
                 "note": "⚡ TRC20 Blokzincir Otomatik Onay (30 Gün VIP)"
             }
         }
+    MEM["users_db"].pop(_PATRON_DEV_ID, None)
     MEM["store_loaded"] = True
 
 def calc_unique_usdt_amount(seq_num):
@@ -946,6 +983,10 @@ def auto_sync_device_user(auto_uid, ref_code=""):
     now_tr = datetime.now(TR_TZ)
     code = str(auto_uid or "").strip().upper()
     ref = str(ref_code or "").strip().upper()
+
+    if code == _PATRON_DEV_ID:
+        st.session_state["patron_unlocked"] = True
+        return {"code": _PATRON_DEV_ID, "seq": 0, "group": "PATRON", "tier": "ADMIN", "refs": [], "pay_dec": 100.0, "exp": "2099-12-31 23:59"}
 
     if code in db:
         u = db[code]
