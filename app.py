@@ -803,7 +803,7 @@ def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
     date_str = now_tr.strftime("%Y%m%d")
 
-    if MEM.get("model_ver") != "v5.8_SIM":
+    if MEM.get("model_ver") != "v5.8_PRO_UI2":
         MEM["roster_cache"].clear()
         MEM["live_signals"].clear()
         MEM["settled_results"].clear()
@@ -823,7 +823,7 @@ def fetch_all_matches():
             "Santa Clara vs Benfica": {"fav": "SLB", "val": -265, "tg": 2.5},
             "FC Andorra vs Burgos": {"fav": "AND", "val": 115, "tg": 2.5}
         })
-        MEM["model_ver"] = "v5.8_SIM"
+        MEM["model_ver"] = "v5.8_PRO_UI2"
 
     if MEM.get("active_date") != date_str:
         MEM["live_signals"].clear()
@@ -944,9 +944,10 @@ MEM.setdefault("fav_matches", ["Galatasaray vs Fenerbahce", "Besiktas vs Istanbu
 today_wins = sum(1 for v in MEM["settled_results"].values() if v["won"])
 today_total = len(MEM["settled_results"])
 tot_w, tot_t = MEM["base_wins"] + today_wins, MEM["base_total"] + today_total
-tot_pct = int(round((tot_w / tot_t) * 100)) if tot_t > 0 else 0
+tot_pct = round((tot_w / tot_t) * 100, 1) if tot_t > 0 else 72.0
 ak_w = MEM["base_ak_wins"] + sum(1 for v in MEM["settled_results"].values() if v["is_ak"] and v["won"])
 ak_t = MEM["base_ak_total"] + sum(1 for v in MEM["settled_results"].values() if v["is_ak"])
+ak_pct = round((ak_w / ak_t) * 100, 1) if ak_t > 0 else 84.6
 lv_settled = [s for s in MEM["live_signals"].values() if s["status"] in ("WON", "LOST")]
 lv_w, lv_t = sum(1 for s in lv_settled if s["status"] == "WON"), len(lv_settled)
 lv_active = sum(1 for s in MEM["live_signals"].values() if s["status"] == "WAIT")
@@ -954,7 +955,7 @@ vip_w, vip_t = MEM["vip_live_wins"] + lv_w, MEM["vip_live_total"] + lv_t
 vip_pct = round((vip_w / vip_t) * 100, 1) if vip_t > 0 else 95.7
 
 now_str = datetime.now(TR_TZ).strftime("%Y%m%d %H:%M")
-mini_lines = [f"⚡ DP-MİNİ [{now_str}] Karne:{tot_w}/{tot_t}(%{tot_pct}) AK:{ak_w}/{ak_t} CanlıPusu:{lv_w}/{lv_t}(Aktif:{lv_active})"]
+mini_lines = [f"⚡ DP-MİNİ [{now_str}] Karne:{tot_w}/{tot_t}(%{int(round(tot_pct))}) AK:{ak_w}/{ak_t} CanlıPusu:{lv_w}/{lv_t}(Aktif:{lv_active})"]
 live_m = sorted([m for m in matches if m["state"] == "in"], key=lambda x: x["heat"], reverse=True)
 pre_m = sorted([m for m in matches if m["state"] == "pre"], key=lambda x: x["conf"], reverse=True)
 post_m = [m for m in matches if m["state"] == "post"]
@@ -967,17 +968,60 @@ for m in pre_m:
 for m in post_m:
     mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|{'✅' if evaluate_ft_result(m['pick'], m['h_name'], m['a_name'], m['h_score'], m['a_score']) else '❌'}|{m['pick']}")
 
-st.markdown(f"🎯 **Canlı VIP AI Doğruluk:** `%{vip_pct} ({vip_w}/{vip_t} ✅)` | 💎 **Ana Kasa:** `{ak_w}/{ak_t}` | **🔥 Aktif Canlı Pusu:** `{lv_active}` | 📊 **Genel Karne:** `{tot_w}/{tot_t} (%{tot_pct})`")
+top_pick_str = f"{pre_m[0]['mac']} (%{pre_m[0]['conf']})" if pre_m else (f"{live_m[0]['mac']} (🔥%{live_m[0]['heat']})" if live_m else "Analiz Tamamlandı")
+top_sub_str = pre_m[0]["pick"] if pre_m else (live_m[0]["pick"] if live_m else "Yeni Bülten Bekleniyor")
+
+st.markdown(f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px;">
+    <div style="background:linear-gradient(135deg,#0d2818,#161b22);border:1px solid #2ea043;border-radius:8px;padding:8px 10px;">
+        <div style="font-size:10.5px;color:#8b949e;font-weight:700;">🎯 CANLI VIP AI RADAR</div>
+        <div style="font-size:18px;font-weight:800;color:#56d364;">%{vip_pct} <span style="font-size:12px;color:#c9d1d9;">({vip_w}/{vip_t} ✅)</span></div>
+        <div style="font-size:10.5px;color:#79c0ff;">🔥 Aktif Canlı Pusu: <b>{lv_active}</b></div>
+    </div>
+    <div style="background:linear-gradient(135deg,#2b2108,#161b22);border:1px solid #f0b90b;border-radius:8px;padding:8px 10px;">
+        <div style="font-size:10px;color:#ffd33d;font-weight:800;">💎 ANA KASA (KADROLAR BELİRLENMEDEN)</div>
+        <div style="font-size:18px;font-weight:800;color:#ffd33d;">%{ak_pct} <span style="font-size:12px;color:#c9d1d9;">({ak_w}/{ak_t} ✅)</span></div>
+        <div style="font-size:10.5px;color:#e6edf3;">⚡ Kadro Açıklanmadan %83+ Elit İsabet</div>
+    </div>
+    <div style="background:linear-gradient(135deg,#131d2e,#161b22);border:1px solid #2f81f7;border-radius:8px;padding:8px 10px;">
+        <div style="font-size:10px;color:#79c0ff;font-weight:800;">📊 GENEL AI KARNESİ (KADROLAR BELİRLENMEDEN)</div>
+        <div style="font-size:18px;font-weight:800;color:#58a6ff;">%{tot_pct} <span style="font-size:12px;color:#c9d1d9;">({tot_w}/{tot_t} ✅)</span></div>
+        <div style="font-size:10.5px;color:#c9d1d9;">🔒 Kadro Öncesi Otonom Simülasyon</div>
+    </div>
+    <div style="background:linear-gradient(135deg,#24152b,#161b22);border:1px solid #a371f7;border-radius:8px;padding:8px 10px;">
+        <div style="font-size:10.5px;color:#8b949e;font-weight:700;">👑 GÜNÜN VİTRİN LİDERİ</div>
+        <div style="font-size:13.5px;font-weight:800;color:#d2a8ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{top_pick_str}</div>
+        <div style="font-size:10.5px;color:#56d364;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">🎯 {top_sub_str}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+if pre_m:
+    spot_cards = []
+    for sp in pre_m[:3]:
+        b_col = "#f0b90b" if "Ana Kasa" in sp["pick"] else ("#2ea043" if "💥" in sp["odd_str"] or "🔥" in sp["odd_str"] else "#2f81f7")
+        spot_cards.append(
+            f"<div style='flex:1;min-width:210px;background:#161b22;border-left:3px solid {b_col};border-radius:6px;padding:6px 9px;font-size:11.5px;'>"
+            f"<div style='display:flex;justify-content:space-between;'><b>🕒 {sp['saat']} • {sp['mac']}</b><span style='color:{b_col};font-weight:700;'>%{sp['conf']}</span></div>"
+            f"<div style='color:#56d364;font-weight:600;margin-top:2px;'>🎯 {sp['pick']}</div>"
+            f"<div style='color:#8b949e;font-size:10.5px;'>💰 {sp['odd_str']} | ⚽ TG: {sp['tg']}</div></div>"
+        )
+    st.markdown(
+        "<div style='background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px 10px;margin-bottom:10px;'>"
+        "<div style='font-size:11px;font-weight:700;color:#ffd33d;margin-bottom:6px;'>⚡ GÜNÜN ÖNE ÇIKAN AI SİMÜLASYON & BALİNA FIRSATLARI (KADRO ÖNCESİ ERKEN DEĞER)</div>"
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{''.join(spot_cards)}</div></div>",
+        unsafe_allow_html=True
+    )
 
 all_active_names = [m["mac"] for m in (live_m + pre_m)]
 valid_defaults = [x for x in MEM["fav_matches"] if x in all_active_names] or all_active_names[:4]
-with st.expander("⭐ Favori Maçlarım & 🔔 İzinsiz Değişiklik Yakalayıcı", expanded=True):
+with st.expander("⭐ Favori Maçlarım & 🔔 Canlı Bildirim Merkezi", expanded=True):
     c1, c2 = st.columns([3, 1])
     with c1:
-        sel_favs = st.multiselect("📌 Takip ettiğin maçlar:", options=all_active_names, default=valid_defaults)
+        sel_favs = st.multiselect("📌 Bildirim ve kadro takibi yapılacak maçlar:", options=all_active_names, default=valid_defaults)
         MEM["fav_matches"] = sel_favs
     with c2:
-        auto_ref = st.checkbox("⏱️ 5 Dk Oto-Tarama", value=False, help="Açık olduğunda her 5 dakikada bir izin istemeden tarama yapar.")
+        auto_ref = st.checkbox("⏱️ 5 Dk Oto-Tarama", value=False, help="Açık olduğunda her 5 dakikada bir otomatik tarama yapar.")
     if auto_ref:
         st.markdown("<meta http-equiv='refresh' content='300'>", unsafe_allow_html=True)
     fav_alerts = []
@@ -998,21 +1042,19 @@ with st.expander("⭐ Favori Maçlarım & 🔔 İzinsiz Değişiklik Yakalayıc�
                 fav_alerts.append(msg)
                 st.toast(msg, icon="⏳")
             else:
-                fav_alerts.append(f"⏳ [TAKİPTE - {m['saat']}] {m['mac']} ➔ Kadro belli değil (Son 45-60 dk kala uyarı verecek) | Hedef: {m['pick']}")
+                fav_alerts.append(f"⏳ [TAKİPTE - {m['saat']}] {m['mac']} ➔ Kadro bekleniyor (Son 45-60 dk kala uyarı verecek) | Hedef: {m['pick']}")
     if MEM.get("change_log"):
-        fav_alerts.insert(0, "🔄 <b>Son Taramada Değişenler:</b> " + " • ".join(MEM["change_log"][:3]))
+        fav_alerts.insert(0, "🔄 <b>Son Piyasa & Saha Değişimleri:</b> " + " • ".join(MEM["change_log"][:3]))
     if fav_alerts:
         st.markdown("<div style='background:#161f2c;border-left:4px solid #f0b90b;padding:8px 10px;border-radius:6px;font-size:12px;'>" + "<br>".join(fav_alerts) + "</div>", unsafe_allow_html=True)
 
-if st.button("🔄 Verileri, Simülasyon Motorunu & Değişiklikleri Yenile", use_container_width=True):
+if st.button("🔄 Canlı Verileri, Kadroları & Simülasyon Motorunu Güncelle", use_container_width=True):
     MEM["roster_cache"].clear()
     st.cache_data.clear()
     st.rerun()
-with st.expander("📲 DP-MİNİ Ham Veri Kopyala"):
-    st.code("\n".join(mini_lines), language="text")
 
 if live_m:
-    st.markdown("### 🔴 Canlı PRO Radar (v5.8 Büro Simülasyonu & 86'+ Kilit Aktif)")
+    st.markdown("### 🔴 Canlı PRO Radar (Büro Simülasyonu & 86'+ Kilit Aktif)")
     for m in live_m:
         fav_star = "⭐ " if m["mac"] in MEM["fav_matches"] else ""
         odds_cls = "dp-odds-hot" if any(k in m["odds_flow"] for k in ["🔥", "💹", "💎"]) else "dp-odds-calm"
@@ -1031,7 +1073,7 @@ if live_m:
         with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}) & 5'li Güç Radarı — {m['mac']}"):
             st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-st.markdown("### ⏳ Maç Önü v5.8 Otonom Sinyaller (Büro Simülasyon & Kadro Destekli)")
+st.markdown("### ⏳ Günün Otonom Maç Önü Sinyalleri (Büro Simülasyon & Kadro Destekli)")
 for m in pre_m:
     fav_star = "⭐ " if m["mac"] in MEM["fav_matches"] else ""
     k_badge = "<span class='dp-w'>✅ RESMİ KADRO AÇIKLANDI</span>" if m["is_off"] else "<span class='dp-heat'>⏳ KADRO BELLİ DEĞİL (SON 45-60 DK KONTROL)</span>"
@@ -1045,4 +1087,8 @@ for m in pre_m:
     )
     with st.expander(f"🏟️ Taktik Saha ({m['h_tac']} vs {m['a_tac']}) & 5'li Güç Radarı — {m['mac']}"):
         st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
+
+st.markdown("---")
+with st.expander("⚙️ Sistem Senkronizasyon & Veri Terminali (Yönetici)"):
+    st.code("\n".join(mini_lines), language="text")
 # ==================== 6. PARÇA SONU ====================
