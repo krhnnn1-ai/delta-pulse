@@ -1296,6 +1296,7 @@ def send_autonomous_x_tweet(tweet_text):
     at = str(MEM.get("x_access_token") or "").strip()
     ats = str(MEM.get("x_access_secret") or "").strip()
     if not (ck and cs and at and ats):
+        st.session_state["last_x_err"] = "4 anahtardan biri boş! Lütfen 4 kutuyu da doldurun."
         return False
 
     url = "https://api.twitter.com/2/tweets"
@@ -1315,9 +1316,14 @@ def send_autonomous_x_tweet(tweet_text):
     auth_header = "OAuth " + ", ".join(f'{k}="{urllib.parse.quote(v, safe="")}"' for k, v in sorted(oauth_params.items()))
 
     try:
-        r = requests.post(url, json={"text": tweet_text[:278]}, headers={"Authorization": auth_header, "Content-Type": "application/json"}, timeout=5)
-        return r.status_code in (200, 201)
-    except Exception:
+        r = requests.post(url, json={"text": tweet_text[:275]}, headers={"Authorization": auth_header, "Content-Type": "application/json"}, timeout=6)
+        if r.status_code in (200, 201):
+            st.session_state["last_x_err"] = ""
+            return True
+        st.session_state["last_x_err"] = f"HTTP {r.status_code}: {r.text}"
+        return False
+    except Exception as e:
+        st.session_state["last_x_err"] = str(e)
         return False
 
 def build_x_intent_url(tweet_text):
@@ -1896,6 +1902,11 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                             st.warning("Bot Token ve Kanal ID kontrol edin.")
                 with cb3:
                     if st.button("🐦 Şimdi X'e (Twitter) Otomatik Test Tweeti At", use_container_width=True):
+                        # Test butonuna basıldığında kutudaki anahtarları otomatik kaydet
+                        MEM["x_api_key"], MEM["x_api_secret"] = xk1.strip(), xk2.strip()
+                        MEM["x_access_token"], MEM["x_access_secret"] = xk3.strip(), xk4.strip()
+                        save_persistent_store()
+
                         top_m = pre_m[0] if pre_m else None
                         tags = build_viral_hashtags(top_m["h_name"], top_m["a_name"], top_m["lig"]) if top_m else "#FootballAI #BettingTips #CryptoBetting"
                         test_tweet = (
@@ -1908,7 +1919,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                         if send_autonomous_x_tweet(test_tweet):
                             st.success("✅ Tweet otomatik olarak X hesabında paylaşıldı!")
                         else:
-                            st.warning("X API anahtarlarını girdiğinizden ve Read+Write izni verdiğinizden emin olun.")
+                            st.error(f"❌ X API Hatası: {st.session_state.get('last_x_err', 'Bilinmeyen hata')}")
 
             st.markdown("#### ⚡ Manuel Üye Müdahalesi (Cihaz Kimliğine Anında VIP Aç / Değiştir)")
             ca1, ca2, ca3 = st.columns([2, 2, 2])
