@@ -1625,6 +1625,15 @@ def fetch_all_matches():
     return results
 
 init_membership_db()
+for _k, _v in [
+    ("trc20_wallet", "TYourTrustWalletTRC20AddressHere"),
+    ("app_public_url", "https://deltapulse.streamlit.app"),
+    ("support_tg_url", "https://t.me/DeltaPulseSupport"),
+    ("tg_bot_token", ""), ("tg_channel_id", ""),
+    ("x_api_key", ""), ("x_api_secret", ""), ("x_access_token", ""), ("x_access_secret", "")
+]:
+    MEM.setdefault(_k, _v)
+
 matches = fetch_all_matches()
 MEM.setdefault("fav_matches", ["Fleetwood Town vs Arsenal", "AS Roma vs Cagliari", "Sassuolo vs Lazio", "Luton vs Doncaster"])
 st.session_state.setdefault("patron_unlocked", False)
@@ -1705,7 +1714,6 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
     </div>
     """, unsafe_allow_html=True)
 
-    # 🛡️ ANTI-CRASH KALKANI: Müşteri butonu RAM önbelleğini silmez (200+ eşzamanlı kullanıcı koruması)
     if st.button("🔄 Refresh 24/7 Global Radar, Official Lineups & Tactical Props", use_container_width=True):
         if is_patron_mode:
             MEM["roster_cache"].clear()
@@ -1779,7 +1787,7 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
                 f"🕒 {m['saat']} (UTC+3) | {m['mac']} ({en_lig_pre})\n"
                 f"📊 AI Confidence: {m['conf']}% | Market: {en_odd_pre}\n"
                 f"🎯 Target & Corner/Card Prop: 🔒 [VIP LOCKED - {vip_pct}% Live VIP Record]\n"
-                f"👉 Instant WebApp: {MEM['app_public_url']}\n{tags}"
+                f"👉 Instant WebApp: {MEM.get('app_public_url', 'https://deltapulse.streamlit.app')}\n{tags}"
             )
             x_url = build_x_intent_url(x_txt)
             x_btn_html = f"<div style='margin-top:4px;'><a href='{x_url}' target='_blank' style='background:#1d9bf0;color:#fff;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;text-decoration:none;'>🐦 Tek Tıkla Bu Maçı X'te (Twitter) Paylaş (#Hashtag Hazır)</a></div>"
@@ -1848,17 +1856,17 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
             with st.expander("💸 1. Ayar: TRC20 Cüzdan, Telegram Bot & X (Twitter) Otomatik Bot Ayarları", expanded=True):
                 cw1, cw2 = st.columns([2, 2])
                 with cw1:
-                    w_inp = st.text_input("Sabit TRC20 USDT Alıcı Cüzdan Adresin (T ile başlayan):", value=MEM["trc20_wallet"])
-                    u_inp = st.text_input("Müşteri Uygulama Linkin (share.streamlit.io):", value=MEM["app_public_url"])
-                    s_inp = st.text_input("7/24 Müşteri Destek Telegram Linkin (Örn: https://t.me/DeltaPulseSupport):", value=MEM["support_tg_url"])
-                    b_tok = st.text_input("Telegram Bot Token (@BotFather):", value=MEM["tg_bot_token"], type="password")
-                    c_id = st.text_input("Telegram Kanal ID (@kanal_adin veya -100...):", value=MEM["tg_channel_id"])
+                    w_inp = st.text_input("Sabit TRC20 USDT Alıcı Cüzdan Adresin (T ile başlayan):", value=MEM.get("trc20_wallet", ""))
+                    u_inp = st.text_input("Müşteri Uygulama Linkin (share.streamlit.io):", value=MEM.get("app_public_url", "https://deltapulse.streamlit.app"))
+                    s_inp = st.text_input("7/24 Müşteri Destek Telegram Linkin (Örn: https://t.me/DeltaPulseSupport):", value=MEM.get("support_tg_url", "https://t.me/DeltaPulseSupport"))
+                    b_tok = st.text_input("Telegram Bot Token (@BotFather):", value=MEM.get("tg_bot_token", ""), type="password")
+                    c_id = st.text_input("Telegram Kanal ID (@kanal_adin veya -100...):", value=MEM.get("tg_channel_id", ""))
                 with cw2:
                     st.markdown("**🐦 X (Twitter) Ücretsiz Otomatik Bot Anahtarları (developer.x.com):**")
-                    xk1 = st.text_input("X API Key (Consumer Key):", value=MEM["x_api_key"], type="password")
-                    xk2 = st.text_input("X API Secret (Consumer Secret):", value=MEM["x_api_secret"], type="password")
-                    xk3 = st.text_input("X Access Token:", value=MEM["x_access_token"], type="password")
-                    xk4 = st.text_input("X Access Token Secret:", value=MEM["x_access_secret"], type="password")
+                    xk1 = st.text_input("X API Key (Consumer Key):", value=MEM.get("x_api_key", ""), type="password")
+                    xk2 = st.text_input("X API Secret (Consumer Secret):", value=MEM.get("x_api_secret", ""), type="password")
+                    xk3 = st.text_input("X Access Token:", value=MEM.get("x_access_token", ""), type="password")
+                    xk4 = st.text_input("X Access Token Secret:", value=MEM.get("x_access_secret", ""), type="password")
 
                 cb1, cb2, cb3 = st.columns([1, 1, 1])
                 with cb1:
@@ -1880,7 +1888,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                             f"🌍 Active Coverage: <b>Europe + Brazil + Argentina + Mexico + Japan</b>\n"
                             + (f"⚡ Top Locked Signal Today: <b>{top_m['saat']} (UTC+3) {top_m['mac']} ({top_m['conf']}% Confidence)</b>\n\n" if top_m else "\n")
                             + f"🎁 <b>First 100 Founders:</b> Invite 2 friends for <b>90-Day FREE VIP</b> or unlock instantly via <b>100 USDT (TRC20)</b>!\n"
-                            f"👉 <a href='{MEM['app_public_url']}'>Launch WebApp (One-Click Auto Access — No Login Required)</a>"
+                            f"👉 <a href='{MEM.get('app_public_url', 'https://deltapulse.streamlit.app')}'>Launch WebApp (One-Click Auto Access — No Login Required)</a>"
                         )
                         if send_telegram_channel_post(promo_txt):
                             st.success("✅ Telegram kanalında yayınlandı!")
@@ -1895,7 +1903,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                             f"🎯 Live VIP Record: {vip_pct}% ({vip_w}/{vip_t} ✅)\n"
                             f"💎 Main Bankroll: {ak_pct}%\n"
                             + (f"⚡ Top Signal: {top_m['saat']} | {top_m['mac']} ({top_m['conf']}% Confidence)\n" if top_m else "")
-                            + f"👉 Instant WebApp: {MEM['app_public_url']}\n{tags}"
+                            + f"👉 Instant WebApp: {MEM.get('app_public_url', 'https://deltapulse.streamlit.app')}\n{tags}"
                         )
                         if send_autonomous_x_tweet(test_tweet):
                             st.success("✅ Tweet otomatik olarak X hesabında paylaşıldı!")
@@ -2001,7 +2009,8 @@ else:
         f"👤 STANDARD TIER (Invite {max(0, 2 - ref_cnt)} More Friends for FREE {reward_txt}!)"
     )
 
-    my_ref_url = f"{MEM['app_public_url']}?ref={cur_user['code']}"
+    app_pub = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
+    my_ref_url = f"{app_pub}?ref={cur_user['code']}"
     share_txt = (
         f"🔥 24/7 AI Football Whale & Lineup Radar with {ak_pct}% Main Bankroll & {vip_pct}% Live VIP accuracy! "
         f"No registration or password needed — click for instant auto-access:"
@@ -2027,7 +2036,7 @@ else:
             st.markdown(
                 f"<div style='background:#0d1117;border:1px solid #2ea043;border-radius:6px;padding:8px;font-size:11.5px;margin-bottom:6px;'>"
                 f"💎 <b>Your Unique Auto-Verification Amount:</b> <code style='color:#56d364;font-size:14px;font-weight:800;'>{pay_dec_val:.2f} USDT</code> <b>(TRC20 / Tron Network)</b><br>"
-                f"📋 <b>Official TRC20 Receiving Address:</b> <code style='color:#ffd33d;'>{MEM['trc20_wallet']}</code><br>"
+                f"📋 <b>Official TRC20 Receiving Address:</b> <code style='color:#ffd33d;'>{MEM.get('trc20_wallet', '')}</code><br>"
                 f"<span style='color:#8b949e;font-size:10.5px;'>🛡️ No wallet connection required. Send the exact amount (<b>{pay_dec_val:.2f} USDT</b>) via TRC20 from any exchange or wallet (Binance, TrustWallet, Bybit, OKX) and click verify below for instant 3-second activation! Need help? Contact <a href='{sup_url}' target='_blank' style='color:#58a6ff;'>24/7 Telegram VIP Support</a> with your Device ID (<b>{cur_user['code']}</b>).</span></div>",
                 unsafe_allow_html=True
             )
