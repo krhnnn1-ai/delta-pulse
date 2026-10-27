@@ -1630,6 +1630,73 @@ def fetch_all_matches():
         })
     return results
 
+def inject_patron_x_button_and_copy_bridge():
+    js_x = """
+    <script>
+    (function() {
+        try {
+            const pDoc = window.parent.document;
+            // 1. Üst Bardaki 'Gemini' Tuşunun Yanına Sadece Patron İçin '𝕏' Tuşu Ekle
+            const allLinks = pDoc.querySelectorAll('a');
+            allLinks.forEach(a => {
+                if (a.innerText && a.innerText.includes('Gemini') && !pDoc.getElementById('dp-top-x-btn')) {
+                    const xBtn = pDoc.createElement('a');
+                    xBtn.id = 'dp-top-x-btn';
+                    xBtn.href = 'https://x.com/compose/post';
+                    xBtn.target = '_blank';
+                    xBtn.innerText = '𝕏';
+                    xBtn.style.cssText = 'background:#0f1419;border:1px solid #1d9bf0;color:#ffffff;padding:6px 13px;border-radius:8px;font-weight:900;font-size:14px;text-decoration:none;margin-left:6px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(29,155,240,0.35);';
+                    a.parentNode.insertBefore(xBtn, a.nextSibling);
+                }
+            });
+
+            // 2. Maç Altlarındaki '📋 X Paylaşım Metnini Kopyala' Tuşuna Tıklama Dinleyicisi
+            if (!window.parent._dpXCopyBound) {
+                window.parent._dpXCopyBound = true;
+                pDoc.addEventListener('click', function(e) {
+                    const btn = e.target.closest('.dp-x-copy-btn');
+                    if (!btn) return;
+                    const rawEl = btn.parentElement.querySelector('.dp-x-raw');
+                    if (!rawEl) return;
+                    const textToCopy = rawEl.innerText || rawEl.textContent;
+
+                    const markCopied = () => {
+                        const oldHtml = btn.innerHTML;
+                        btn.innerHTML = '✅ Kopyalandı! (Üstteki 𝕏 Tuşuna Bas)';
+                        btn.style.background = '#2ea043';
+                        setTimeout(() => {
+                            btn.innerHTML = oldHtml;
+                            btn.style.background = '#1d9bf0';
+                        }, 3000);
+                    };
+
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(textToCopy).then(markCopied).catch(() => {
+                            const ta = pDoc.createElement('textarea');
+                            ta.value = textToCopy;
+                            pDoc.body.appendChild(ta);
+                            ta.select();
+                            pDoc.execCommand('copy');
+                            pDoc.body.removeChild(ta);
+                            markCopied();
+                        });
+                    } else {
+                        const ta = pDoc.createElement('textarea');
+                        ta.value = textToCopy;
+                        pDoc.body.appendChild(ta);
+                        ta.select();
+                        pDoc.execCommand('copy');
+                        pDoc.body.removeChild(ta);
+                        markCopied();
+                    }
+                });
+            }
+        } catch(err) {}
+    })();
+    </script>
+    """
+    components.html(js_x, height=0, width=0)
+
 init_membership_db()
 matches = fetch_all_matches()
 if "fav_matches" not in MEM:
@@ -1738,6 +1805,26 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
                 if locked_live else
                 f"Live Momentum: {m['heat']}% | Shots on Target: {m['h_sot']}-{m['a_sot']} | Market Tags: {tr_to_en_text(m['sot_tag'])}"
             )
+            x_live_html = ""
+            if is_patron_mode:
+                clean_h = "".join(ch for ch in str(m["h_name"]) if ch.isalnum())
+                clean_a = "".join(ch for ch in str(m["a_name"]) if ch.isalnum())
+                app_u = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
+                x_live_txt = (
+                    f"🔥 LIVE VIP AMBUSH ({m['clock']})\n"
+                    f"⚽ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}\n"
+                    f"📈 Pressure: {m['heat']}% | Shots: {m['h_sh']}-{m['a_sh']} | Corners: {m['h_cor']}-{m['a_cor']}\n"
+                    f"🎯 Live Target: 🔒 VIP ({vip_pct}% Win)\n"
+                    f"👉 {app_u}\n"
+                    f"#{clean_h} #{clean_a} #LiveBetting #FootballAI"
+                )
+                x_live_html = (
+                    f"<div style='margin-top:5px;'>"
+                    f"<code class='dp-x-raw' style='display:none;'>{x_live_txt}</code>"
+                    f"<span class='dp-x-copy-btn' style='background:#1d9bf0;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;display:inline-block;'>📋 Canlı X Metnini Kopyala</span>"
+                    f"</div>"
+                )
+
             card_c = "dp-card dp-live-hot" if m["heat"] >= 68 else "dp-card dp-live"
             st.markdown(
                 f"<div class='{card_c}'><span class='dp-heat'>🔥 Pressure: {m['heat']}%</span> "
@@ -1746,7 +1833,7 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
                 f"🎯 Shots: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Corners: <b>{m['h_cor']}-{m['a_cor']}</b> | "
                 f"🟨 Cards: <b>{m['cards']}</b> | ⚽ Poss: <b>{m['h_poss']}%</b> {en_delta}<br>"
                 f"📌 <b>Final Locked Target:</b> <span style='color:#ffd33d;'>{pick_show}</span>"
-                f"<div class='dp-exp-alert'>🧠 <b>AI Live Analysis:</b> {exp_show}</div></div>", unsafe_allow_html=True
+                f"<div class='dp-exp-alert'>🧠 <b>AI Live Analysis:</b> {exp_show}</div>{x_live_html}</div>", unsafe_allow_html=True
             )
             if not locked_live:
                 with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
@@ -1797,8 +1884,12 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
                 f"👉 {app_u}\n"
                 f"#{clean_h} #{clean_a} #BettingTips #FootballAI"
             )
-            x_url = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(x_txt)}"
-            x_btn_html = f"<div style='margin-top:4px;'><a href='{x_url}' target='_blank' style='background:#1d9bf0;color:#fff;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;text-decoration:none;'>🐦 Tek Tıkla Bu Maçı X'te (Twitter) Paylaş (#Hashtag Hazır)</a></div>"
+            x_btn_html = (
+                f"<div style='margin-top:5px;'>"
+                f"<code class='dp-x-raw' style='display:none;'>{x_txt}</code>"
+                f"<span class='dp-x-copy-btn' style='background:#1d9bf0;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;display:inline-block;'>📋 X Paylaşım Metnini Kopyala (#Hashtag Hazır)</span>"
+                f"</div>"
+            )
 
         st.markdown(
             f"<div class='{card_cls}'><b>🕒 {m['saat']} (UTC+3) | {m['mac']}</b> — <b>{m['conf']}% Confidence</b> "
@@ -1828,12 +1919,13 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
             else:
                 st.error("Invalid admin key!")
     else:
+        inject_patron_x_button_and_copy_bridge()
         total_members = len(MEM["users_db"])
         founder_left = max(0, 100 - total_members)
         st.markdown(
-            "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;'>"
-            "<span>👑 <b>DELTA PULSE — PATRON TAM YETKİLİ PROGRAMI</b> (v6.6 Anti-Çökme + X Paylaşım + 4 Yeni Lig)</span>"
-            "<span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü & 7/24 Global Aktif</span></div>",
+            "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;'>"
+            "<span>👑 <b>DELTA PULSE — PATRON PANELİ</b> <span style='font-size:11px;color:#56d364;'>(🔒 DP-F3CB9C Mühürlü)</span></span>"
+            "<a href='https://x.com/compose/post' target='_blank' style='background:#0f1419;border:1px solid #1d9bf0;color:#fff;padding:5px 14px;border-radius:7px;font-weight:800;font-size:12.5px;text-decoration:none;'>𝕏 X'i Aç</a></div>",
             unsafe_allow_html=True
         )
         tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa, X (Twitter) & Telegram Bot Ayarları"])
