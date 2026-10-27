@@ -1468,7 +1468,7 @@ def format_remaining_time(exp_str, is_en=True):
     except Exception:
         return "N/A"
 # ==================== 6. PARÇA SONU ====================
-# ==================== 7. PARÇA BAŞLANGICI ====================
+# ==================== 7. PARÇA BAŞLANGICI (BÖLÜM 1/3) ====================
 @st.cache_data(ttl=45, show_spinner=False)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
@@ -1630,27 +1630,63 @@ def fetch_all_matches():
         })
     return results
 
+def detect_visitor_device_and_lang():
+    ua, lang = "", ""
+    try:
+        hdrs = st.context.headers
+        if hdrs:
+            ua = str(hdrs.get("User-Agent") or hdrs.get("user-agent") or "")
+            lang = str(hdrs.get("Accept-Language") or hdrs.get("accept-language") or "")
+    except Exception:
+        pass
+    ua_l = ua.lower()
+    if "iphone" in ua_l:
+        dev = "📱 iPhone (iOS)"
+    elif "ipad" in ua_l:
+        dev = "📱 iPad (iOS)"
+    elif "android" in ua_l:
+        if any(k in ua_l for k in ("xiaomi", "redmi", "poco", "17t", "mi ")):
+            dev = "📱 Xiaomi (Android)"
+        elif any(k in ua_l for k in ("samsung", "sm-", "galaxy")):
+            dev = "📱 Samsung (Android)"
+        else:
+            dev = "📱 Android Telefon"
+    elif "macintosh" in ua_l or "mac os" in ua_l:
+        dev = "💻 Mac / MacBook"
+    elif "windows" in ua_l:
+        dev = "💻 Windows PC"
+    elif "telegram" in ua_l:
+        dev = "✈️ Telegram İçi"
+    elif "twitter" in ua_l or "x.com" in ua_l:
+        dev = "𝕏 X Uygulama İçi"
+    else:
+        dev = "🌐 Web Tarayıcı"
+    clean_lang = lang.split(",")[0].strip().upper()[:5] if lang else "GLOBAL"
+    return f"{dev} • 🌍 {clean_lang or 'GLOBAL'}"
+
+def clean_dummy_and_reindex_users():
+    db = MEM.get("users_db", {})
+    removed = False
+    for dummy_k in ("DP-KURUCU1", "DP-KRIPTO2", "DP-F3CB9C"):
+        if dummy_k in db:
+            db.pop(dummy_k, None)
+            removed = True
+    sorted_u = sorted(db.values(), key=lambda x: x.get("seq", 999))
+    for i_seq, u_item in enumerate(sorted_u, start=1):
+        if u_item.get("seq") != i_seq:
+            u_item["seq"] = i_seq
+            u_item["group"] = "🥇 İlk 100 Kurucu" if i_seq <= 100 else "👤 Standart Üye"
+            u_item["pay_dec"] = round(100.0 + ((i_seq % 89) + 10) / 100.0, 2)
+            removed = True
+    if removed:
+        save_persistent_store()
+
 def inject_patron_x_button_and_copy_bridge():
     js_x = """
     <script>
     (function() {
         try {
             const pDoc = window.parent.document;
-            // 1. Üst Bardaki 'Gemini' Tuşunun Yanına Sadece Patron İçin '𝕏' Tuşu Ekle
-            const allLinks = pDoc.querySelectorAll('a');
-            allLinks.forEach(a => {
-                if (a.innerText && a.innerText.includes('Gemini') && !pDoc.getElementById('dp-top-x-btn')) {
-                    const xBtn = pDoc.createElement('a');
-                    xBtn.id = 'dp-top-x-btn';
-                    xBtn.href = 'https://x.com/compose/post';
-                    xBtn.target = '_blank';
-                    xBtn.innerText = '𝕏';
-                    xBtn.style.cssText = 'background:#0f1419;border:1px solid #1d9bf0;color:#ffffff;padding:6px 13px;border-radius:8px;font-weight:900;font-size:14px;text-decoration:none;margin-left:6px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(29,155,240,0.35);';
-                    a.parentNode.insertBefore(xBtn, a.nextSibling);
-                }
-            });
-
-            // 2. Maç Altlarındaki '📋 X Paylaşım Metnini Kopyala' Tuşuna Tıklama Dinleyicisi
             if (!window.parent._dpXCopyBound) {
                 window.parent._dpXCopyBound = true;
                 pDoc.addEventListener('click', function(e) {
@@ -1659,35 +1695,27 @@ def inject_patron_x_button_and_copy_bridge():
                     const rawEl = btn.parentElement.querySelector('.dp-x-raw');
                     if (!rawEl) return;
                     const textToCopy = rawEl.innerText || rawEl.textContent;
-
                     const markCopied = () => {
                         const oldHtml = btn.innerHTML;
                         btn.innerHTML = '✅ Kopyalandı! (Üstteki 𝕏 Tuşuna Bas)';
                         btn.style.background = '#2ea043';
-                        setTimeout(() => {
-                            btn.innerHTML = oldHtml;
-                            btn.style.background = '#1d9bf0';
-                        }, 3000);
+                        setTimeout(() => { btn.innerHTML = oldHtml; btn.style.background = '#1d9bf0'; }, 3000);
                     };
-
+                    if (window.parent.AndroidBridge && window.parent.AndroidBridge.copyText) {
+                        window.parent.AndroidBridge.copyText(textToCopy);
+                        markCopied();
+                        return;
+                    }
                     if (navigator.clipboard && navigator.clipboard.writeText) {
                         navigator.clipboard.writeText(textToCopy).then(markCopied).catch(() => {
                             const ta = pDoc.createElement('textarea');
-                            ta.value = textToCopy;
-                            pDoc.body.appendChild(ta);
-                            ta.select();
-                            pDoc.execCommand('copy');
-                            pDoc.body.removeChild(ta);
-                            markCopied();
+                            ta.value = textToCopy; pDoc.body.appendChild(ta); ta.select();
+                            pDoc.execCommand('copy'); pDoc.body.removeChild(ta); markCopied();
                         });
                     } else {
                         const ta = pDoc.createElement('textarea');
-                        ta.value = textToCopy;
-                        pDoc.body.appendChild(ta);
-                        ta.select();
-                        pDoc.execCommand('copy');
-                        pDoc.body.removeChild(ta);
-                        markCopied();
+                        ta.value = textToCopy; pDoc.body.appendChild(ta); ta.select();
+                        pDoc.execCommand('copy'); pDoc.body.removeChild(ta); markCopied();
                     }
                 });
             }
@@ -1698,6 +1726,7 @@ def inject_patron_x_button_and_copy_bridge():
     components.html(js_x, height=0, width=0)
 
 init_membership_db()
+clean_dummy_and_reindex_users()
 matches = fetch_all_matches()
 if "fav_matches" not in MEM:
     MEM["fav_matches"] = ["Fleetwood Town vs Arsenal", "AS Roma vs Cagliari", "Sassuolo vs Lazio", "Luton vs Doncaster"]
@@ -1749,7 +1778,7 @@ for m in post_m:
     mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}(Kor:{tot_cor})|{'✅' if evaluate_ft_result(m['pick'], m['h_name'], m['a_name'], m['h_score'], m['a_score']) else '❌'}|{m['pick']}|Yan:{m['prop_str']}")
 
 run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct)
-
+# ==================== 7. PARÇA (BÖLÜM 2/3) ====================
 def render_main_bulletin(view_tier, is_patron_mode=False):
     is_vip_view = view_tier in ("VIP", "ADMIN")
     show_raw_counts = (view_tier == "ADMIN")
@@ -1901,8 +1930,7 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
         if not is_locked:
             with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
-
-# ==================== PROGRAM 2: SENİN TELEFONUNDAKİ PATRON UYGULAMASI ====================
+# ==================== 7. PARÇA (BÖLÜM 3/3) ====================
 if url_prog == "patron" or st.session_state["patron_unlocked"]:
     if not st.session_state["patron_unlocked"]:
         st.markdown("### 🔐 Delta Pulse — Encrypted Admin Terminal")
@@ -1923,12 +1951,12 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
         total_members = len(MEM["users_db"])
         founder_left = max(0, 100 - total_members)
         st.markdown(
-            "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;'>"
-            "<span>👑 <b>DELTA PULSE — PATRON PANELİ</b> <span style='font-size:11px;color:#56d364;'>(🔒 DP-F3CB9C Mühürlü)</span></span>"
-            "<a href='https://x.com/compose/post' target='_blank' style='background:#0f1419;border:1px solid #1d9bf0;color:#fff;padding:5px 14px;border-radius:7px;font-weight:800;font-size:12.5px;text-decoration:none;'>𝕏 X'i Aç</a></div>",
+            "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;'>"
+            "<span>👑 <b>DELTA PULSE — PATRON PANELİ</b></span>"
+            "<span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü</span></div>",
             unsafe_allow_html=True
         )
-        tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa, X (Twitter) & Telegram Bot Ayarları"])
+        tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa & Gerçek Üye Radarı"])
         with tab_saha:
             cp1, cp2 = st.columns([2, 2])
             with cp1:
@@ -1948,7 +1976,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
 
             st.markdown(
                 f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;'>"
-                f"<div class='dp-card' style='flex:1;'>👥 <b>Otomatik Tanınan Cihaz/Üye:</b> {len(u_list)} (Kurucu Kalan: {founder_left}/100)</div>"
+                f"<div class='dp-card' style='flex:1;'>👥 <b>Gerçek Giren Cihaz/Üye:</b> {len(u_list)} (Kurucu Kalan: {founder_left}/100)</div>"
                 f"<div class='dp-card dp-ak' style='flex:1;'>💎 <b>Aktif VIP:</b> {vip_count} Kişi</div>"
                 f"<div class='dp-card' style='flex:1;'>💰 <b>TRC20 Kripto Kasa:</b> {paid_count} Ödeme ({tot_usdt} USDT)</div></div>",
                 unsafe_allow_html=True
@@ -2009,6 +2037,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                     now_tr = datetime.now(TR_TZ)
                     if "Sil" in act_type:
                         db.pop(target_u, None)
+                        clean_dummy_and_reindex_users()
                     else:
                         if target_u not in db:
                             auto_sync_device_user(target_u, "")
@@ -2032,26 +2061,30 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                     save_persistent_store()
                     st.rerun()
 
-            st.markdown("#### 📋 Otomatik Tanınan Cihazlar, Davet, Özel USDT Küsüratı & Kalan Süre")
+            st.markdown("#### 📋 Otomatik Tanınan Gerçek Cihazlar, Cihaz Modeli/Ülke, Davet & Kalan Süre")
             rows_html = [
-                "<table style='width:100%;font-size:12px;border-collapse:collapse;'>"
+                "<div style='overflow-x:auto;'><table style='width:100%;font-size:11.5px;border-collapse:collapse;'>"
                 "<tr style='background:#21262d;color:#ffd33d;text-align:left;'>"
-                "<th style='padding:6px;'>#</th><th>Device ID</th><th>Tier Group</th><th>Status</th>"
-                "<th>Referrals</th><th>Unique USDT</th><th>Payment</th><th>Time Left</th><th>Note</th></tr>"
+                "<th style='padding:6px;'>#</th><th>Device ID</th><th>📱 Cihaz & 🌍 Ülke/Dil</th><th>🕒 Son Giriş</th><th>Status</th>"
+                "<th>Referrals</th><th>Unique USDT</th><th>Payment</th><th>Time Left</th></tr>"
             ]
             for u in u_list:
                 t_col = "#56d364" if u["tier"] == "VIP" else "#8b949e"
                 p_str = f"💰 {u.get('amount',0)} USDT" if u.get("paid") else ("🎁 2/2 Refs" if len(u.get("refs",[])) >= 2 else "⏳ None")
                 rem_s = format_remaining_time(u["exp"], is_en=False)
+                dev_str = u.get("dev_info", "🌐 Web/Mobil (Sonraki Girişte Güncellenir)")
+                seen_str = u.get("last_seen") or "Bugün"
                 rows_html.append(
                     f"<tr style='border-bottom:1px solid #30363d;'>"
-                    f"<td style='padding:6px;'>{u['seq']}</td><td><b>{u['code']}</b></td><td>{u['group']}</td>"
+                    f"<td style='padding:6px;'>{u['seq']}</td><td><b>{u['code']}</b></td>"
+                    f"<td style='color:#79c0ff;font-weight:600;'>{dev_str}</td>"
+                    f"<td style='color:#c9d1d9;'>{seen_str}</td>"
                     f"<td style='color:{t_col};font-weight:700;'>{u['tier']}</td>"
                     f"<td>{len(u.get('refs',[]))}/2 ({','.join(u.get('refs',[])) or '-'})</td>"
                     f"<td><code>{u.get('pay_dec',100.15):.2f} USDT</code></td>"
-                    f"<td>{p_str}</td><td>{rem_s}</td><td>{u.get('note','')}</td></tr>"
+                    f"<td>{p_str}</td><td>{rem_s}</td></tr>"
                 )
-            rows_html.append("</table>")
+            rows_html.append("</table></div>")
             st.markdown("".join(rows_html), unsafe_allow_html=True)
 
             with st.expander("🗄️ Yedekleme & Geri Yükleme (Sunucu Sıfırlanmasına Karşı JSON Kalkanı)"):
@@ -2073,8 +2106,13 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
 # ==================== PROGRAM 1: GLOBAL ENGLISH CUSTOMER WEBAPP ====================
 else:
     cur_user = auto_sync_device_user(my_auto_uid, url_ref)
+    if cur_user:
+        cur_user["dev_info"] = detect_visitor_device_and_lang()
+        cur_user["last_seen"] = datetime.now(TR_TZ).strftime("%d.%m %H:%M")
+        save_persistent_store()
+
     effective_tier = cur_user["tier"] if cur_user else "NORMAL"
-    pay_dec_val = cur_user.get("pay_dec", 100.15)
+    pay_dec_val = cur_user.get("pay_dec", 100.15) if cur_user else 100.15
     total_members = len(MEM["users_db"])
     founder_left = max(0, 100 - total_members)
 
