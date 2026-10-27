@@ -1685,24 +1685,29 @@ run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct)
 
 def render_main_bulletin(view_tier, is_patron_mode=False):
     is_vip_view = view_tier in ("VIP", "ADMIN")
+    show_raw_counts = (view_tier == "ADMIN")
     top_pick_str = f"{pre_m[0]['mac']} ({pre_m[0]['conf']}%)" if pre_m else "Scan Complete"
     top_sub_str = (tr_to_en_text(pre_m[0]["pick"]) if is_vip_view else "🔒 VIP Exclusive Locked Target") if pre_m else "Pending"
+
+    vip_cnt_badge = f"({vip_w}/{vip_t} ✅)" if show_raw_counts else "✅ Verified"
+    ak_cnt_badge = f"({ak_w}/{ak_t} ✅)" if show_raw_counts else "✅ Verified"
+    tot_cnt_badge = f"({tot_w}/{tot_t} ✅)" if show_raw_counts else "✅ Verified"
 
     st.markdown(f"""
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px;">
         <div style="background:linear-gradient(135deg,#0d2818,#161b22);border:1px solid #2ea043;border-radius:8px;padding:8px 10px;">
             <div style="font-size:10.5px;color:#8b949e;font-weight:700;">🎯 LIVE VIP AI RADAR</div>
-            <div style="font-size:18px;font-weight:800;color:#56d364;">{vip_pct}% <span style="font-size:12px;color:#c9d1d9;">({vip_w}/{vip_t} ✅)</span></div>
+            <div style="font-size:18px;font-weight:800;color:#56d364;">{vip_pct}% <span style="font-size:11.5px;color:#c9d1d9;font-weight:600;">{vip_cnt_badge}</span></div>
             <div style="font-size:10.5px;color:#79c0ff;">🔥 Active Live Ambush: <b>{lv_active}</b></div>
         </div>
         <div style="background:linear-gradient(135deg,#2b2108,#161b22);border:1px solid #f0b90b;border-radius:8px;padding:8px 10px;">
             <div style="font-size:10px;color:#ffd33d;font-weight:800;">💎 MAIN BANKROLL (CONFIRMED XI)</div>
-            <div style="font-size:18px;font-weight:800;color:#ffd33d;">{ak_pct}% <span style="font-size:12px;color:#c9d1d9;">({ak_w}/{ak_t} ✅)</span></div>
+            <div style="font-size:18px;font-weight:800;color:#ffd33d;">{ak_pct}% <span style="font-size:11.5px;color:#c9d1d9;font-weight:600;">{ak_cnt_badge}</span></div>
             <div style="font-size:10.5px;color:#e6edf3;">⚡ 24/7 Europe + LATAM + Asia</div>
         </div>
         <div style="background:linear-gradient(135deg,#131d2e,#161b22);border:1px solid #2f81f7;border-radius:8px;padding:8px 10px;">
             <div style="font-size:10px;color:#79c0ff;font-weight:800;">📊 OVERALL AI RECORD</div>
-            <div style="font-size:18px;font-weight:800;color:#58a6ff;">{tot_pct}% <span style="font-size:12px;color:#c9d1d9;">({tot_w}/{tot_t} ✅)</span></div>
+            <div style="font-size:18px;font-weight:800;color:#58a6ff;">{tot_pct}% <span style="font-size:11.5px;color:#c9d1d9;font-weight:600;">{tot_cnt_badge}</span></div>
             <div style="font-size:10.5px;color:#c9d1d9;">🔒 Lineup Evolution + Props</div>
         </div>
         <div style="background:linear-gradient(135deg,#24152b,#161b22);border:1px solid #a371f7;border-radius:8px;padding:8px 10px;">
@@ -1839,7 +1844,8 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
             with cp2:
                 with st.expander("📲 DP-MİNİ Hızlı Veri Kopyala (Patron Özel)", expanded=True):
                     st.code("\n".join(mini_lines), language="text")
-            render_main_bulletin("NORMAL" if "Normal" in sim_view else "VIP", is_patron_mode=True)
+            selected_tier = "ADMIN" if "Patron" in sim_view else ("NORMAL" if "Normal" in sim_view else "VIP")
+            render_main_bulletin(selected_tier, is_patron_mode=True)
 
         with tab_patron:
             db = MEM["users_db"]
@@ -1878,9 +1884,9 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                         top_m = pre_m[0] if pre_m else None
                         promo_txt = (
                             f"🔥 <b>DELTA PULSE AI — 24/7 GLOBAL WHALE & LINEUP RADAR</b>\n\n"
-                            f"🎯 Live VIP AI Accuracy: <b>{vip_pct}% ({vip_w}/{vip_t} ✅)</b>\n"
-                            f"💎 Main Bankroll (Confirmed XI): <b>{ak_pct}% ({ak_w}/{ak_t} ✅)</b>\n"
-                            f"📊 Overall Verified Record: <b>{tot_pct}% ({tot_w}/{tot_t} ✅)</b>\n"
+                            f"🎯 Live VIP AI Accuracy: <b>{vip_pct}% ✅</b>\n"
+                            f"💎 Main Bankroll (Confirmed XI): <b>{ak_pct}% ✅</b>\n"
+                            f"📊 Overall Verified Record: <b>{tot_pct}% ✅</b>\n"
                             f"🌍 Active Coverage: <b>Europe + Brazil + Argentina + Mexico + Japan</b>\n"
                             + (f"⚡ Top Locked Signal Today: <b>{top_m['saat']} (UTC+3) {top_m['mac']} ({top_m['conf']}% Confidence)</b>\n\n" if top_m else "\n")
                             + f"🎁 <b>First 100 Founders:</b> Invite 2 friends for <b>90-Day FREE VIP</b> or unlock instantly via <b>100 USDT (TRC20)</b>!\n"
