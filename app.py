@@ -1789,6 +1789,22 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
     ak_cnt_badge = f"({ak_w}/{ak_t} ✅)" if show_raw_counts else "✅ Verified"
     tot_cnt_badge = f"({tot_w}/{tot_t} ✅)" if show_raw_counts else "✅ Verified"
 
+    # 🛡️ TAM GİZLİLİK ZIRHI: Üstteki GitHub/Share/Üç Nokta barını ve alt Streamlit logosunu tamamen yok eder
+    st.markdown("""
+    <style>
+        header[data-testid="stHeader"], .stAppHeader, .stAppToolbar, [data-testid="stToolbar"], 
+        [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="manage-app-button"],
+        .viewerBadge_container__r5tak, .styles_viewerBadge__CvC9N, #MainMenu, footer {
+            display: none !important;
+            visibility: hidden !important;
+            height: 0px !important;
+            width: 0px !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.markdown(f"""
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:10px;">
         <div style="background:linear-gradient(135deg,#0d2818,#161b22);border:1px solid #2ea043;border-radius:8px;padding:8px 10px;">
