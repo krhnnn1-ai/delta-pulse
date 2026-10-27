@@ -799,6 +799,10 @@ def get_stat(comp_team, names):
 # ==================== 5. PARÇA SONU ====================
 # ==================== 6. PARÇA BAŞLANGICI ====================
 import hashlib
+import hmac
+import base64
+import time
+import uuid
 import json
 import os
 import urllib.parse
@@ -892,39 +896,57 @@ def tr_to_en_text(txt):
         s = s.replace(k, v)
     return s
 
+def build_viral_hashtags(h_name, a_name, lig_adi):
+    clean_h = "".join(ch for ch in str(h_name) if ch.isalnum())
+    clean_a = "".join(ch for ch in str(a_name) if ch.isalnum())
+    lig_tag = "#Football"
+    if "PREMIER" in lig_adi or "EFL" in lig_adi or "LEAGUE ONE" in lig_adi:
+        lig_tag = "#EPL #EFL"
+    elif "SERIE A" in lig_adi and "BREZİLYA" not in lig_adi:
+        lig_tag = "#SerieA"
+    elif "LA LIGA" in lig_adi:
+        lig_tag = "#LaLiga"
+    elif "SÜPER LİG" in lig_adi:
+        lig_tag = "#SuperLig"
+    elif "BREZİLYA" in lig_adi:
+        lig_tag = "#Brasileirao"
+    elif "ARJANTİN" in lig_adi:
+        lig_tag = "#LigaProfesional"
+    elif "MEKSİKA" in lig_adi:
+        lig_tag = "#LigaMX"
+    elif "JAPONYA" in lig_adi:
+        lig_tag = "#JLeague"
+    return f"#{clean_h} #{clean_a} #{clean_h}{clean_a} {lig_tag} #BettingTips #CryptoBetting #FootballAI"
+
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data):
-    MEM.setdefault("pre_lineup_ memory", {})
+    MEM.setdefault("pre_lineup_memory", {})
     if not is_off:
-        MEM["pre_lineup_ memory"][match_title] = {"pick": pick, "conf": conf}
+        MEM["pre_lineup_memory"][match_title] = {"pick": pick, "conf": conf}
         return conf, pick, disp_odd, "⏳ Kadro/Dizilim Bekleniyor", "⏳ Kadro/Dizilim Bekleniyor", False
 
-    old_rec = MEM["pre_lineup_ memory"].get(match_title) or {"pick": pick, "conf": conf}
+    old_rec = MEM["pre_lineup_memory"].get(match_title) or {"pick": pick, "conf": conf}
     old_pick = old_rec["pick"]
     new_pick = pick
     new_conf = conf
     new_odd = disp_odd
 
-    # 1. Ağır Favori (-250+) Hücum Rotasyon Kalkanı
     if "🧬FavRotasyon" in disp_odd and fav_val <= -250:
         if "2.5 Gol Üst" in new_pick or "Takım Golü" in new_pick:
             new_pick = f"{a_name} Çifte Şans (X2) & 3.5 Alt" if fav_abbr == a_abbr else f"{h_name} Çifte Şans (1X) & 3.5 Alt"
             if "🛡️RotasyonKalkanı" not in new_odd:
                 new_odd = f"{new_odd} 🛡️RotasyonKalkanı"
 
-    # 2. Tam Kadro (Rotasyonsuz) + Çift Kanat Hücum Dizilimi (4-3-3 / 3-4-3 / 4-2-3-1) Evrimi
     wing_tacs = ("4-3-3", "3-4-3", "4-2-3-1", "3-5-2")
     both_attacking_tac = (h_tac in wing_tacs and a_tac in wing_tacs)
     no_fav_rot = ("🧬FavRotasyon" not in disp_odd)
 
     if no_fav_rot and both_attacking_tac and ou_val >= 3.0 and "3.5 Alt" in new_pick and fav_val <= -175:
-        # Kadrolar açıklandığında iki takım da açık hücum dizilimiyle çıktıysa 3.5 Alt riskinden 1.5 Üst / Net Galibiyete evrilir
         if fav_abbr == a_abbr:
             new_pick = f"{a_name} Çifte Şans (X2) & 1.5 Üst"
         else:
             new_pick = f"{h_name} Çifte Şans (1X) & 1.5 Üst"
         new_conf = min(96, new_conf + 4)
 
-    # 3. Resmi Kadro & Dizilim Bazlı KORNER / KART / TARAF (Prop) Seçici
     props = []
     is_wing_game = ("📐KanatKorner" in disp_odd) or (h_tac in ("4-3-3", "3-4-3", "3-5-2") or a_tac in ("4-3-3", "3-4-3", "3-5-2"))
     high_corner_lig = any(k in lig_adi for k in ("İNGİLTERE", "BREZİLYA", "MEKSİKA", "JAPONYA", "HOLLANDA", "PORTEKİZ"))
@@ -953,7 +975,7 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
 
     prop_str = " | ".join(props[:2])
     changed = (old_pick != new_pick)
-    evo_str = f"🔄 {old_pick} ➔ ✅ {new_pick}" if changed else f"✅ Kadro Onaylı (Sabit)"
+    evo_str = f"🔄 {old_pick} ➔ ✅ {new_pick}" if changed else "✅ Kadro Onaylı (Sabit)"
     return new_conf, new_pick, new_odd, evo_str, prop_str, changed
 
 def verify_admin_secret(raw_val):
@@ -1057,8 +1079,13 @@ def save_persistent_store():
             "patron_hw_sigs": list(MEM.get("patron_hw_sigs", set())),
             "trc20_wallet": MEM.get("trc20_wallet", ""),
             "app_public_url": MEM.get("app_public_url", ""),
+            "support_tg_url": MEM.get("support_tg_url", "https://t.me/DeltaPulseSupport"),
             "tg_bot_token": MEM.get("tg_bot_token", ""),
             "tg_channel_id": MEM.get("tg_channel_id", ""),
+            "x_api_key": MEM.get("x_api_key", ""),
+            "x_api_secret": MEM.get("x_api_secret", ""),
+            "x_access_token": MEM.get("x_access_token", ""),
+            "x_access_secret": MEM.get("x_access_secret", ""),
             "tg_posted": list(MEM.get("tg_posted", set()))
         }
         with open(STORE_FILE, "w", encoding="utf-8") as f:
@@ -1072,8 +1099,13 @@ def init_membership_db():
     now_tr = datetime.now(TR_TZ)
     MEM.setdefault("trc20_wallet", "TYourTrustWalletTRC20AddressHere")
     MEM.setdefault("app_public_url", "https://deltapulse.streamlit.app")
+    MEM.setdefault("support_tg_url", "https://t.me/DeltaPulseSupport")
     MEM.setdefault("tg_bot_token", "")
     MEM.setdefault("tg_channel_id", "")
+    MEM.setdefault("x_api_key", "")
+    MEM.setdefault("x_api_secret", "")
+    MEM.setdefault("x_access_token", "")
+    MEM.setdefault("x_access_secret", "")
     MEM.setdefault("used_txids", set())
     MEM.setdefault("patron_hw_sigs", set())
     MEM.setdefault("tg_posted", set())
@@ -1088,7 +1120,7 @@ def init_membership_db():
                 MEM["used_txids"] = set(saved.get("used_txids", []))
                 MEM["patron_hw_sigs"] = set(saved.get("patron_hw_sigs", []))
                 MEM["tg_posted"] = set(saved.get("tg_posted", []))
-                for k in ("trc20_wallet", "app_public_url", "tg_bot_token", "tg_channel_id"):
+                for k in ("trc20_wallet", "app_public_url", "support_tg_url", "tg_bot_token", "tg_channel_id", "x_api_key", "x_api_secret", "x_access_token", "x_access_secret"):
                     if saved.get(k):
                         MEM[k] = saved[k]
         except Exception:
@@ -1258,18 +1290,48 @@ def send_telegram_channel_post(text_msg):
     except Exception:
         return False
 
+def send_autonomous_x_tweet(tweet_text):
+    ck = str(MEM.get("x_api_key") or "").strip()
+    cs = str(MEM.get("x_api_secret") or "").strip()
+    at = str(MEM.get("x_access_token") or "").strip()
+    ats = str(MEM.get("x_access_secret") or "").strip()
+    if not (ck and cs and at and ats):
+        return False
+
+    url = "https://api.twitter.com/2/tweets"
+    oauth_params = {
+        "oauth_consumer_key": ck,
+        "oauth_nonce": uuid.uuid4().hex,
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": at,
+        "oauth_version": "1.0"
+    }
+    param_str = "&".join(f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}" for k, v in sorted(oauth_params.items()))
+    base_str = f"POST&{urllib.parse.quote(url, safe='')}&{urllib.parse.quote(param_str, safe='')}"
+    signing_key = f"{urllib.parse.quote(cs, safe='')}&{urllib.parse.quote(ats, safe='')}"
+    sig = base64.b64encode(hmac.new(signing_key.encode("utf-8"), base_str.encode("utf-8"), hashlib.sha1).digest()).decode("utf-8")
+    oauth_params["oauth_signature"] = sig
+    auth_header = "OAuth " + ", ".join(f'{k}="{urllib.parse.quote(v, safe="")}"' for k, v in sorted(oauth_params.items()))
+
+    try:
+        r = requests.post(url, json={"text": tweet_text[:278]}, headers={"Authorization": auth_header, "Content-Type": "application/json"}, timeout=5)
+        return r.status_code in (200, 201)
+    except Exception:
+        return False
+
+def build_x_intent_url(tweet_text):
+    return f"https://twitter.com/intent/tweet?text={urllib.parse.quote(tweet_text[:275])}"
+
 def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
-    if not MEM.get("tg_bot_token") or not MEM.get("tg_channel_id"):
-        return
     app_url = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
     changed = False
 
-    # 1. Resmi Kadro Açıklandığında (Kadro Evrimi + Korner/Kart Prop) Otomatik Bildirim
     for m in pre_m:
         key_xi = f"XI_{m['mac']}"
         if m["is_off"] and (m["conf"] >= 70 or m.get("evo_changed")) and key_xi not in MEM["tg_posted"]:
             en_lig = tr_to_en_text(m["lig"])
-            en_odd = tr_to_en_text(m["odd_str"])
+            tags = build_viral_hashtags(m["h_name"], m["a_name"], m["lig"])
             msg = (
                 f"🏟️ <b>OFFICIAL LINEUPS & TACTICAL XI CONFIRMED!</b>\n\n"
                 f"🕒 <b>{m['saat']} (UTC+3) | {m['mac']}</b> ({en_lig})\n"
@@ -1278,17 +1340,26 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 f"🚩 Tactical Corner/Card Prop: 🔒 <b>[VIP XI EXCLUSIVE]</b>\n\n"
                 f"👉 <a href='{app_url}'>View Confirmed Lineup Target & Tactical Props</a>"
             )
-            if send_telegram_channel_post(msg):
+            x_msg = (
+                f"🏟️ CONFIRMED XI & AI TACTICAL RADAR!\n"
+                f"⚽ {m['mac']} ({m['saat']} UTC+3)\n"
+                f"📐 Formations: {m['h_tac']} vs {m['a_tac']} | Confidence: {m['conf']}%\n"
+                f"🚩 Corner/Card Prop: 🔒 [VIP LOCKED - {vip_pct}% Live VIP Record]\n"
+                f"👉 Auto-Access: {app_url}\n{tags}"
+            )
+            ok_tg = send_telegram_channel_post(msg)
+            ok_x = send_autonomous_x_tweet(x_msg)
+            if ok_tg or ok_x:
                 MEM["tg_posted"].add(key_xi)
                 changed = True
             break
 
-    # 2. Maç Önü Erken Balina Sinyali
     for m in pre_m[:2]:
         key = f"PRE_{m['mac']}"
         if (m["conf"] >= 80 or "💥TG↑" in m["odd_str"]) and key not in MEM["tg_posted"]:
             en_lig = tr_to_en_text(m["lig"])
             en_odd = tr_to_en_text(m["odd_str"])
+            tags = build_viral_hashtags(m["h_name"], m["a_name"], m["lig"])
             msg = (
                 f"🚨 <b>DELTA PULSE AI — WHALE ODDS & SIMULATION SIGNAL!</b>\n\n"
                 f"🕒 <b>{m['saat']} (UTC+3) | {m['mac']}</b> ({en_lig})\n"
@@ -1298,15 +1369,24 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 f"🎁 <b>First 100 Founders:</b> Invite 2 friends for <b>90-Day FREE VIP</b> or unlock instantly via <b>USDT (TRC20)</b>!\n"
                 f"👉 <a href='{app_url}'>One-Click Auto Access (No Login Required)</a>"
             )
-            if send_telegram_channel_post(msg):
+            x_msg = (
+                f"🚨 WHALE ODDS & AI SIMULATION SIGNAL!\n"
+                f"🕒 {m['saat']} | {m['mac']} ({en_lig})\n"
+                f"📊 AI Confidence: {m['conf']}% | Flow: {en_odd}\n"
+                f"🎯 Target: 🔒 [VIP LOCKED — {ak_pct}% Main Bankroll Hit Rate]\n"
+                f"👉 Instant WebApp: {app_url}\n{tags}"
+            )
+            ok_tg = send_telegram_channel_post(msg)
+            ok_x = send_autonomous_x_tweet(x_msg)
+            if ok_tg or ok_x:
                 MEM["tg_posted"].add(key)
                 changed = True
             break
 
-    # 3. Canlı VIP Pusu Alarmı
     for m in live_m[:1]:
         key = f"LIVE_{m['mac']}"
         if m["heat"] >= 74 and key not in MEM["tg_posted"]:
+            tags = build_viral_hashtags(m["h_name"], m["a_name"], m["lig"])
             msg = (
                 f"🔥 <b>[LIVE VIP AMBUSH ALERT — {m['clock']}]</b>\n\n"
                 f"⚽ <b>{m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b>\n"
@@ -1314,17 +1394,26 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 f"🎯 Live Entry: 🔒 <b>[UNLOCKED ON VIP RADAR]</b> (Live VIP Accuracy: <b>{vip_pct}%</b>)\n"
                 f"👉 <a href='{app_url}'>Open Live AI Radar Now</a>"
             )
-            if send_telegram_channel_post(msg):
+            x_msg = (
+                f"🔥 LIVE VIP AMBUSH ALERT ({m['clock']})!\n"
+                f"⚽ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}\n"
+                f"📈 Live Pressure: {m['heat']}% | Shots: {m['h_sh']}-{m['a_sh']} | Corners: {m['h_cor']}-{m['a_cor']}\n"
+                f"🎯 Live VIP Accuracy: {vip_pct}%\n"
+                f"👉 Live Radar: {app_url}\n{tags}"
+            )
+            ok_tg = send_telegram_channel_post(msg)
+            ok_x = send_autonomous_x_tweet(x_msg)
+            if ok_tg or ok_x:
                 MEM["tg_posted"].add(key)
                 changed = True
             break
 
-    # 4. Maç Sonu Kazandı Kanıtı
     for m in post_m:
         key = f"WIN_{m['mac']}"
         won = evaluate_ft_result(m["pick"], m["h_name"], m["a_name"], m["h_score"], m["a_score"])
         if won and (m["conf"] >= 70 or "Ana Kasa" in m["pick"]) and key not in MEM["tg_posted"]:
             en_pick = tr_to_en_text(m["pick"])
+            tags = build_viral_hashtags(m["h_name"], m["a_name"], m["lig"])
             msg = (
                 f"✅ <b>CONFIRMED VIP SIGNAL WON!</b>\n\n"
                 f"🏆 <b>{m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> (FT)\n"
@@ -1332,7 +1421,16 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 f"💎 <i>Main Bankroll Hit Rate: <b>{ak_pct}%</b> | Live VIP Radar: <b>{vip_pct}%</b></i>\n"
                 f"👉 <a href='{app_url}'>Don't Miss the Next Locked Whale Signals!</a>"
             )
-            if send_telegram_channel_post(msg):
+            x_msg = (
+                f"✅ CONFIRMED VIP SIGNAL WON!\n"
+                f"🏆 {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']} (FT)\n"
+                f"🎯 Target: {en_pick} ({m['conf']}%) ✅\n"
+                f"💎 Main Bankroll: {ak_pct}% | Live VIP: {vip_pct}%\n"
+                f"👉 Next Signals: {app_url}\n{tags}"
+            )
+            ok_tg = send_telegram_channel_post(msg)
+            ok_x = send_autonomous_x_tweet(x_msg)
+            if ok_tg or ok_x:
                 MEM["tg_posted"].add(key)
                 changed = True
             break
@@ -1365,12 +1463,12 @@ def format_remaining_time(exp_str, is_en=True):
         return "N/A"
 # ==================== 6. PARÇA SONU ====================
 # ==================== 7. PARÇA BAŞLANGICI ====================
-@st.cache_data(ttl=45)
+@st.cache_data(ttl=45, show_spinner=False)
 def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
     date_str = now_tr.strftime("%Y%m%d")
 
-    if MEM.get("model_ver") != "v6.5_XI_EVOLUTION_GLOBAL":
+    if MEM.get("model_ver") != "v6.6_ULTIMATE_ARMOR":
         MEM["roster_cache"].clear()
         MEM["live_signals"].clear()
         MEM["settled_results"].clear()
@@ -1381,7 +1479,7 @@ def fetch_all_matches():
         MEM["active_date"] = date_str
         MEM.setdefault("prev_scan", {})
         MEM.setdefault("change_log", [])
-        MEM.setdefault("pre_lineup_ memory", {})
+        MEM.setdefault("pre_lineup_memory", {})
         MEM["opening_odds"].update({
             "Fleetwood Town vs Arsenal": {"fav": "ARS", "val": -1400, "tg": 3.5},
             "AS Roma vs Cagliari": {"fav": "ROMA", "val": -310, "tg": 2.5},
@@ -1401,7 +1499,7 @@ def fetch_all_matches():
             "Ascoli vs Sampdoria": {"fav": "ASC", "val": 120, "tg": 2.5},
             "Sheffield Wed vs Cambridge": {"fav": "SHW", "val": 100, "tg": 2.5}
         })
-        MEM["model_ver"] = "v6.5_XI_EVOLUTION_GLOBAL"
+        MEM["model_ver"] = "v6.6_ULTIMATE_ARMOR"
 
     if MEM.get("active_date") != date_str:
         MEM["live_signals"].clear()
@@ -1411,7 +1509,7 @@ def fetch_all_matches():
     raw_items, roster_tasks = [], []
     for lig_adi, (slug, kademe) in LEAGUES.items():
         try:
-            r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={date_str}", headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={date_str}", headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
             data = r.json() if r.status_code == 200 else {}
         except Exception:
             data = {}
@@ -1444,7 +1542,7 @@ def fetch_all_matches():
 
     roster_map = {}
     if roster_tasks:
-        with ThreadPoolExecutor(max_workers=16) as ex:
+        with ThreadPoolExecutor(max_workers=10) as ex:
             for m_title, r_res in ex.map(fetch_and_analyze_roster, roster_tasks):
                 roster_map[m_title] = r_res
 
@@ -1474,22 +1572,20 @@ def fetch_all_matches():
 
         conf, pick, disp_odd, warn_flag, squad_note = evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi)
 
-        # 🧠 KADRO & DİZİLİM SONRASI TAHMİN EVRİMİ + KORNER/KART/TARAF MOTORU
         conf, pick, disp_odd, evo_str, prop_str, evo_changed = compute_post_lineup_evolution_and_props(
             match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac,
             h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data
         )
 
-        # Resmi kadro açıklandığında oluşan nihai tahmini maç sonu karnesi için kilitle
         if state == "pre":
-            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.5"}
-        elif match_title in MEM["locked_pre"] and MEM["locked_pre"][match_title].get("ver") == "v6.5":
+            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.6"}
+        elif match_title in MEM["locked_pre"] and MEM["locked_pre"][match_title].get("ver") == "v6.6":
             locked_obj = MEM["locked_pre"][match_title]
             conf, pick, warn_flag = locked_obj["conf"], locked_obj["pick"], locked_obj.get("warn", False)
             evo_str = locked_obj.get("evo", evo_str)
             prop_str = locked_obj.get("prop", prop_str)
         else:
-            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.5"}
+            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.6"}
 
         delta_str, sot_tag, odds_flow, live_exp, heat = "", "", "", "", 0
         if state == "in":
@@ -1579,7 +1675,7 @@ for m in post_m:
 
 run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct)
 
-def render_main_bulletin(view_tier):
+def render_main_bulletin(view_tier, is_patron_mode=False):
     is_vip_view = view_tier in ("VIP", "ADMIN")
     top_pick_str = f"{pre_m[0]['mac']} ({pre_m[0]['conf']}%)" if pre_m else "Scan Complete"
     top_sub_str = (tr_to_en_text(pre_m[0]["pick"]) if is_vip_view else "🔒 VIP Exclusive Locked Target") if pre_m else "Pending"
@@ -1609,9 +1705,11 @@ def render_main_bulletin(view_tier):
     </div>
     """, unsafe_allow_html=True)
 
+    # 🛡️ ANTI-CRASH KALKANI: Müşteri butonu RAM önbelleğini silmez (200+ eşzamanlı kullanıcı koruması)
     if st.button("🔄 Refresh 24/7 Global Radar, Official Lineups & Tactical Props", use_container_width=True):
-        MEM["roster_cache"].clear()
-        st.cache_data.clear()
+        if is_patron_mode:
+            MEM["roster_cache"].clear()
+            st.cache_data.clear()
         st.rerun()
 
     if live_m:
@@ -1673,12 +1771,25 @@ def render_main_bulletin(view_tier):
                 f"⏳ <b>Lineup Evolution & Corner/Card Props:</b> <span style='color:#8b949e;'>{en_prop} (Auto-activates once official XI & formations drop)</span><br>"
             )
 
+        x_btn_html = ""
+        if is_patron_mode:
+            tags = build_viral_hashtags(m["h_name"], m["a_name"], m["lig"])
+            x_txt = (
+                f"🚨 AI WHALE & TACTICAL SIGNAL!\n"
+                f"🕒 {m['saat']} (UTC+3) | {m['mac']} ({en_lig_pre})\n"
+                f"📊 AI Confidence: {m['conf']}% | Market: {en_odd_pre}\n"
+                f"🎯 Target & Corner/Card Prop: 🔒 [VIP LOCKED - {vip_pct}% Live VIP Record]\n"
+                f"👉 Instant WebApp: {MEM['app_public_url']}\n{tags}"
+            )
+            x_url = build_x_intent_url(x_txt)
+            x_btn_html = f"<div style='margin-top:4px;'><a href='{x_url}' target='_blank' style='background:#1d9bf0;color:#fff;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;text-decoration:none;'>🐦 Tek Tıkla Bu Maçı X'te (Twitter) Paylaş (#Hashtag Hazır)</a></div>"
+
         st.markdown(
             f"<div class='{card_cls}'><b>🕒 {m['saat']} (UTC+3) | {m['mac']}</b> — <b>{m['conf']}% Confidence</b> "
             f"<span class='dp-badge'>{en_lig_pre} • {m['h_tac']} vs {m['a_tac']}</span> {k_badge}<br>"
             f"📈 Form Mom: <b>{m['h_mom']}%</b> {format_form_badges(m['h_form'])} vs <b>{m['a_mom']}%</b> {format_form_badges(m['a_form'])} | 💰 Market: <b>{en_odd_pre}</b> | ⚽ Line: <b>{m['tg']}</b><br>"
             f"🎯 <b>Main Target:</b> {target_html}<br>"
-            f"{prop_line_html}</div>", unsafe_allow_html=True
+            f"{prop_line_html}{x_btn_html}</div>", unsafe_allow_html=True
         )
         if not is_locked:
             with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
@@ -1705,11 +1816,11 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
         founder_left = max(0, 100 - total_members)
         st.markdown(
             "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;'>"
-            "<span>👑 <b>DELTA PULSE — PATRON TAM YETKİLİ PROGRAMI</b> (v6.5 Kadro Evrimi + 4 Yeni Lig)</span>"
+            "<span>👑 <b>DELTA PULSE — PATRON TAM YETKİLİ PROGRAMI</b> (v6.6 Anti-Çökme + X Bot + 4 Yeni Lig)</span>"
             "<span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü & 7/24 Global Aktif</span></div>",
             unsafe_allow_html=True
         )
-        tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa, Cihaz Üyeleri & Global Telegram Bot"])
+        tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa, X (Twitter) & Telegram Bot Ayarları"])
         with tab_saha:
             cp1, cp2 = st.columns([2, 2])
             with cp1:
@@ -1717,7 +1828,7 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
             with cp2:
                 with st.expander("📲 DP-MİNİ Hızlı Veri Kopyala (Patron Özel)", expanded=True):
                     st.code("\n".join(mini_lines), language="text")
-            render_main_bulletin("NORMAL" if "Normal" in sim_view else "VIP")
+            render_main_bulletin("NORMAL" if "Normal" in sim_view else "VIP", is_patron_mode=True)
 
         with tab_patron:
             db = MEM["users_db"]
@@ -1734,23 +1845,32 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                 unsafe_allow_html=True
             )
 
-            with st.expander("💸 1. Ayar: Trust Wallet TRC20 USDT Adresin & Global Telegram Botu", expanded=True):
+            with st.expander("💸 1. Ayar: TRC20 Cüzdan, Telegram Bot & X (Twitter) Otomatik Bot Ayarları", expanded=True):
                 cw1, cw2 = st.columns([2, 2])
                 with cw1:
                     w_inp = st.text_input("Sabit TRC20 USDT Alıcı Cüzdan Adresin (T ile başlayan):", value=MEM["trc20_wallet"])
-                    u_inp = st.text_input("Telegram Müşteri Uygulama Linkin (share.streamlit.io):", value=MEM["app_public_url"])
-                with cw2:
+                    u_inp = st.text_input("Müşteri Uygulama Linkin (share.streamlit.io):", value=MEM["app_public_url"])
+                    s_inp = st.text_input("7/24 Müşteri Destek Telegram Linkin (Örn: https://t.me/DeltaPulseSupport):", value=MEM["support_tg_url"])
                     b_tok = st.text_input("Telegram Bot Token (@BotFather):", value=MEM["tg_bot_token"], type="password")
                     c_id = st.text_input("Telegram Kanal ID (@kanal_adin veya -100...):", value=MEM["tg_channel_id"])
-                cb1, cb2 = st.columns([1, 1])
+                with cw2:
+                    st.markdown("**🐦 X (Twitter) Ücretsiz Otomatik Bot Anahtarları (developer.x.com):**")
+                    xk1 = st.text_input("X API Key (Consumer Key):", value=MEM["x_api_key"], type="password")
+                    xk2 = st.text_input("X API Secret (Consumer Secret):", value=MEM["x_api_secret"], type="password")
+                    xk3 = st.text_input("X Access Token:", value=MEM["x_access_token"], type="password")
+                    xk4 = st.text_input("X Access Token Secret:", value=MEM["x_access_secret"], type="password")
+
+                cb1, cb2, cb3 = st.columns([1, 1, 1])
                 with cb1:
-                    if st.button("💾 Cüzdan, Link & Bot Ayarlarını Kaydet", use_container_width=True):
-                        MEM["trc20_wallet"], MEM["app_public_url"] = w_inp.strip(), u_inp.strip()
+                    if st.button("💾 Tüm Ayarları Kalıcı Kaydet", use_container_width=True):
+                        MEM["trc20_wallet"], MEM["app_public_url"], MEM["support_tg_url"] = w_inp.strip(), u_inp.strip(), s_inp.strip()
                         MEM["tg_bot_token"], MEM["tg_channel_id"] = b_tok.strip(), c_id.strip()
+                        MEM["x_api_key"], MEM["x_api_secret"] = xk1.strip(), xk2.strip()
+                        MEM["x_access_token"], MEM["x_access_secret"] = xk3.strip(), xk4.strip()
                         save_persistent_store()
-                        st.success("✅ Ayarlar kalıcı olarak kaydedildi!")
+                        st.success("✅ Cüzdan, Telegram, Destek ve X Bot ayarları kaydedildi!")
                 with cb2:
-                    if st.button("📣 Şimdi Kanala İngilizce (Global) Tanıtım Mesajı Gönder", use_container_width=True):
+                    if st.button("📣 Telegram Kanalına Global Rapor At", use_container_width=True):
                         top_m = pre_m[0] if pre_m else None
                         promo_txt = (
                             f"🔥 <b>DELTA PULSE AI — 24/7 GLOBAL WHALE & LINEUP RADAR</b>\n\n"
@@ -1763,9 +1883,24 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                             f"👉 <a href='{MEM['app_public_url']}'>Launch WebApp (One-Click Auto Access — No Login Required)</a>"
                         )
                         if send_telegram_channel_post(promo_txt):
-                            st.success("✅ İngilizce Global tanıtım mesajı Telegram kanalında yayınlandı!")
+                            st.success("✅ Telegram kanalında yayınlandı!")
                         else:
-                            st.warning("Bot Token ve Kanal ID kaydedildiğinden emin olun.")
+                            st.warning("Bot Token ve Kanal ID kontrol edin.")
+                with cb3:
+                    if st.button("🐦 Şimdi X'e (Twitter) Otomatik Test Tweeti At", use_container_width=True):
+                        top_m = pre_m[0] if pre_m else None
+                        tags = build_viral_hashtags(top_m["h_name"], top_m["a_name"], top_m["lig"]) if top_m else "#FootballAI #BettingTips #CryptoBetting"
+                        test_tweet = (
+                            f"🔥 DELTA PULSE AI — 24/7 WHALE & LINEUP RADAR!\n"
+                            f"🎯 Live VIP Record: {vip_pct}% ({vip_w}/{vip_t} ✅)\n"
+                            f"💎 Main Bankroll: {ak_pct}%\n"
+                            + (f"⚡ Top Signal: {top_m['saat']} | {top_m['mac']} ({top_m['conf']}% Confidence)\n" if top_m else "")
+                            + f"👉 Instant WebApp: {MEM['app_public_url']}\n{tags}"
+                        )
+                        if send_autonomous_x_tweet(test_tweet):
+                            st.success("✅ Tweet otomatik olarak X hesabında paylaşıldı!")
+                        else:
+                            st.warning("X API anahtarlarını girdiğinizden ve Read+Write izni verdiğinizden emin olun.")
 
             st.markdown("#### ⚡ Manuel Üye Müdahalesi (Cihaz Kimliğine Anında VIP Aç / Değiştir)")
             ca1, ca2, ca3 = st.columns([2, 2, 2])
@@ -1832,21 +1967,21 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
             rows_html.append("</table>")
             st.markdown("".join(rows_html), unsafe_allow_html=True)
 
-            with st.expander("🗄️ Yedekleme & Geri Yükleme (JSON Backup)"):
+            with st.expander("🗄️ Yedekleme & Geri Yükleme (Sunucu Sıfırlanmasına Karşı JSON Kalkanı)"):
                 b_json = json.dumps({"users_db": MEM["users_db"], "used_txids": list(MEM["used_txids"])}, ensure_ascii=False)
                 st.code(b_json, language="json")
-                rest_inp = st.text_input("Paste Backup JSON:")
-                if st.button("♻️ Restore Backup") and rest_inp:
+                rest_inp = st.text_input("Yedek JSON Kodunu Buraya Yapıştır:")
+                if st.button("♻️ Yedeği Geri Yükle") and rest_inp:
                     try:
                         d_rest = json.loads(rest_inp)
                         if "users_db" in d_rest:
                             MEM["users_db"] = d_rest["users_db"]
                             MEM["used_txids"] = set(d_rest.get("used_txids", []))
                             save_persistent_store()
-                            st.success("Backup restored!")
+                            st.success("Üye veritabanı başarıyla geri yüklendi!")
                             st.rerun()
                     except Exception:
-                        st.error("Invalid JSON.")
+                        st.error("Geçersiz JSON formatı.")
 
 # ==================== PROGRAM 1: GLOBAL ENGLISH CUSTOMER WEBAPP ====================
 else:
@@ -1872,14 +2007,18 @@ else:
         f"No registration or password needed — click for instant auto-access:"
     )
     tg_share_link = f"https://t.me/share/url?url={urllib.parse.quote(my_ref_url)}&text={urllib.parse.quote(share_txt)}"
+    sup_url = MEM.get("support_tg_url", "https://t.me/DeltaPulseSupport")
 
     st.markdown(
         f"<div style='background:linear-gradient(90deg,#131d2e,#161b22);border:1px solid #2f81f7;border-radius:8px;padding:9px 12px;margin-bottom:8px;font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;'>"
         f"<div>🆔 <b>Your Auto Device ID:</b> <code style='color:#ffd33d;font-size:13px;'>{cur_user['code']}</code> <span style='color:#56d364;font-size:11px;'>(Auto-Remember Active ✅)</span><br>"
         f"🏆 <b>Tier:</b> {grp_en} (#{cur_user['seq']} — Founder Spots Left: {founder_left}/100) | <b>{t_badge}</b><br>"
         f"👥 <b>Referral Progress:</b> <b>{ref_cnt}/2</b> | ⏳ <b>VIP Time Remaining:</b> {rem_txt}</div>"
-        f"<a href='{tg_share_link}' target='_blank' style='background:linear-gradient(90deg,#0088cc,#1f6feb);color:#fff;padding:8px 14px;border-radius:6px;font-weight:700;text-decoration:none;font-size:12.5px;'>"
-        f"📲 Share with 2 Friends on Telegram ➔ Unlock FREE VIP</a></div>",
+        f"<div style='display:flex;gap:6px;flex-wrap:wrap;'>"
+        f"<a href='{tg_share_link}' target='_blank' style='background:linear-gradient(90deg,#0088cc,#1f6feb);color:#fff;padding:8px 12px;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px;'>"
+        f"📲 Share with 2 Friends ➔ Unlock FREE VIP</a>"
+        f"<a href='{sup_url}' target='_blank' style='background:#21262d;border:1px solid #8b949e;color:#e6edf3;padding:8px 10px;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px;'>"
+        f"💬 24/7 Support</a></div></div>",
         unsafe_allow_html=True
     )
 
@@ -1889,7 +2028,7 @@ else:
                 f"<div style='background:#0d1117;border:1px solid #2ea043;border-radius:6px;padding:8px;font-size:11.5px;margin-bottom:6px;'>"
                 f"💎 <b>Your Unique Auto-Verification Amount:</b> <code style='color:#56d364;font-size:14px;font-weight:800;'>{pay_dec_val:.2f} USDT</code> <b>(TRC20 / Tron Network)</b><br>"
                 f"📋 <b>Official TRC20 Receiving Address:</b> <code style='color:#ffd33d;'>{MEM['trc20_wallet']}</code><br>"
-                f"<span style='color:#8b949e;font-size:10.5px;'>🛡️ No wallet connection required. Send the exact amount (<b>{pay_dec_val:.2f} USDT</b>) via TRC20 from any exchange or wallet (Binance, TrustWallet, Bybit, OKX) and click verify below for instant 3-second activation!</span></div>",
+                f"<span style='color:#8b949e;font-size:10.5px;'>🛡️ No wallet connection required. Send the exact amount (<b>{pay_dec_val:.2f} USDT</b>) via TRC20 from any exchange or wallet (Binance, TrustWallet, Bybit, OKX) and click verify below for instant 3-second activation! Need help? Contact <a href='{sup_url}' target='_blank' style='color:#58a6ff;'>24/7 Telegram VIP Support</a> with your Device ID (<b>{cur_user['code']}</b>).</span></div>",
                 unsafe_allow_html=True
             )
             tx_inp = st.text_input("Transaction Hash (TxID — Optional if exact decimal amount is sent):", placeholder="Auto-detected via TronGrid API within 1-2 minutes")
@@ -1901,7 +2040,7 @@ else:
                 else:
                     st.warning(msg_tx)
 
-    render_main_bulletin(effective_tier)
+    render_main_bulletin(effective_tier, is_patron_mode=False)
 
     st.markdown("---")
     with st.expander("⚙️ System Sync & Admin Terminal", expanded=False):
