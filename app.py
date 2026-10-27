@@ -1930,6 +1930,52 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
         if not is_locked:
             with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
+
+    if post_m:
+        st.markdown("### 🏁 Completed Matches & Verified Results (Full-Time)")
+        for m in post_m:
+            won_ft = evaluate_ft_result(m["pick"], m["h_name"], m["a_name"], m["h_score"], m["a_score"])
+            if not is_patron_mode and not won_ft:
+                continue
+            tot_cor = m["h_cor"] + m["a_cor"]
+            en_pick_ft = tr_to_en_text(m["pick"])
+            en_prop_ft = tr_to_en_text(m["prop_str"])
+            en_lig_ft = tr_to_en_text(m["lig"])
+            res_badge = "<span class='dp-w'>✅ TARGET HIT (WON)</span>" if won_ft else "<span class='dp-badge'>❌ SETTLED</span>"
+            border_st = "border-left:4px solid #2ea043;" if won_ft else "border-left:4px solid #8b949e;"
+
+            x_ft_html = ""
+            if is_patron_mode:
+                clean_h = "".join(ch for ch in str(m["h_name"]) if ch.isalnum())
+                clean_a = "".join(ch for ch in str(m["a_name"]) if ch.isalnum())
+                app_u = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
+                head_tag = "✅ BOOM! AI SIGNAL HIT! 🎯" if won_ft else "🏁 FULL-TIME AI REPORT"
+                x_ft_txt = (
+                    f"{head_tag}\n"
+                    f"⚽ FT: {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}\n"
+                    f"💎 Pick: {en_pick_ft} {'✅' if won_ft else ''}\n"
+                    f"🚩 Corners: {tot_cor} | 📊 VIP Win: {vip_pct}%\n"
+                    f"👉 {app_u}\n"
+                    f"#{clean_h} #{clean_a} #BettingTips #FootballAI"
+                )
+                btn_col = "#2ea043" if won_ft else "#1d9bf0"
+                btn_lbl = "🏆 Kazanan Maç Sonucunu (✅ BOOM!) X İçin Kopyala" if won_ft else "📋 Maç Sonucu (FT) X Metnini Kopyala"
+                x_ft_html = (
+                    f"<div style='margin-top:5px;'>"
+                    f"<code class='dp-x-raw' style='display:none;'>{x_ft_txt}</code>"
+                    f"<span class='dp-x-copy-btn' style='background:{btn_col};color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;display:inline-block;'>{btn_lbl}</span>"
+                    f"</div>"
+                )
+
+            st.markdown(
+                f"<div class='dp-card' style='{border_st}'>"
+                f"<b>🏁 FT | {m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> "
+                f"<span class='dp-badge'>{en_lig_ft}</span> {res_badge}<br>"
+                f"🎯 <b>Verified AI Target:</b> <b style='color:#56d364;'>{en_pick_ft}</b> | 🚩 <b>Total Corners:</b> {tot_cor} | 🟨 <b>Cards:</b> {m['cards']}<br>"
+                f"📌 <b>XI Tactical Prop:</b> {en_prop_ft}{x_ft_html}</div>",
+                unsafe_allow_html=True
+            )
+
 # ==================== 7. PARÇA (BÖLÜM 3/3) ====================
 if url_prog == "patron" or st.session_state["patron_unlocked"]:
     if not st.session_state["patron_unlocked"]:
