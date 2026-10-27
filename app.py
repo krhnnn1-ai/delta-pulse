@@ -807,6 +807,14 @@ import streamlit.components.v1 as components
 STORE_FILE = "dp_vip_store.json"
 USDT_TRC20_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
 
+# 🌍 7/24 KÜRESEL LİG GENİŞLETMESİ (Brezilya, Arjantin, Meksika, Japonya Otomatik Ekleme)
+LEAGUES.update({
+    "BREZİLYA SERIE A": ("bra.1", 1),
+    "ARJANTİN LIGA PROFESIONAL": ("arg.1", 1),
+    "MEKSİKA LIGA MX": ("mex.1", 1),
+    "JAPONYA J1 LİG": ("jpn.1", 2)
+})
+
 # Özel Patron Anahtarı: GK38-DP99-X7K4-VIP! (SHA-256 Kriptolu)
 _SECRET_BYTES = bytes([71, 75, 51, 56, 45, 68, 80, 57, 57, 45, 88, 55, 75, 52, 45, 86, 73, 80, 33])
 _ADMIN_HASH = hashlib.sha256(_SECRET_BYTES).hexdigest()
@@ -833,6 +841,14 @@ def tr_to_en_text(txt):
         ("Çifte Şans (X2) & 1.5 Üst", "Double Chance (X2) & Over 1.5"),
         ("Çifte Şans (1X)", "Double Chance (1X)"),
         ("Çifte Şans (X2)", "Double Chance (X2)"),
+        ("MS 1 (Net Galibiyet)", "Full Time Win: Home (1)"),
+        ("MS 2 (Net Galibiyet)", "Full Time Win: Away (2)"),
+        ("9.5 Korner Üst", "Over 9.5 Corners"),
+        ("8.5 Korner Üst", "Over 8.5 Corners"),
+        ("4.5 Kart Üst", "Over 4.5 Cards"),
+        ("3.5 Kart Üst", "Over 3.5 Cards"),
+        ("Kadro/Dizilim Bekleniyor", "Awaiting Confirmed Lineups & Formations"),
+        ("Kadro Onaylı (Sabit)", "Confirmed by Official XI (Locked)"),
         ("(Ana Kasa)", "(💎 Main Bankroll)"),
         ("Ana Kasa", "Main Bankroll"),
         ("🛡️RotasyonKalkanı", "🛡️RotationShield"),
@@ -864,6 +880,10 @@ def tr_to_en_text(txt):
         ("İTALYA SERIE B", "ITALY SERIE B"),
         ("ALMANYA BUNDESLIGA", "GERMANY BUNDESLIGA"),
         ("HOLLANDA EREDIVISIE", "NETHERLANDS EREDIVISIE"),
+        ("BREZİLYA SERIE A", "BRAZIL SERIE A"),
+        ("ARJANTİN LIGA PROFESIONAL", "ARGENTINA LIGA PROFESIONAL"),
+        ("MEKSİKA LIGA MX", "MEXICO LIGA MX"),
+        ("JAPONYA J1 LİG", "JAPAN J1 LEAGUE"),
         ("Veri Yok", "Market Pending"),
         ("İlk 100 Kurucu", "Top 100 Founder"),
         ("100 Sonrası", "Standard Tier")
@@ -871,6 +891,70 @@ def tr_to_en_text(txt):
     for k, v in rep_map:
         s = s.replace(k, v)
     return s
+
+def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data):
+    MEM.setdefault("pre_lineup_ memory", {})
+    if not is_off:
+        MEM["pre_lineup_ memory"][match_title] = {"pick": pick, "conf": conf}
+        return conf, pick, disp_odd, "⏳ Kadro/Dizilim Bekleniyor", "⏳ Kadro/Dizilim Bekleniyor", False
+
+    old_rec = MEM["pre_lineup_ memory"].get(match_title) or {"pick": pick, "conf": conf}
+    old_pick = old_rec["pick"]
+    new_pick = pick
+    new_conf = conf
+    new_odd = disp_odd
+
+    # 1. Ağır Favori (-250+) Hücum Rotasyon Kalkanı
+    if "🧬FavRotasyon" in disp_odd and fav_val <= -250:
+        if "2.5 Gol Üst" in new_pick or "Takım Golü" in new_pick:
+            new_pick = f"{a_name} Çifte Şans (X2) & 3.5 Alt" if fav_abbr == a_abbr else f"{h_name} Çifte Şans (1X) & 3.5 Alt"
+            if "🛡️RotasyonKalkanı" not in new_odd:
+                new_odd = f"{new_odd} 🛡️RotasyonKalkanı"
+
+    # 2. Tam Kadro (Rotasyonsuz) + Çift Kanat Hücum Dizilimi (4-3-3 / 3-4-3 / 4-2-3-1) Evrimi
+    wing_tacs = ("4-3-3", "3-4-3", "4-2-3-1", "3-5-2")
+    both_attacking_tac = (h_tac in wing_tacs and a_tac in wing_tacs)
+    no_fav_rot = ("🧬FavRotasyon" not in disp_odd)
+
+    if no_fav_rot and both_attacking_tac and ou_val >= 3.0 and "3.5 Alt" in new_pick and fav_val <= -175:
+        # Kadrolar açıklandığında iki takım da açık hücum dizilimiyle çıktıysa 3.5 Alt riskinden 1.5 Üst / Net Galibiyete evrilir
+        if fav_abbr == a_abbr:
+            new_pick = f"{a_name} Çifte Şans (X2) & 1.5 Üst"
+        else:
+            new_pick = f"{h_name} Çifte Şans (1X) & 1.5 Üst"
+        new_conf = min(96, new_conf + 4)
+
+    # 3. Resmi Kadro & Dizilim Bazlı KORNER / KART / TARAF (Prop) Seçici
+    props = []
+    is_wing_game = ("📐KanatKorner" in disp_odd) or (h_tac in ("4-3-3", "3-4-3", "3-5-2") or a_tac in ("4-3-3", "3-4-3", "3-5-2"))
+    high_corner_lig = any(k in lig_adi for k in ("İNGİLTERE", "BREZİLYA", "MEKSİKA", "JAPONYA", "HOLLANDA", "PORTEKİZ"))
+
+    if is_wing_game and (fav_val <= -190 or high_corner_lig):
+        props.append("🚩 9.5 Korner Üst")
+    elif is_wing_game or fav_val <= -150:
+        props.append("🚩 8.5 Korner Üst")
+
+    high_card_lig = any(k in lig_adi for k in ("TÜRKİYE", "ARJANTİN", "İTALYA", "İSPANYA", "BREZİLYA", "MEKSİKA", "PORTEKİZ"))
+    is_tense_match = (abs(fav_val) <= 155) or (abs(h_mom - a_mom) <= 20) or ("3-5-2" in (h_tac, a_tac)) or ("4-4-2" in (h_tac, a_tac))
+
+    if high_card_lig and is_tense_match:
+        props.append("🟨 4.5 Kart Üst")
+    elif is_tense_match:
+        props.append("🟨 3.5 Kart Üst")
+
+    if no_fav_rot and "🔥Δ-" in disp_odd and fav_val <= -145:
+        if fav_abbr == a_abbr and a_mom >= h_mom:
+            props.append(f"🎯 {a_name} MS 2 (Net Galibiyet)")
+        elif fav_abbr != a_abbr and h_mom >= a_mom:
+            props.append(f"🎯 {h_name} MS 1 (Net Galibiyet)")
+
+    if not props:
+        props.append("🚩 8.5 Korner Üst")
+
+    prop_str = " | ".join(props[:2])
+    changed = (old_pick != new_pick)
+    evo_str = f"🔄 {old_pick} ➔ ✅ {new_pick}" if changed else f"✅ Kadro Onaylı (Sabit)"
+    return new_conf, new_pick, new_odd, evo_str, prop_str, changed
 
 def verify_admin_secret(raw_val):
     s = str(raw_val or "").strip().upper()
@@ -1180,6 +1264,26 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
     app_url = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
     changed = False
 
+    # 1. Resmi Kadro Açıklandığında (Kadro Evrimi + Korner/Kart Prop) Otomatik Bildirim
+    for m in pre_m:
+        key_xi = f"XI_{m['mac']}"
+        if m["is_off"] and (m["conf"] >= 70 or m.get("evo_changed")) and key_xi not in MEM["tg_posted"]:
+            en_lig = tr_to_en_text(m["lig"])
+            en_odd = tr_to_en_text(m["odd_str"])
+            msg = (
+                f"🏟️ <b>OFFICIAL LINEUPS & TACTICAL XI CONFIRMED!</b>\n\n"
+                f"🕒 <b>{m['saat']} (UTC+3) | {m['mac']}</b> ({en_lig})\n"
+                f"📐 Confirmed Formations: <b>{m['h_tac']} vs {m['a_tac']}</b> | AI Confidence: <b>{m['conf']}%</b>\n"
+                f"🔄 Final XI Target: 🔒 <b>[UPDATED & LOCKED FOR VIP]</b>\n"
+                f"🚩 Tactical Corner/Card Prop: 🔒 <b>[VIP XI EXCLUSIVE]</b>\n\n"
+                f"👉 <a href='{app_url}'>View Confirmed Lineup Target & Tactical Props</a>"
+            )
+            if send_telegram_channel_post(msg):
+                MEM["tg_posted"].add(key_xi)
+                changed = True
+            break
+
+    # 2. Maç Önü Erken Balina Sinyali
     for m in pre_m[:2]:
         key = f"PRE_{m['mac']}"
         if (m["conf"] >= 80 or "💥TG↑" in m["odd_str"]) and key not in MEM["tg_posted"]:
@@ -1190,7 +1294,7 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 f"🕒 <b>{m['saat']} (UTC+3) | {m['mac']}</b> ({en_lig})\n"
                 f"📊 AI Confidence: <b>{m['conf']}%</b> | Market Flow: <b>{en_odd}</b>\n"
                 f"🎯 Target Pick: 🔒 <b>[LOCKED FOR VIP MEMBERS]</b>\n\n"
-                f"💎 <i>Pre-Lineup Main Bankroll Hit Rate: <b>{ak_pct}%</b> | Live VIP: <b>{vip_pct}%</b></i>\n"
+                f"💎 <i>Main Bankroll Hit Rate: <b>{ak_pct}%</b> | Live VIP: <b>{vip_pct}%</b></i>\n"
                 f"🎁 <b>First 100 Founders:</b> Invite 2 friends for <b>90-Day FREE VIP</b> or unlock instantly via <b>USDT (TRC20)</b>!\n"
                 f"👉 <a href='{app_url}'>One-Click Auto Access (No Login Required)</a>"
             )
@@ -1199,6 +1303,7 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 changed = True
             break
 
+    # 3. Canlı VIP Pusu Alarmı
     for m in live_m[:1]:
         key = f"LIVE_{m['mac']}"
         if m["heat"] >= 74 and key not in MEM["tg_posted"]:
@@ -1214,15 +1319,16 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
                 changed = True
             break
 
+    # 4. Maç Sonu Kazandı Kanıtı
     for m in post_m:
         key = f"WIN_{m['mac']}"
         won = evaluate_ft_result(m["pick"], m["h_name"], m["a_name"], m["h_score"], m["a_score"])
         if won and (m["conf"] >= 70 or "Ana Kasa" in m["pick"]) and key not in MEM["tg_posted"]:
             en_pick = tr_to_en_text(m["pick"])
             msg = (
-                f"✅ <b>PRE-MATCH VIP SIGNAL WON!</b>\n\n"
+                f"✅ <b>CONFIRMED VIP SIGNAL WON!</b>\n\n"
                 f"🏆 <b>{m['h_name']} {m['h_score']} - {m['a_score']} {m['a_name']}</b> (FT)\n"
-                f"🎯 Locked VIP Target: <b>{en_pick} ({m['conf']}% Confidence)</b> ✅\n\n"
+                f"🎯 Final VIP Target: <b>{en_pick} ({m['conf']}% Confidence)</b> ✅\n\n"
                 f"💎 <i>Main Bankroll Hit Rate: <b>{ak_pct}%</b> | Live VIP Radar: <b>{vip_pct}%</b></i>\n"
                 f"👉 <a href='{app_url}'>Don't Miss the Next Locked Whale Signals!</a>"
             )
@@ -1238,6 +1344,8 @@ def is_pre_match_locked_for_normal(m):
     if m["conf"] >= 70 or "Ana Kasa" in m["pick"]:
         return True
     if "💥BüroKG-Sim" in m["odd_str"] or "💥TG↑" in m["odd_str"] or "🛡️RotasyonKalkanı" in m["odd_str"]:
+        return True
+    if m.get("evo_changed"):
         return True
     return False
 
@@ -1262,7 +1370,7 @@ def fetch_all_matches():
     now_tr = datetime.now(TR_TZ)
     date_str = now_tr.strftime("%Y%m%d")
 
-    if MEM.get("model_ver") != "v6.4_ROTATION_SHIELD":
+    if MEM.get("model_ver") != "v6.5_XI_EVOLUTION_GLOBAL":
         MEM["roster_cache"].clear()
         MEM["live_signals"].clear()
         MEM["settled_results"].clear()
@@ -1273,6 +1381,7 @@ def fetch_all_matches():
         MEM["active_date"] = date_str
         MEM.setdefault("prev_scan", {})
         MEM.setdefault("change_log", [])
+        MEM.setdefault("pre_lineup_ memory", {})
         MEM["opening_odds"].update({
             "Fleetwood Town vs Arsenal": {"fav": "ARS", "val": -1400, "tg": 3.5},
             "AS Roma vs Cagliari": {"fav": "ROMA", "val": -310, "tg": 2.5},
@@ -1292,7 +1401,7 @@ def fetch_all_matches():
             "Ascoli vs Sampdoria": {"fav": "ASC", "val": 120, "tg": 2.5},
             "Sheffield Wed vs Cambridge": {"fav": "SHW", "val": 100, "tg": 2.5}
         })
-        MEM["model_ver"] = "v6.4_ROTATION_SHIELD"
+        MEM["model_ver"] = "v6.5_XI_EVOLUTION_GLOBAL"
 
     if MEM.get("active_date") != date_str:
         MEM["live_signals"].clear()
@@ -1365,23 +1474,22 @@ def fetch_all_matches():
 
         conf, pick, disp_odd, warn_flag, squad_note = evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, odd_str, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi)
 
-        # 🛡️ YENİ KURAL: Ağır Favori (-250 ve üzeri) Hücum Rotasyon Kalkanı
-        if is_off and "🧬FavRotasyon" in disp_odd and fav_val <= -250:
-            if "2.5 Gol Üst" in pick or "Takım Golü" in pick:
-                if fav_abbr == a_abbr:
-                    pick = f"{a_name} Çifte Şans (X2) & 3.5 Alt"
-                else:
-                    pick = f"{h_name} Çifte Şans (1X) & 3.5 Alt"
-                if "🛡️RotasyonKalkanı" not in disp_odd:
-                    disp_odd = f"{disp_odd} 🛡️RotasyonKalkanı"
-                squad_note = "🛡️ Heavy Favorite Rotation Shield: 2.5 Over risk neutralized due to attacking lineup rotation; shifted to Double Chance & Under 3.5."
+        # 🧠 KADRO & DİZİLİM SONRASI TAHMİN EVRİMİ + KORNER/KART/TARAF MOTORU
+        conf, pick, disp_odd, evo_str, prop_str, evo_changed = compute_post_lineup_evolution_and_props(
+            match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac,
+            h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data
+        )
 
+        # Resmi kadro açıklandığında oluşan nihai tahmini maç sonu karnesi için kilitle
         if state == "pre":
-            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "ver": "v6.4"}
-        elif match_title in MEM["locked_pre"] and MEM["locked_pre"][match_title].get("ver") == "v6.4":
-            conf, pick, warn_flag = MEM["locked_pre"][match_title]["conf"], MEM["locked_pre"][match_title]["pick"], MEM["locked_pre"][match_title].get("warn", False)
+            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.5"}
+        elif match_title in MEM["locked_pre"] and MEM["locked_pre"][match_title].get("ver") == "v6.5":
+            locked_obj = MEM["locked_pre"][match_title]
+            conf, pick, warn_flag = locked_obj["conf"], locked_obj["pick"], locked_obj.get("warn", False)
+            evo_str = locked_obj.get("evo", evo_str)
+            prop_str = locked_obj.get("prop", prop_str)
         else:
-            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "ver": "v6.4"}
+            MEM["locked_pre"][match_title] = {"conf": conf, "pick": pick, "warn": warn_flag, "evo": evo_str, "prop": prop_str, "ver": "v6.5"}
 
         delta_str, sot_tag, odds_flow, live_exp, heat = "", "", "", "", 0
         if state == "in":
@@ -1396,7 +1504,7 @@ def fetch_all_matches():
         prev = MEM["prev_scan"].get(match_title)
         if prev:
             if not prev["is_off"] and is_off:
-                MEM["change_log"].insert(0, f"🏟️ [{t_stamp}] {match_title}: Official Lineups Confirmed! ➔ {pick} (%{conf})")
+                MEM["change_log"].insert(0, f"🏟️ [{t_stamp}] {match_title}: Lineups Confirmed ({h_tac} vs {a_tac}) ➔ {evo_str} | {prop_str}")
             if prev["odd"] != odd_str and odd_str != "Veri Yok":
                 MEM["change_log"].insert(0, f"💰 [{t_stamp}] {match_title}: Odds Shifted ({prev['odd']} ➔ {odd_str})")
             if state == "in" and prev["score"] != f"{h_score}-{a_score}":
@@ -1415,7 +1523,8 @@ def fetch_all_matches():
             "odd_str": disp_odd, "tg": ou_val, "pick": pick, "warn": warn_flag, "h_sh": h_sh, "a_sh": a_sh,
             "h_sot": h_sot, "a_sot": a_sot, "h_cor": h_cor, "a_cor": a_cor, "cards": cards, "h_poss": h_poss,
             "delta_str": delta_str, "sot_tag": sot_tag, "odds_flow": odds_flow, "live_exp": live_exp, "heat": heat,
-            "roster_data": r_data, "squad_model_note": squad_note
+            "roster_data": r_data, "squad_model_note": squad_note,
+            "evo_str": evo_str, "prop_str": prop_str, "evo_changed": evo_changed
         })
     return results
 
@@ -1459,12 +1568,14 @@ pre_m = sorted([m for m in matches if m["state"] == "pre"], key=lambda x: x["con
 post_m = [m for m in matches if m["state"] == "post"]
 
 for m in live_m:
-    mini_lines.append(f"CANLI|{str(m['clock']).replace(' ','')}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}")
+    mini_lines.append(f"CANLI|{str(m['clock']).replace(' ','')}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}|Yan:{m['prop_str']}")
 for m in pre_m:
-    k_tag = "✅KadroAçık" if m["is_off"] else "⏳KadroYok"
-    mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd_str']}|TG:{m['tg']} -> {m['pick']}")
+    k_tag = f"✅Kadro({m['h_tac']}v{m['a_tac']})" if m["is_off"] else "⏳KadroYok"
+    evo_mini = f" | {m['evo_str']} | Yan:{m['prop_str']}" if m["is_off"] else ""
+    mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd_str']}|TG:{m['tg']} -> {m['pick']}{evo_mini}")
 for m in post_m:
-    mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|{'✅' if evaluate_ft_result(m['pick'], m['h_name'], m['a_name'], m['h_score'], m['a_score']) else '❌'}|{m['pick']}")
+    tot_cor = m["h_cor"] + m["a_cor"]
+    mini_lines.append(f"FT|FT|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}(Kor:{tot_cor})|{'✅' if evaluate_ft_result(m['pick'], m['h_name'], m['a_name'], m['h_score'], m['a_score']) else '❌'}|{m['pick']}|Yan:{m['prop_str']}")
 
 run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct)
 
@@ -1481,14 +1592,14 @@ def render_main_bulletin(view_tier):
             <div style="font-size:10.5px;color:#79c0ff;">🔥 Active Live Ambush: <b>{lv_active}</b></div>
         </div>
         <div style="background:linear-gradient(135deg,#2b2108,#161b22);border:1px solid #f0b90b;border-radius:8px;padding:8px 10px;">
-            <div style="font-size:10px;color:#ffd33d;font-weight:800;">💎 MAIN BANKROLL (PRE-LINEUP)</div>
+            <div style="font-size:10px;color:#ffd33d;font-weight:800;">💎 MAIN BANKROLL (CONFIRMED XI)</div>
             <div style="font-size:18px;font-weight:800;color:#ffd33d;">{ak_pct}% <span style="font-size:12px;color:#c9d1d9;">({ak_w}/{ak_t} ✅)</span></div>
-            <div style="font-size:10.5px;color:#e6edf3;">⚡ Verified Whale & Sim Signals</div>
+            <div style="font-size:10.5px;color:#e6edf3;">⚡ 24/7 Europe + LATAM + Asia</div>
         </div>
         <div style="background:linear-gradient(135deg,#131d2e,#161b22);border:1px solid #2f81f7;border-radius:8px;padding:8px 10px;">
-            <div style="font-size:10px;color:#79c0ff;font-weight:800;">📊 OVERALL AI RECORD (PRE-LINEUP)</div>
+            <div style="font-size:10px;color:#79c0ff;font-weight:800;">📊 OVERALL AI RECORD</div>
             <div style="font-size:18px;font-weight:800;color:#58a6ff;">{tot_pct}% <span style="font-size:12px;color:#c9d1d9;">({tot_w}/{tot_t} ✅)</span></div>
-            <div style="font-size:10.5px;color:#c9d1d9;">🔒 Autonomous Bookie Simulation</div>
+            <div style="font-size:10.5px;color:#c9d1d9;">🔒 Lineup Evolution + Props</div>
         </div>
         <div style="background:linear-gradient(135deg,#24152b,#161b22);border:1px solid #a371f7;border-radius:8px;padding:8px 10px;">
             <div style="font-size:10.5px;color:#8b949e;font-weight:700;">👑 TOP SIGNAL OF THE DAY</div>
@@ -1498,21 +1609,22 @@ def render_main_bulletin(view_tier):
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh Live Radar, Official Lineups & Whale Odds Engine", use_container_width=True):
+    if st.button("🔄 Refresh 24/7 Global Radar, Official Lineups & Tactical Props", use_container_width=True):
         MEM["roster_cache"].clear()
         st.cache_data.clear()
         st.rerun()
 
     if live_m:
-        st.markdown("### 🔴 Live PRO Radar (Bookie Simulation & 86'+ Late-Game Lock)")
+        st.markdown("### 🔴 Live PRO Radar (Bookie Simulation & Tactical Corner/Card Flow)")
         for m in live_m:
             locked_live = (not is_vip_view and (m["heat"] >= 68 or "💎" in m["sot_tag"] or "💥" in m["sot_tag"]))
             en_pick_live = tr_to_en_text(m["pick"])
+            en_prop_live = tr_to_en_text(m["prop_str"])
             en_lig_live = tr_to_en_text(m["lig"])
             en_delta = m["delta_str"].replace("Ş", "Sh").replace("K", "Cr")
-            pick_show = "🔒 [VIP LIVE AMBUSH LOCKED — Invite 2 Friends or Unlock Instantly via 100 USDT]" if locked_live else en_pick_live
+            pick_show = "🔒 [VIP LIVE AMBUSH LOCKED — Invite 2 Friends or Unlock Instantly via 100 USDT]" if locked_live else f"{en_pick_live} &nbsp;|&nbsp; 🎯 <b>XI Prop:</b> {en_prop_live}"
             exp_show = (
-                "🔒 High-pressure live whale entry detected! Unlock VIP access to view the active live target."
+                "🔒 High-pressure live whale entry detected! Unlock VIP access to view the active live target & corner/card prop."
                 if locked_live else
                 f"Live Momentum: {m['heat']}% | Shots on Target: {m['h_sot']}-{m['a_sot']} | Market Tags: {tr_to_en_text(m['sot_tag'])}"
             )
@@ -1523,36 +1635,50 @@ def render_main_bulletin(view_tier):
                 f"<span class='dp-badge'>{en_lig_live} • {m['h_tac']} vs {m['a_tac']}</span><br>"
                 f"🎯 Shots: <b>{m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']})</b> | 🚩 Corners: <b>{m['h_cor']}-{m['a_cor']}</b> | "
                 f"🟨 Cards: <b>{m['cards']}</b> | ⚽ Poss: <b>{m['h_poss']}%</b> {en_delta}<br>"
-                f"📌 <b>Locked Target:</b> <span style='color:#ffd33d;'>{pick_show}</span>"
+                f"📌 <b>Final Locked Target:</b> <span style='color:#ffd33d;'>{pick_show}</span>"
                 f"<div class='dp-exp-alert'>🧠 <b>AI Live Analysis:</b> {exp_show}</div></div>", unsafe_allow_html=True
             )
             if not locked_live:
                 with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
                     st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-    st.markdown("### ⏳ Autonomous Pre-Match Signals (Whale Money Flow & Lineup Engine)")
+    st.markdown("### ⏳ 24/7 Pre-Match Signals (Lineup Evolution ➔ Confirmed XI Corner & Card Props)")
     for m in pre_m:
         is_locked = (not is_vip_view and is_pre_match_locked_for_normal(m))
-        k_badge = "<span class='dp-w'>✅ OFFICIAL LINEUP CONFIRMED</span>" if m["is_off"] else "<span class='dp-heat'>⏳ PRE-LINEUP SIM (AUTO-CHECK 45-60M PRIOR)</span>"
+        k_badge = (
+            f"<span class='dp-w'>✅ OFFICIAL XI & FORMATION ({m['h_tac']} vs {m['a_tac']})</span>"
+            if m["is_off"] else
+            "<span class='dp-heat'>⏳ PRE-LINEUP SIM (PROPS UNLOCK 45-60M PRIOR)</span>"
+        )
         card_cls = "dp-card dp-ak" if "Ana Kasa" in m["pick"] else ("dp-card dp-warn" if m["warn"] else "dp-card")
         en_pick_pre = tr_to_en_text(m["pick"])
         en_odd_pre = tr_to_en_text(m["odd_str"])
         en_lig_pre = tr_to_en_text(m["lig"])
+        en_evo = tr_to_en_text(m["evo_str"])
+        en_prop = tr_to_en_text(m["prop_str"])
+
         target_html = (
-            "<span style='color:#ffd33d;font-weight:700;'>🔒 VIP LOCKED SIGNAL (Use the Button Above to Invite 2 Friends ➔ Free VIP or Unlock via 100 USDT!)</span>"
+            "<span style='color:#ffd33d;font-weight:700;'>🔒 VIP LOCKED SIGNAL (Invite 2 Friends ➔ Free VIP or Unlock via 100 USDT!)</span>"
             if is_locked else f"<b>{en_pick_pre}</b>"
         )
-        note_html = (
-            "🔒 5D Power Radar, Lineup Rotation Impact & Whale Money Flow breakdown are exclusive to VIP members."
-            if is_locked else
-            f"Formation: {m['h_tac']} vs {m['a_tac']} | Market Flow: {en_odd_pre} | Goal Line: {m['tg']}"
-        )
+        if m["is_off"]:
+            prop_line_html = (
+                "🔒 <b>Confirmed XI Evolution & Corner/Card Props:</b> <span style='color:#ffd33d;'>[VIP EXCLUSIVE — UNLOCK TO VIEW]</span><br>"
+                if is_locked else
+                f"🔄 <b>Lineup Evolution (Official Baseline):</b> <span style='color:#56d364;font-weight:700;'>{en_evo}</span><br>"
+                f"🎯 <b>Confirmed XI Tactical Prop (Corners / Cards / Win):</b> <span style='color:#ffd33d;font-weight:700;'>{en_prop}</span><br>"
+            )
+        else:
+            prop_line_html = (
+                f"⏳ <b>Lineup Evolution & Corner/Card Props:</b> <span style='color:#8b949e;'>{en_prop} (Auto-activates once official XI & formations drop)</span><br>"
+            )
+
         st.markdown(
             f"<div class='{card_cls}'><b>🕒 {m['saat']} (UTC+3) | {m['mac']}</b> — <b>{m['conf']}% Confidence</b> "
             f"<span class='dp-badge'>{en_lig_pre} • {m['h_tac']} vs {m['a_tac']}</span> {k_badge}<br>"
             f"📈 Form Mom: <b>{m['h_mom']}%</b> {format_form_badges(m['h_form'])} vs <b>{m['a_mom']}%</b> {format_form_badges(m['a_form'])} | 💰 Market: <b>{en_odd_pre}</b> | ⚽ Line: <b>{m['tg']}</b><br>"
-            f"🎯 <b>Target Pick:</b> {target_html}<br>"
-            f"💬 <span style='color:#8b949e;'>{note_html}</span></div>", unsafe_allow_html=True
+            f"🎯 <b>Main Target:</b> {target_html}<br>"
+            f"{prop_line_html}</div>", unsafe_allow_html=True
         )
         if not is_locked:
             with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
@@ -1579,8 +1705,8 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
         founder_left = max(0, 100 - total_members)
         st.markdown(
             "<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;'>"
-            "<span>👑 <b>DELTA PULSE — PATRON TAM YETKİLİ PROGRAMI</b> (v6.4 Global EN + Rotasyon Kalkanı)</span>"
-            "<span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü & TRC20 Aktif</span></div>",
+            "<span>👑 <b>DELTA PULSE — PATRON TAM YETKİLİ PROGRAMI</b> (v6.5 Kadro Evrimi + 4 Yeni Lig)</span>"
+            "<span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü & 7/24 Global Aktif</span></div>",
             unsafe_allow_html=True
         )
         tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa, Cihaz Üyeleri & Global Telegram Bot"])
@@ -1627,10 +1753,11 @@ if url_prog == "patron" or st.session_state["patron_unlocked"]:
                     if st.button("📣 Şimdi Kanala İngilizce (Global) Tanıtım Mesajı Gönder", use_container_width=True):
                         top_m = pre_m[0] if pre_m else None
                         promo_txt = (
-                            f"🔥 <b>DELTA PULSE AI — DAILY WHALE & SIMULATION REPORT</b>\n\n"
+                            f"🔥 <b>DELTA PULSE AI — 24/7 GLOBAL WHALE & LINEUP RADAR</b>\n\n"
                             f"🎯 Live VIP AI Accuracy: <b>{vip_pct}% ({vip_w}/{vip_t} ✅)</b>\n"
-                            f"💎 Main Bankroll (Pre-Lineup): <b>{ak_pct}% ({ak_w}/{ak_t} ✅)</b>\n"
+                            f"💎 Main Bankroll (Confirmed XI): <b>{ak_pct}% ({ak_w}/{ak_t} ✅)</b>\n"
                             f"📊 Overall Verified Record: <b>{tot_pct}% ({tot_w}/{tot_t} ✅)</b>\n"
+                            f"🌍 Active Coverage: <b>Europe + Brazil + Argentina + Mexico + Japan</b>\n"
                             + (f"⚡ Top Locked Signal Today: <b>{top_m['saat']} (UTC+3) {top_m['mac']} ({top_m['conf']}% Confidence)</b>\n\n" if top_m else "\n")
                             + f"🎁 <b>First 100 Founders:</b> Invite 2 friends for <b>90-Day FREE VIP</b> or unlock instantly via <b>100 USDT (TRC20)</b>!\n"
                             f"👉 <a href='{MEM['app_public_url']}'>Launch WebApp (One-Click Auto Access — No Login Required)</a>"
@@ -1734,14 +1861,14 @@ else:
     reward_txt = "90-Day Founder VIP" if cur_user["seq"] <= 100 else "72-Hour Weekend VIP"
     grp_en = tr_to_en_text(cur_user["group"])
     t_badge = (
-        "💎 VIP ACTIVE (All Whale Signals, Lineup & Tactical Radars Unlocked)"
+        "💎 VIP ACTIVE (All Whale Signals, Confirmed XI Evolutions & Corner/Card Props Unlocked)"
         if effective_tier == "VIP" else
         f"👤 STANDARD TIER (Invite {max(0, 2 - ref_cnt)} More Friends for FREE {reward_txt}!)"
     )
 
     my_ref_url = f"{MEM['app_public_url']}?ref={cur_user['code']}"
     share_txt = (
-        f"🔥 AI Football Whale Radar with {ak_pct}% Pre-Lineup Main Bankroll & {vip_pct}% Live VIP accuracy! "
+        f"🔥 24/7 AI Football Whale & Lineup Radar with {ak_pct}% Main Bankroll & {vip_pct}% Live VIP accuracy! "
         f"No registration or password needed — click for instant auto-access:"
     )
     tg_share_link = f"https://t.me/share/url?url={urllib.parse.quote(my_ref_url)}&text={urllib.parse.quote(share_txt)}"
