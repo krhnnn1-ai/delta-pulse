@@ -943,12 +943,34 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
         return tot <= 3
     return tot >= 2
 
-# ==================== PARÇA 6A/8 ====================
+# ==================== PARÇA 6/8 ====================
+import re
+
+_ACTIVE_LEAGUES = [
+    ("ita.1", "İTALYA SERIE A", 1), ("eng.league_cup", "İNGİLTERE EFL CUP", 1),
+    ("bra.1", "BREZİLYA SERIE A", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
+    ("esp.1", "İSPANYA LA LIGA", 1), ("ger.1", "ALMANYA BUNDESLIGA", 1),
+    ("fra.1", "FRANSA LIGUE 1", 1), ("tur.1", "TÜRKİYE SÜPER LİG", 1),
+    ("ned.1", "HOLLANDA EREDIVISIE", 1), ("por.1", "PORTEKİZ LIGA", 1),
+    ("sco.1", "İSKOÇYA PREMIERSHIP", 1), ("arg.1", "ARJANTİN LIGA PRO", 1),
+    ("mex.1", "MEKSİKA LIGA MX", 1), ("ita.2", "İTALYA SERIE B", 2),
+    ("eng.2", "İNGİLTERE CHAMPIONSHIP", 2), ("esp.2", "İSPANYA LA LIGA 2", 2)
+]
+
 def _odd_to_prob(val):
     v = safe_float(val, 0.0)
     if v == 0:
         return 50.0
     return (-v / (-v + 100.0)) * 100.0 if v < 0 else (100.0 / (v + 100.0)) * 100.0
+
+def _true_form_mom(form_str, seed_name=""):
+    s = [c for c in str(form_str or "").upper() if c in ("W", "D", "L", "G", "B", "M")][:5]
+    if not s:
+        return 32 + (sum(ord(c) for c in str(seed_name)) % 36)
+    weights = [1.0, 1.15, 1.35, 1.6, 1.9][:len(s)]
+    pts = {"W": 100, "G": 100, "D": 42, "B": 42, "L": 5, "M": 5}
+    w_sum = sum(pts[c] * weights[i] for i, c in enumerate(s[::-1]))
+    return min(92, max(14, int(round(w_sum / sum(weights)))))
 
 def _fetch_single_league_sb(item):
     slug, lig_adi, kademe = item
@@ -961,190 +983,7 @@ def _fetch_single_league_sb(item):
         pass
     return slug, lig_adi, kademe, []
 
-_raw_lgs = globals().get("LEAGUES", [])
-if isinstance(_raw_lgs, dict):
-    _lg_list = [(k, v[0] if isinstance(v, (list, tuple)) else str(v), v[1] if isinstance(v, (list, tuple)) and len(v) > 1 else 1) for k, v in _raw_lgs.items()]
-else:
-    _lg_list = [(x[0], x[1], x[2] if len(x) > 2 else 1) for x in _raw_lgs]
-
-raw_matches, roster_tasks = [], []
-with ThreadPoolExecutor(max_workers=10) as ex:
-    sb_results = list(ex.map(_fetch_single_league_sb, _lg_list))
-
-for slug, lig_adi, kademe, ev_list in sb_results:
-    for ev in ev_list:
-        comp = (ev.get("competitions") or [{}])[0]
-        status_obj = comp.get("status") or ev.get("status") or {}
-        state = str((status_obj.get("type") or {}).get("state") or "pre").lower()
-        clk = str(status_obj.get("displayClock") or (status_obj.get("type") or {}).get("shortDetail") or "")
-        comps = comp.get("competitors") or []
-        if len(comps) < 2:
-            continue
-        h_c = next((x for x in comps if x.get("homeAway") == "home"), comps[0])
-        a_c = next((x for x in comps if x.get("homeAway") == "away"), comps[1])
-        h_name = str((h_c.get("team") or {}).get("shortDisplayName") or (h_c.get("team") or {}).get("name") or "Home")
-        a_name = str((a_c.get("team") or {}).get("shortDisplayName") or (a_c.get("team") or {}).get("name") or "Away")
-        h_abbr = str((h_c.get("team") or {}).get("abbreviation") or h_name[:3]).upper()
-        a_abbr = str((a_c.get("team") or {}).get("abbreviation") or a_name[:3]).upper()
-        match_title = f"{h_name} vs {a_name}"
-        h_form = str(h_c.get("form") or "WDLWD")
-        a_form = str(a_c.get("form") or "DLWDL")
-        h_mom = calc_mom(h_form) if "calc_mom" in globals() else 50
-        a_mom = calc_mom(a_form) if "calc_mom" in globals() else 50
-
-        odds_arr = comp.get("odds") or []
-        odd_str, ou_val, has_live_api_odds = "", 2.5, False
-        if odds_arr and isinstance(odds_arr[0], dict):
-            odd_str = str(odds_arr[0].get("details") or "").strip()
-            ou_val = safe_float(odds_arr[0].get("overUnder"), 2.5)
-            has_live_api_odds = True
-        if not odd_str:
-            fav_abbr = h_abbr if h_mom >= a_mom else a_abbr
-            fav_val = -115 - int(abs(h_mom - a_mom) * 1.4)
-            odd_str = f"{fav_abbr} {fav_val}"
-        else:
-            pts = odd_str.split()
-            fav_abbr = pts[0].upper() if pts else h_abbr
-            fav_val = safe_int(pts[1], -130) if len(pts) > 1 else -130
-
-        op_mem = MEM.setdefault("opening_odds", {})
-        if match_title not in op_mem:
-            op_mem[match_title] = {"fav_val": fav_val, "ou_val": ou_val}
-        op_fav, op_ou = op_mem[match_title]["fav_val"], op_mem[match_title]["ou_val"]
-        disp_odd = f"{fav_abbr} {fav_val:+d}" if fav_val > 0 else f"{fav_abbr} {fav_val}"
-        if fav_val != op_fav:
-            d_raw = fav_val - op_fav
-            d_prob = round(_odd_to_prob(fav_val) - _odd_to_prob(op_fav), 1)
-            if d_prob >= 2.0:
-                disp_odd += f" 🔥Δ{d_raw:+d}(+{d_prob}%p)"
-            elif d_prob <= -2.0:
-                disp_odd += f" ⚠️Δ{d_raw:+d}({d_prob}%p)"
-        if ou_val > op_ou:
-            disp_odd += f" 💥TG↑({op_ou}->{ou_val})"
-
-        ev_id = str(ev.get("id") or "")
-        raw_matches.append((slug, lig_adi, kademe, ev, comp, state, clk, h_c, a_c, h_name, a_name, h_abbr, a_abbr, match_title, h_form, a_form, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, has_live_api_odds, ev_id))
-        roster_tasks.append((slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, disp_odd, state, kademe, fav_abbr, fav_val, a_abbr))
-# ==================== PARÇA 6B/8 ====================
-roster_map = {}
-if roster_tasks:
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        for m_t, r_d in ex.map(fetch_and_analyze_roster, roster_tasks):
-            roster_map[m_t] = r_d
-
-live_matches, upcoming_matches = [], []
-fin_cache = MEM.setdefault("finished_cache", {})
-now_tr = datetime.now(TR_TZ)
-
-for item in raw_matches:
-    slug, lig_adi, kademe, ev, comp, state, clk, h_c, a_c, h_name, a_name, h_abbr, a_abbr, match_title, h_form, a_form, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, has_live_api_odds, ev_id = item
-    r_data = roster_map.get(match_title) or {}
-    is_off = bool(r_data.get("official"))
-    h_tac = str((r_data.get("h") or {}).get("tac") or "4-2-3-1")
-    a_tac = str((r_data.get("a") or {}).get("tac") or "4-2-3-1")
-
-    conf, pick, disp_odd, warn_flag, m4_str, m4 = evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi)
-    conf, pick, disp_odd, evo_str, prop_str, evo_changed = compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4)
-
-    h_score, a_score = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
-    h_sh, a_sh = get_stat(h_c, ["totalShots", "shotsSummary"]), get_stat(a_c, ["totalShots", "shotsSummary"])
-    h_sot, a_sot = get_stat(h_c, ["shotsOnTarget", "onGoal"]), get_stat(a_c, ["shotsOnTarget", "onGoal"])
-    h_cor, a_cor = get_stat(h_c, ["wonCorners", "corners"]), get_stat(a_c, ["wonCorners", "corners"])
-    h_poss = get_stat(h_c, ["possessionPct", "possession"]) or 50
-    tot_cards = get_stat(h_c, ["yellowCards"]) + get_stat(a_c, ["yellowCards"]) + get_stat(h_c, ["redCards"]) + get_stat(a_c, ["redCards"])
-
-    try:
-        dt_utc = datetime.fromisoformat(str(ev.get("date") or "").replace("Z", "+00:00"))
-        m_time = dt_utc.astimezone(TR_TZ).strftime("%H:%M")
-    except Exception:
-        m_time = "20:00"
-
-    base_obj = {
-        "mac": match_title, "lig": lig_adi, "saat": m_time, "h_name": h_name, "a_name": a_name,
-        "h_form": h_form, "a_form": a_form, "h_mom": h_mom, "a_mom": a_mom, "h_tac": h_tac, "a_tac": a_tac,
-        "is_off": is_off, "odd": disp_odd, "ou": ou_val, "conf": conf, "pick": pick, "evo": evo_str,
-        "prop": prop_str, "roster_data": r_data, "m4_summary": m4_str, "m4": m4,
-        "h_score": h_score, "a_score": a_score, "h_sh": h_sh, "a_sh": a_sh, "h_sot": h_sot, "a_sot": a_sot,
-        "h_cor": h_cor, "a_cor": a_cor, "h_poss": h_poss, "cards": tot_cards, "clk": clk
-    }
-
-    if state == "in":
-        m_int = safe_int(re.sub(r"[^0-9]", "", clk.split("+")[0]), 45 if "HT" in clk.upper() else 1)
-        heat, sot_tag, _, _, _ = analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data)
-        snaps = MEM.setdefault("live_snapshots", {})
-        if match_title not in snaps:
-            snaps[match_title] = {"min": m_int, "sh": h_sh + a_sh, "sot": h_sot + a_sot, "cor": h_cor + a_cor}
-        s0 = snaps[match_title]
-        d_str = f"|Δ({s0['min']}'->{m_int}'):+{max(0,(h_sh+a_sh)-s0['sh'])}/{max(0,(h_sot+a_sot)-s0['sot'])}Ş,+{max(0,(h_cor+a_cor)-s0['cor'])}/{max(0,a_cor)}K" if m_int > s0["min"] + 2 else ""
-        base_obj.update({"heat": heat, "sot_tag": sot_tag, "delta_str": d_str})
-        live_matches.append(base_obj)
-    elif state == "post":
-        tot_cor_ft = h_cor + a_cor
-        if "9.5 Korner Üst" in pick:
-            won = (tot_cor_ft >= 10) if tot_cor_ft > 0 else ((h_score + a_score) >= 3)
-        elif "8.5 Korner Üst" in pick:
-            won = (tot_cor_ft >= 9) if tot_cor_ft > 0 else ((h_score + a_score) >= 3)
-        elif "Kart Üst" in pick and "Korner" not in pick:
-            won = (tot_cards >= 4) if tot_cards > 0 else ((h_score + a_score) >= 2)
-        else:
-            won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-        is_ak = ("Ana Kasa" in pick or conf >= 82)
-        MEM.setdefault("history_scores", {})[match_title] = {"won": won, "ak": is_ak}
-        base_obj.update({"won": won, "is_ak": is_ak})
-        fin_cache[match_title] = base_obj
-    else:
-        upcoming_matches.append(base_obj)
-
-live_matches.sort(key=lambda x: x["heat"], reverse=True)
-upcoming_matches.sort(key=lambda x: x["conf"], reverse=True)
-finished_matches = list(fin_cache.values())[::-1]
-
-hist_vals = [x for x in MEM.get("history_scores", {}).values() if isinstance(x, dict)]
-g_w = MEM.get("base_w", 126) + sum(1 for x in hist_vals if x.get("won"))
-g_t = MEM.get("base_t", 177) + len(hist_vals)
-g_r = int(round((g_w * 100.0) / max(1, g_t)))
-ak_w = MEM.get("base_ak_w", 11) + sum(1 for x in hist_vals if x.get("ak") and x.get("won"))
-ak_t = MEM.get("base_ak_t", 13) + sum(1 for x in hist_vals if x.get("ak"))
-lp_all = list(MEM.get("live_signals", {}).values())
-lp_w = sum(1 for x in lp_all if x.get("status") == "WON")
-lp_t = sum(1 for x in lp_all if x.get("status") in ("WON", "LOST"))
-lp_act = sum(1 for x in lp_all if x.get("status") == "WAIT")
-
-mini_lines = [f"⚡ DP-MİNİ [{now_tr.strftime('%Y%m%d %H:%M')}] Karne:{g_w}/{g_t}(%{g_r}) AK:{ak_w}/{ak_t} CanlıPusu:{lp_w}/{max(lp_w,lp_t)}(Aktif:{lp_act})"]
-for m in live_matches:
-    mini_lines.append(f"CANLI|{m['clk']}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}|Yan:{m['prop']}")
-for m in upcoming_matches:
-    k_tag = f"✅Kadro({m['h_tac']}v{m['a_tac']})" if m["is_off"] else "⏳KadroYok"
-    e_tail = f" | {m['evo']} | Yan:{m['prop']}" if m["is_off"] else ""
-    mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m['m4']['p_over35']}|Sh:%{m['m4']['p_shield']}|Dw:{m['m4']['d_weak']}] -> {m['pick']}{e_tail}")
-for m in finished_matches[:6]:
-    st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
-    mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
-# ==================== PARÇA 7/8 ====================
-import re
-
-_DEFAULT_LGS = [
-    ("ita.1", "İTALYA SERIE A", 1), ("eng.league_cup", "İNGİLTERE EFL CUP", 1),
-    ("bra.1", "BREZİLYA SERIE A", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
-    ("esp.1", "İSPANYA LA LIGA", 1), ("ger.1", "ALMANYA BUNDESLIGA", 1),
-    ("fra.1", "FRANSA LIGUE 1", 1), ("tur.1", "TÜRKİYE SÜPER LİG", 1),
-    ("ned.1", "HOLLANDA EREDIVISIE", 1), ("por.1", "PORTEKİZ LIGA", 1),
-    ("sco.1", "İSKOÇYA PREMIERSHIP", 1), ("arg.1", "ARJANTİN LIGA PRO", 1),
-    ("mex.1", "MEKSİKA LIGA MX", 1), ("ita.2", "İTALYA SERIE B", 2),
-    ("eng.2", "İNGİLTERE CHAMPIONSHIP", 2), ("esp.2", "İSPANYA LA LIGA 2", 2)
-]
-
-def _true_form_mom(form_str, seed_name=""):
-    s = [c for c in str(form_str or "").upper() if c in ("W", "D", "L", "G", "B", "M")][:5]
-    if not s:
-        sd = sum(ord(c) for c in str(seed_name))
-        return 32 + (sd % 36)
-    weights = [1.0, 1.15, 1.35, 1.6, 1.9][:len(s)]
-    pts = {"W": 100, "G": 100, "D": 42, "B": 42, "L": 5, "M": 5}
-    w_sum = sum(pts[c] * weights[i] for i, c in enumerate(s[::-1]))
-    return min(92, max(14, int(round(w_sum / sum(weights)))))
-
-# 1. Dundee Utd gibi 0-0 İstatistikli / Takipsiz Hayalet Kayıtları Sil
+# Bozuk Önbellek ve 0-0 İstatistikli Hayalet Maç (Dundee Utd) Temizliği
 for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
@@ -1162,7 +1001,7 @@ for _hk in list(MEM.setdefault("history_scores", {}).keys()):
 now_tr = datetime.now(TR_TZ)
 raw_matches, roster_tasks = [], []
 with ThreadPoolExecutor(max_workers=10) as ex:
-    sb_results = list(ex.map(_fetch_single_league_sb, _DEFAULT_LGS))
+    sb_results = list(ex.map(_fetch_single_league_sb, _ACTIVE_LEAGUES))
 
 for slug, lig_adi, kademe, ev_list in sb_results:
     for ev in ev_list:
@@ -1173,21 +1012,18 @@ for slug, lig_adi, kademe, ev_list in sb_results:
         completed = bool(st_type.get("completed", False))
         clk = str(status_obj.get("displayClock") or st_type.get("shortDetail") or "")
 
-        # Sadece Bu Gecenin Maçlarını Al (Gelecek Günleri Kesin Filtrele)
+        # 12 Saatlik Kesin Zaman Kilidi (Hafta Sonu / Gelecek Hafta Maçlarını Engeller)
         ev_date_str = str(ev.get("date") or "")
         try:
-            if len(ev_date_str) == 17 and ev_date_str.endswith("Z"):
-                ev_date_str = ev_date_str[:-1] + ":00+00:00"
-            else:
-                ev_date_str = ev_date_str.replace("Z", "+00:00")
+            ev_date_str = (ev_date_str[:-1] + ":00+00:00") if (len(ev_date_str) == 17 and ev_date_str.endswith("Z")) else ev_date_str.replace("Z", "+00:00")
             dt_ev = datetime.fromisoformat(ev_date_str).astimezone(TR_TZ)
             hours_diff = (dt_ev - now_tr).total_seconds() / 3600.0
-            if state == "pre" and (hours_diff < -2.0 or hours_diff > 12.0):
+            if state == "pre" and (hours_diff < -2.0 or hours_diff > 11.0):
                 continue
             if state == "post" and abs(hours_diff) > 12.0:
                 continue
         except Exception:
-            pass
+            continue
 
         comps = comp.get("competitors") or []
         if len(comps) < 2:
@@ -1200,8 +1036,7 @@ for slug, lig_adi, kademe, ev_list in sb_results:
         a_abbr = str((a_c.get("team") or {}).get("abbreviation") or a_name[:3]).upper()
         match_title = f"{h_name} vs {a_name}"
         h_form, a_form = str(h_c.get("form") or ""), str(a_c.get("form") or "")
-        h_mom = _true_form_mom(h_form, h_name)
-        a_mom = _true_form_mom(a_form, a_name)
+        h_mom, a_mom = _true_form_mom(h_form, h_name), _true_form_mom(a_form, a_name)
 
         odds_arr = comp.get("odds") or []
         odd_str, ou_val, has_live_api_odds = "", 2.5, False
@@ -1222,8 +1057,7 @@ for slug, lig_adi, kademe, ev_list in sb_results:
         if not isinstance(op_entry, dict) or "fav_val" not in op_entry or "ou_val" not in op_entry:
             op_entry = {"fav_val": fav_val, "ou_val": ou_val}
             op_mem[match_title] = op_entry
-        op_fav = safe_int(op_entry.get("fav_val"), fav_val)
-        op_ou = safe_float(op_entry.get("ou_val"), ou_val)
+        op_fav, op_ou = safe_int(op_entry.get("fav_val"), fav_val), safe_float(op_entry.get("ou_val"), ou_val)
 
         disp_odd = f"{fav_abbr} {fav_val:+d}" if fav_val > 0 else f"{fav_abbr} {fav_val}"
         if fav_val != op_fav:
@@ -1261,9 +1095,7 @@ for item in raw_matches:
     if state in ("pre", "in"):
         locked_picks[match_title] = {"pick": pick, "conf": conf, "prop": prop_str}
     elif match_title in locked_picks:
-        pick = locked_picks[match_title]["pick"]
-        conf = locked_picks[match_title]["conf"]
-        prop_str = locked_picks[match_title]["prop"]
+        pick, conf, prop_str = locked_picks[match_title]["pick"], locked_picks[match_title]["conf"], locked_picks[match_title]["prop"]
 
     h_score, a_score = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
     h_sh, a_sh = get_stat(h_c, ["totalShots", "shotsSummary"]), get_stat(a_c, ["totalShots", "shotsSummary"])
@@ -1302,7 +1134,6 @@ for item in raw_matches:
         base_obj.update({"heat": heat, "sot_tag": sot_tag, "delta_str": d_str})
         live_matches.append(base_obj)
     elif state == "post":
-        # KİLİT: Şut ve Korner verisi 0-0 olan (Dundee Utd gibi) veya oynanmamış maçları KESİNLİKLE alma!
         if not completed or ((h_sh + a_sh) == 0 and (h_cor + a_cor) == 0) or "Dundee" in match_title:
             continue
         tot_cor_ft = h_cor + a_cor
@@ -1345,7 +1176,7 @@ for m in upcoming_matches:
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
-
+# ==================== PARÇA 7/8 ====================
 def _safe_pitch_html(m):
     fn = globals().get("build_tactical_pitch_html")
     if not fn:
@@ -1428,8 +1259,13 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
                 f"<div style='display:flex;justify-content:space-between;font-size:11.5px;color:#8b949e;'>"
                 f"<span>🏁 <b>FT ({m.get('saat','20:30')})</b> • {m.get('lig','')}</span>"
                 f"<span style='background:{bd_col};color:#fff;padding:1px 8px;border-radius:5px;font-weight:800;'>{badge_txt}</span></div>"
-                f"<div style=
-
+                f"<div style='font-size:15px;font-weight:800;margin:4px 0;color:#fff;'>{m['h_name']} <span style='color:#ffd33d;'>{m['h_score']} - {m['a_score']}</span> {m['a_name']}</div>"
+                f"<div style='font-size:11.5px;color:#c9d1d9;'>📊 <b>Maç Sonu İstatistik:</b> Şut: {m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']}) | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']} (Toplam: {m['h_cor']+m['a_cor']})</b> | 🟨 Kart: {m['cards']}</div>"
+                f"<div style='margin-top:5px;font-size:12px;color:#56d364;'>🎯 <b>AI Hedefi (%{m['conf']}):</b> {m['pick']} &nbsp;|&nbsp; <span style='color:#d2a8ff;'>{m['prop']}</span></div></div>",
+                unsafe_allow_html=True
+            )
+            with st.expander(f"🏟️ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']} — Maç Sonu Kadro & Saha Özeti", expanded=False):
+                st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
 # ==================== PARÇA 8/8 ====================
 if "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
@@ -1480,6 +1316,7 @@ if not st.session_state.get("patron_unlocked") and "render_viral_and_vip_gate" i
     render_viral_and_vip_gate(cur_user, my_dev_id)
 
 render_main_bulletin(tier="ADMIN" if st.session_state.get("patron_unlocked") else cur_user.get("tier", "NORMAL"), is_patron_mode=bool(st.session_state.get("patron_unlocked")))
+
 
 
 
