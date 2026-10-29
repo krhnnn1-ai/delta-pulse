@@ -1121,6 +1121,7 @@ for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
 # ==================== PARÇA 7/8 ====================
+import re
 _DEFAULT_LGS = [
     ("ita.1", "İTALYA SERIE A", 1), ("eng.league_cup", "İNGİLTERE EFL CUP", 1),
     ("bra.1", "BREZİLYA SERIE A", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
