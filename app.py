@@ -304,13 +304,13 @@ def derive_match_weather(match_title, lig_adi, raw_weather=None):
 
 def fetch_team_history_and_injuries(slug, t_name, data, side_idx, t_mom, cur_form, rot_cnt, starters, bench, kademe):
     hist_mem = MEM.setdefault("team_hist_cache", {})
-    ck = f"{slug}_{t_name}"
+    ck = f"{slug}_{t_name}_v2"
     if ck in hist_mem:
         h_base = dict(hist_mem[ck])
     else:
         seed = sum(ord(c) for c in str(t_name))
-        cor_avg = round(4.2 + (t_mom * 0.032) + ((seed % 5) * 0.35), 1)
-        sh_avg = round(9.5 + (t_mom * 0.065) + ((seed % 4) * 0.6), 1)
+        cor_avg = round(3.8 + (t_mom * 0.022) + ((seed % 4) * 0.25), 1)
+        sh_avg = round(9.2 + (t_mom * 0.055) + ((seed % 4) * 0.5), 1)
         prev_tac = resolve_team_formation(t_name, "", t_mom, side_idx == 0)
         inj_cnt, wing_inj = 0, False
 
@@ -325,29 +325,36 @@ def fetch_team_history_and_injuries(slug, t_name, data, side_idx, t_mom, cur_for
 
         l5 = data.get("lastFiveGames") or []
         if side_idx < len(l5) and isinstance(l5[side_idx], dict):
-            evs = l5[side_idx].get("events") or []
-            if evs and isinstance(evs[0], dict):
-                last_id = str(evs[0].get("id") or evs[0].get("eventId") or "")
-                if last_id:
-                    try:
-                        r_h = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={last_id}", headers={"User-Agent": "Mozilla/5.0"}, timeout=2.0)
-                        if r_h.status_code == 200:
-                            d_h = r_h.json()
-                            c_h = ((d_h.get("header") or {}).get("competitions") or [{}])[0]
-                            comps_h = c_h.get("competitors") or []
-                            if len(comps_h) >= 2:
-                                tot_c = sum(get_stat(x, ["wonCorners", "corners"]) for x in comps_h[:2])
-                                tot_s = sum(get_stat(x, ["totalShots", "shotsSummary"]) for x in comps_h[:2])
-                                if tot_c > 0:
-                                    cor_avg = round(tot_c / 2.0, 1)
-                                if tot_s > 0:
-                                    sh_avg = round(tot_s / 2.0, 1)
-                    except Exception:
-                        pass
+            evs = [e for e in (l5[side_idx].get("events") or []) if isinstance(e, dict)][:2]
+            c_vals, s_vals = [], []
+            for ev_item in evs:
+                last_id = str(ev_item.get("id") or ev_item.get("eventId") or "")
+                if not last_id:
+                    continue
+                try:
+                    r_h = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={last_id}", headers={"User-Agent": "Mozilla/5.0"}, timeout=2.0)
+                    if r_h.status_code == 200:
+                        d_h = r_h.json()
+                        bx_teams = (d_h.get("boxscore") or {}).get("teams") or []
+                        for bt in bx_teams:
+                            bt_name = str((bt.get("team") or {}).get("shortDisplayName") or (bt.get("team") or {}).get("displayName") or "")
+                            if t_name.lower() in bt_name.lower() or bt_name.lower() in t_name.lower():
+                                c_v = get_stat(bt, ["wonCorners", "corners"])
+                                s_v = get_stat(bt, ["totalShots", "shotsSummary"])
+                                if c_v > 0:
+                                    c_vals.append(c_v)
+                                if s_v > 0:
+                                    s_vals.append(s_v)
+                except Exception:
+                    pass
+            if c_vals:
+                cor_avg = round(sum(c_vals) / len(c_vals), 1)
+            if s_vals:
+                sh_avg = round(sum(s_vals) / len(s_vals), 1)
+
         h_base = {"cor_avg": cor_avg, "sh_avg": sh_avg, "prev_tac": prev_tac, "inj_cnt": inj_cnt, "wing_inj": wing_inj}
         hist_mem[ck] = h_base
 
-    # OYUNCU GÜÇ PUANI BAZLI YEDEK / ROTASYON ANALİZİ (Aç Yedek vs Güç Kaybı)
     att_players = [p for p in (starters or []) if any(k in str(p.get("pos", "")) for k in ("W", "M", "F", "ST"))]
     bench_rats = [safe_int(p.get("rat"), 72) for p in (bench or [])]
     avg_att_rat = int(round(sum(safe_int(p.get("rat"), 74) for p in att_players) / len(att_players))) if att_players else (73 + int((t_mom - 50) * 0.12) + (3 if kademe == 1 else 0))
@@ -365,6 +372,7 @@ def fetch_team_history_and_injuries(slug, t_name, data, side_idx, t_mom, cur_for
         "sub_rat": sub_rat, "hungry_sub": hungry_sub, "wing_drop": real_wing_drop,
         "wing_impact": wing_impact, "def_shift": def_shift
     }
+
 # ==================== PARÇA 3A-2/8 ====================
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task_tuple
