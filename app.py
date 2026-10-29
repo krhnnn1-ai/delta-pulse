@@ -619,42 +619,44 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     mom_gap = abs(h_mom - a_mom)
     warn_flag = ("⚠️Δ+" in disp_odd)
 
-    btts_sim = (abs(h_mom - a_mom) <= 26 and h_mom >= 42 and a_mom >= 42 and abs(fav_val) <= 175) or (warn_flag and ou_val >= 2.5)
+    btts_sim = (mom_gap <= 24 and h_mom >= 40 and a_mom >= 40 and abs(fav_val) <= 175) or (warn_flag and ou_val >= 2.5)
     if btts_sim and "💥BüroKG-Sim" not in disp_odd:
         disp_odd += " 💥BüroKG-Sim"
-    if mom_gap >= 40 and fav_val <= -210 and "⚡GüçFarkı" not in disp_odd:
+    if mom_gap >= 35 and fav_val <= -205 and "⚡GüçFarkı" not in disp_odd:
         disp_odd += f" ⚡GüçFarkı(+{int(mom_gap//3)})"
 
-    # Model 4.0 Gölge & Üretim Kapıları (P_shield vs P_team vs P_over25 & P(4+ Gol) Veto)
-    veto_under35 = (m4["p_over35"] >= 30 or ou_val >= 3.5 or m4["d_weak"] >= 62)
+    veto_under35 = (m4["p_over35"] >= 26 or ou_val >= 3.5 or m4["d_weak"] >= 58)
 
-    if fav_val <= -220 and mom_gap >= 38 and m4["p_team"] >= 62 and not warn_flag:
+    if fav_val <= -215 and mom_gap >= 32 and m4["p_team"] >= 50 and not warn_flag:
         pick = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
-        conf = min(97, max(85, m4["p_team"] + 22))
+        conf = min(97, max(86, m4["p_team"] + 30))
     elif veto_under35:
-        if m4["p_team"] >= 60 and fav_val <= -175 and not warn_flag:
+        if "💥TG↑" in disp_odd or m4["p_over25"] >= 52:
+            pick = "Maç 2.5 Gol Üst"
+            conf = min(88, max(70, m4["p_over25"] + (18 if "💥TG↑" in disp_odd else 15)))
+        elif m4["p_team"] >= 52 and fav_val <= -165 and not warn_flag:
             pick = f"{fav_team} Takım Golü 1.5 Üst"
-            conf = min(88, max(66, m4["p_team"] + 12))
-        elif btts_sim and m4["p_btts"] >= 54 and abs(fav_val) <= 165:
+            conf = min(86, max(68, m4["p_team"] + 16))
+        elif btts_sim and m4["p_btts"] >= 46:
             pick = "Karşılıklı Gol Var (KG Var)"
-            conf = min(82, max(56, m4["p_btts"] + 8))
+            conf = min(82, max(68, m4["p_btts"] + 16))
         else:
             pick = "Maç 2.5 Gol Üst"
-            conf = min(86, max(64, m4["p_over25"] + (14 if "💥TG↑" in disp_odd else 10)))
-    elif btts_sim and m4["p_btts"] >= 55 and (warn_flag or abs(fav_val) <= 155):
+            conf = min(84, max(67, m4["p_over25"] + 14))
+    elif btts_sim and m4["p_btts"] >= 42 and (mom_gap <= 15 or warn_flag):
         pick = "Karşılıklı Gol Var (KG Var)"
-        conf = min(76, max(50, m4["p_btts"] + 4))
-    elif m4["p_shield"] >= 68 and m4["p_over35"] <= 24 and (fav_val <= -110 or mom_gap >= 18):
+        conf = min(76, max(59, m4["p_btts"] + 15))
+    elif m4["p_shield"] >= 51 and m4["p_over35"] <= 22 and (fav_val <= -110 or mom_gap >= 18):
         pick = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt"
-        conf = min(79, max(52, int(m4["p_shield"] * 0.82)))
+        conf = min(78, max(56, m4["p_shield"] + int(mom_gap * 0.38)))
     else:
         pick = "Maç 3.5 Gol Alt"
-        conf = min(65, max(36, int((100 - m4["p_over35"]) * 0.62)))
+        conf = min(62, max(46, int((100 - m4["p_over35"]) * 0.56)))
 
     if "🔥Δ-" in disp_odd:
         conf = min(97, conf + 4)
     elif warn_flag and "Ana Kasa" not in pick:
-        conf = max(34, conf - 4)
+        conf = max(36, conf - 4)
 
     m4_str = f"xG:{m4['lam_h']}-{m4['lam_a']} | P(4+Gol):%{m4['p_over35']} | P_Shield:%{m4['p_shield']} | P_Team1.5:%{m4['p_team']} | D_weak:{m4['d_weak']} | Bus:{m4['bus_score']}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
@@ -685,18 +687,17 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
         if "✅KadroOnay" not in disp_odd:
             disp_odd += " ✅KadroOnay(+5p)"
     elif rot_cnt >= 3:
-        if fav_val <= -210 or m4["d_weak"] >= 60:
-            conf = max(35, conf - 3)
+        if fav_val <= -210 or m4["d_weak"] >= 55:
+            conf = max(38, conf - 3)
             disp_odd += " 🧬HafifRotasyon(-3p)"
         else:
-            conf = max(32, conf - 7)
-            disp_odd += " 🧬FavRotasyon(-7p)"
+            conf = max(34, conf - 6)
+            disp_odd += " 🧬FavRotasyon(-6p)"
 
-    # Model 4.0 Kadro Sonrası 3.5 Alt Veto & BusScore Kapısı
-    if "3.5 Alt" in pick and (m4["p_over35"] >= 30 or m4["d_weak"] >= 62 or (h_tac == "4-3-3" and a_tac == "4-3-3")):
-        pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 58 else "Maç 2.5 Gol Üst"
+    if "3.5 Alt" in pick and (m4["p_over35"] >= 26 or m4["d_weak"] >= 58 or (h_tac == "4-3-3" and a_tac == "4-3-3")):
+        pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 52 else "Maç 2.5 Gol Üst"
         evo_changed = (pick != old_pick)
-    elif m4["bus_score"] >= 65 and m4["p_over35"] <= 23 and "Takım Golü 1.5 Üst" in pick and fav_val > -220:
+    elif m4["bus_score"] >= 62 and m4["p_over35"] <= 21 and "Takım Golü 1.5 Üst" in pick and fav_val > -210:
         pick = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt"
         evo_changed = (pick != old_pick)
 
@@ -743,6 +744,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "3.5 Gol Alt" in p:
         return tot <= 3
     return tot >= 2
+
 # ==================== PARÇA 6/8 ====================
 @st.cache_data(ttl=45, show_spinner=False)
 def fetch_all_matches():
