@@ -302,81 +302,118 @@ def derive_match_weather(match_title, lig_adi, raw_weather=None):
         w_type = "⛅ Açık • Kusursuz Stadyum Zemini" if seed % 3 != 0 else "🌧️ Hafif Yağışlı • Kaygan Zemin"
     return f"{t_c}°C • {w_type}"
 
-def fetch_team_history_and_injuries(slug, t_name, data, side_idx, t_mom, cur_form, rot_cnt, starters, bench, kademe):
+def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
     hist_mem = MEM.setdefault("team_hist_cache", {})
-    ck = f"{slug}_{t_name}_v2"
+    ck = f"{slug}_{t_name}_v3_twin"
     if ck in hist_mem:
-        h_base = dict(hist_mem[ck])
-    else:
-        seed = sum(ord(c) for c in str(t_name))
-        cor_avg = round(3.8 + (t_mom * 0.022) + ((seed % 4) * 0.25), 1)
-        sh_avg = round(9.2 + (t_mom * 0.055) + ((seed % 4) * 0.5), 1)
-        prev_tac = resolve_team_formation(t_name, "", t_mom, side_idx == 0)
-        inj_cnt, wing_inj = 0, False
+        return dict(hist_mem[ck])
 
-        inj_list = data.get("injuries") or []
-        if side_idx < len(inj_list) and isinstance(inj_list[side_idx], dict):
-            p_injs = inj_list[side_idx].get("injuries") or []
-            inj_cnt += len(p_injs)
-            for item in p_injs:
-                pos_ab = str(((item.get("athlete") or {}).get("position") or {}).get("abbreviation") or "")
-                if any(k in pos_ab for k in ("W", "M", "F", "ST")):
-                    wing_inj = True
+    seed = sum(ord(c) for c in str(t_name))
+    cor_avg = round(3.8 + (t_mom * 0.022) + ((seed % 4) * 0.25), 1)
+    sh_avg = round(9.2 + (t_mom * 0.055) + ((seed % 4) * 0.5), 1)
+    prev_tac = resolve_team_formation(t_name, "", t_mom, side_idx == 0)
+    inj_names, wing_inj = set(), False
+    prev_st, prev_bn = [], []
 
-        l5 = data.get("lastFiveGames") or []
-        if side_idx < len(l5) and isinstance(l5[side_idx], dict):
-            evs = [e for e in (l5[side_idx].get("events") or []) if isinstance(e, dict)][:2]
-            c_vals, s_vals = [], []
-            for ev_item in evs:
-                last_id = str(ev_item.get("id") or ev_item.get("eventId") or "")
-                if not last_id:
-                    continue
-                try:
-                    r_h = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={last_id}", headers={"User-Agent": "Mozilla/5.0"}, timeout=2.0)
-                    if r_h.status_code == 200:
-                        d_h = r_h.json()
-                        bx_teams = (d_h.get("boxscore") or {}).get("teams") or []
-                        for bt in bx_teams:
-                            bt_name = str((bt.get("team") or {}).get("shortDisplayName") or (bt.get("team") or {}).get("displayName") or "")
-                            if t_name.lower() in bt_name.lower() or bt_name.lower() in t_name.lower():
-                                c_v = get_stat(bt, ["wonCorners", "corners"])
-                                s_v = get_stat(bt, ["totalShots", "shotsSummary"])
-                                if c_v > 0:
-                                    c_vals.append(c_v)
-                                if s_v > 0:
-                                    s_vals.append(s_v)
-                except Exception:
-                    pass
-            if c_vals:
-                cor_avg = round(sum(c_vals) / len(c_vals), 1)
-            if s_vals:
-                sh_avg = round(sum(s_vals) / len(s_vals), 1)
+    inj_list = data.get("injuries") or []
+    if side_idx < len(inj_list) and isinstance(inj_list[side_idx], dict):
+        for item in (inj_list[side_idx].get("injuries") or []):
+            ath = item.get("athlete") or {}
+            p_nm = str(ath.get("shortName") or ath.get("displayName") or "").strip()
+            if p_nm:
+                inj_names.add(p_nm.lower())
+            pos_ab = str((ath.get("position") or {}).get("abbreviation") or "")
+            if any(k in pos_ab for k in ("W", "M", "F", "ST")):
+                wing_inj = True
 
-        h_base = {"cor_avg": cor_avg, "sh_avg": sh_avg, "prev_tac": prev_tac, "inj_cnt": inj_cnt, "wing_inj": wing_inj}
-        hist_mem[ck] = h_base
+    l5 = data.get("lastFiveGames") or []
+    if side_idx < len(l5) and isinstance(l5[side_idx], dict):
+        evs = [e for e in (l5[side_idx].get("events") or []) if isinstance(e, dict)][:2]
+        c_vals, s_vals = [], []
+        for e_idx, ev_item in enumerate(evs):
+            last_id = str(ev_item.get("id") or ev_item.get("eventId") or "")
+            if not last_id:
+                continue
+            try:
+                r_h = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={last_id}", headers={"User-Agent": "Mozilla/5.0"}, timeout=2.2)
+                if r_h.status_code == 200:
+                    d_h = r_h.json()
+                    for bt in ((d_h.get("boxscore") or {}).get("teams") or []):
+                        bt_nm = str((bt.get("team") or {}).get("shortDisplayName") or (bt.get("team") or {}).get("displayName") or "")
+                        if t_name.lower() in bt_nm.lower() or bt_nm.lower() in t_name.lower():
+                            c_v, s_v = get_stat(bt, ["wonCorners", "corners"]), get_stat(bt, ["totalShots", "shotsSummary"])
+                            if c_v > 0:
+                                c_vals.append(c_v)
+                            if s_v > 0:
+                                s_vals.append(s_v)
+                    if e_idx == 0:
+                        for r_old in (d_h.get("rosters") or []):
+                            rt_nm = str((r_old.get("team") or {}).get("shortDisplayName") or (r_old.get("team") or {}).get("displayName") or "")
+                            if t_name.lower() in rt_nm.lower() or rt_nm.lower() in t_name.lower():
+                                if r_old.get("formation"):
+                                    prev_tac = str(r_old.get("formation")).strip()
+                                for pe in (r_old.get("roster") or []):
+                                    ath = pe.get("athlete") or {}
+                                    p_n = str(ath.get("shortName") or ath.get("displayName") or "Player")
+                                    j_n = str(pe.get("jersey") or ath.get("jersey") or "10")
+                                    pos_a = str(((pe.get("position") or ath.get("position")) or {}).get("abbreviation") or "M")
+                                    b_r = 73 + (sum(ord(c) for c in p_n) % 11) + (2 if kademe == 1 else 0)
+                                    p_obj = {"name": p_n, "num": j_n, "pos": pos_a, "rat": min(91, b_r)}
+                                    if pe.get("starter"):
+                                        prev_st.append(p_obj)
+                                    else:
+                                        p_obj["rat"] = max(66, b_r - (2 if kademe == 1 else 5))
+                                        prev_bn.append(p_obj)
+            except Exception:
+                pass
+        if c_vals:
+            cor_avg = round(sum(c_vals) / len(c_vals), 1)
+        if s_vals:
+            sh_avg = round(sum(s_vals) / len(s_vals), 1)
 
+    # Son Maçın 11'inde Sakat Varsa Yedekten Otomatik Oyuncu Montajı
+    if prev_st and inj_names:
+        clean_st, sub_pool = [], list(prev_bn)
+        for p in prev_st:
+            if p["name"].lower() in inj_names:
+                wing_inj = True
+                if sub_pool:
+                    clean_st.append(sub_pool.pop(0))
+            else:
+                clean_st.append(p)
+        prev_st, prev_bn = clean_st, sub_pool
+
+    h_base = {
+        "cor_avg": cor_avg, "sh_avg": sh_avg, "prev_tac": prev_tac,
+        "inj_cnt": len(inj_names), "wing_inj": wing_inj,
+        "prev_st": prev_st[:11], "prev_bn": prev_bn[:5]
+    }
+    hist_mem[ck] = h_base
+    return dict(h_base)
+# ==================== PARÇA 3A-2/8 ====================
+def build_team_hist_metrics(h_base, cur_form, rot_cnt, starters, bench, t_mom, kademe):
     att_players = [p for p in (starters or []) if any(k in str(p.get("pos", "")) for k in ("W", "M", "F", "ST"))]
     bench_rats = [safe_int(p.get("rat"), 72) for p in (bench or [])]
     avg_att_rat = int(round(sum(safe_int(p.get("rat"), 74) for p in att_players) / len(att_players))) if att_players else (73 + int((t_mom - 50) * 0.12) + (3 if kademe == 1 else 0))
     sub_rat = max(bench_rats) if bench_rats else (avg_att_rat - (2 if kademe == 1 else 5))
 
-    has_wing_change = bool(h_base["wing_inj"] or rot_cnt >= 2)
+    has_wing_change = bool(h_base.get("wing_inj") or rot_cnt >= 2)
     hungry_sub = bool(has_wing_change and sub_rat >= 76)
     real_wing_drop = bool(has_wing_change and sub_rat <= 71)
     wing_impact = 4 if hungry_sub else (-12 if real_wing_drop else (-4 if has_wing_change else 0))
 
-    total_missing = h_base["inj_cnt"] + (1 if rot_cnt >= 3 else 0)
-    def_shift = (cur_form in ("5-3-2", "5-4-1", "4-5-1") and h_base["prev_tac"] in ("4-3-3", "4-2-3-1", "3-4-3")) or (total_missing >= 3 and sub_rat <= 72)
+    total_missing = safe_int(h_base.get("inj_cnt"), 0) + (1 if rot_cnt >= 3 else 0)
+    def_shift = (cur_form in ("5-3-2", "5-4-1", "4-5-1") and h_base.get("prev_tac") in ("4-3-3", "4-2-3-1", "3-4-3")) or (total_missing >= 3 and sub_rat <= 72)
     return {
-        "cor_avg": h_base["cor_avg"], "sh_avg": h_base["sh_avg"], "prev_tac": h_base["prev_tac"],
-        "sub_rat": sub_rat, "hungry_sub": hungry_sub, "wing_drop": real_wing_drop,
+        "cor_avg": h_base.get("cor_avg", 4.5), "sh_avg": h_base.get("sh_avg", 10.5),
+        "prev_tac": h_base.get("prev_tac", cur_form), "sub_rat": sub_rat,
+        "hungry_sub": hungry_sub, "wing_drop": real_wing_drop,
         "wing_impact": wing_impact, "def_shift": def_shift
     }
 
-# ==================== PARÇA 3A-2/8 ====================
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task_tuple
-    cache_key = f"{ev_id}_{state}_v73_subpower"
+    cache_key = f"{ev_id}_{state}_v74_twin"
     if cache_key in MEM["roster_cache"]:
         return match_title, MEM["roster_cache"][cache_key]
 
@@ -389,16 +426,16 @@ def fetch_and_analyze_roster(task_tuple):
         g_info = data.get("gameInfo") or {}
         if g_info.get("weather"):
             res["weather"] = derive_match_weather(match_title, slug, g_info.get("weather"))
-        venue_name = str((g_info.get("venue") or {}).get("fullName") or "")
-        if venue_name:
-            res["venue"] = venue_name
+        if (g_info.get("venue") or {}).get("fullName"):
+            res["venue"] = str(g_info["venue"]["fullName"])
 
         rosters = data.get("rosters") or []
         for idx, r_obj in enumerate(rosters[:2]):
             side_key = "h" if r_obj.get("homeAway") == "home" or idx == 0 else "a"
             t_name = h_name if side_key == "h" else a_name
             t_mom = h_mom if side_key == "h" else a_mom
-            form_str = resolve_team_formation(t_name, r_obj.get("formation"), t_mom, side_key == "h")
+            h_base = fetch_last_match_twin(slug, t_name, data, idx, t_mom, kademe)
+            form_str = resolve_team_formation(t_name, r_obj.get("formation") or h_base.get("prev_tac"), t_mom, side_key == "h")
             starters, bench = [], []
             for p_entry in (r_obj.get("roster") or []):
                 if not isinstance(p_entry, dict):
@@ -406,56 +443,61 @@ def fetch_and_analyze_roster(task_tuple):
                 ath = p_entry.get("athlete") or {}
                 p_name = str(ath.get("shortName") or ath.get("displayName") or "Player")
                 jersey = str(p_entry.get("jersey") or ath.get("jersey") or "10")
-                pos_obj = p_entry.get("position") or ath.get("position") or {}
-                pos_abbr = str(pos_obj.get("abbreviation") or "M")
-                is_starter = bool(p_entry.get("starter", False))
-                p_seed = sum(ord(c) for c in p_name)
-                base_r = 73 + (p_seed % 11) + (2 if kademe == 1 else 0)
-                if is_starter:
+                pos_abbr = str(((p_entry.get("position") or ath.get("position")) or {}).get("abbreviation") or "M")
+                base_r = 73 + (sum(ord(c) for c in p_name) % 11) + (2 if kademe == 1 else 0)
+                if p_entry.get("starter"):
                     starters.append({"name": p_name, "num": jersey, "pos": pos_abbr, "rat": min(91, base_r)})
                 else:
                     bench.append({"name": p_name, "num": jersey, "pos": pos_abbr, "rat": max(66, base_r - (2 if kademe == 1 else 5))})
 
             if len(starters) >= 11:
                 res["official"] = True
-            rot_cnt = sum(1 for p in starters if safe_int(p["num"], 10) >= 28)
-            gk_list = [p for p in starters if "G" in p["pos"]]
-            rot_gk = any(safe_int(g["num"], 1) not in (1, 12, 13, 23, 31, 99) for g in gk_list) if gk_list else False
-            hist_info = fetch_team_history_and_injuries(slug, t_name, data, idx, t_mom, form_str, rot_cnt, starters, bench, kademe)
+                prev_names = {p["name"].lower() for p in (h_base.get("prev_st") or [])}
+                rot_cnt = sum(1 for p in starters if p["name"].lower() not in prev_names) if len(prev_names) >= 8 else sum(1 for p in starters if safe_int(p["num"], 10) >= 28)
+            else:
+                starters = list(h_base.get("prev_st") or [])
+                bench = list(h_base.get("prev_bn") or [])
+                rot_cnt = safe_int(h_base.get("inj_cnt"), 0)
 
-            w_imp = hist_info["wing_impact"]
-            base_ovr = 72 + int((t_mom - 50) * 0.14) + (3 if kademe == 1 else 0)
-            sho_v = min(92, max(52, base_ovr + int((hist_info["sh_avg"] - 11.0) * 0.8) + int(w_imp * 0.4)))
-            pas_v = min(91, max(54, base_ovr + 2 - int(rot_cnt * 0.5)))
-            dri_v = min(90, max(52, base_ovr + int((hist_info["cor_avg"] - 4.8) * 1.2) + int(w_imp * 0.5)))
-            def_v = min(90, max(50, base_ovr + (4 if hist_info["def_shift"] else 0) - (rot_cnt if hist_info["wing_drop"] else 0) - (5 if rot_gk else 0)))
-            ovr_v = int(round((sho_v + pas_v + dri_v + def_v) / 4.0))
-
-            res[side_key] = {
-                "tac": form_str, "starters": starters[:11], "bench": bench[:5],
-                "rot_cnt": rot_cnt, "rot_gk": rot_gk, "hist": hist_info,
-                "ovr": ovr_v, "sho": sho_v, "att": sho_v, "pas": pas_v, "dri": dri_v, "def": def_v
-            }
+            if len(starters) >= 8:
+                gk_list = [p for p in starters if "G" in p["pos"]]
+                rot_gk = any(safe_int(g["num"], 1) not in (1, 12, 13, 23, 31, 99) for g in gk_list) if gk_list else False
+                hist_info = build_team_hist_metrics(h_base, form_str, rot_cnt, starters, bench, t_mom, kademe)
+                w_imp = hist_info["wing_impact"]
+                base_ovr = 72 + int((t_mom - 50) * 0.14) + (3 if kademe == 1 else 0)
+                sho_v = min(92, max(52, base_ovr + int((hist_info["sh_avg"] - 11.0) * 0.8) + int(w_imp * 0.4)))
+                pas_v = min(91, max(54, base_ovr + 2 - int(rot_cnt * 0.5)))
+                dri_v = min(90, max(52, base_ovr + int((hist_info["cor_avg"] - 4.8) * 1.2) + int(w_imp * 0.5)))
+                def_v = min(90, max(50, base_ovr + (4 if hist_info["def_shift"] else 0) - (rot_cnt if hist_info["wing_drop"] else 0) - (5 if rot_gk else 0)))
+                res[side_key] = {
+                    "tac": form_str, "starters": starters[:11], "bench": bench[:5],
+                    "rot_cnt": rot_cnt, "rot_gk": rot_gk, "hist": hist_info,
+                    "ovr": int(round((sho_v + pas_v + dri_v + def_v) / 4.0)),
+                    "sho": sho_v, "att": sho_v, "pas": pas_v, "dri": dri_v, "def": def_v
+                }
     except Exception:
         pass
 
     for idx_s, (side_key, t_name, t_mom) in enumerate((("h", h_name, h_mom), ("a", a_name, a_mom))):
         if not res.get(side_key) or not res[side_key].get("starters"):
-            f_str = resolve_team_formation(t_name, (res.get(side_key) or {}).get("tac", ""), t_mom, side_key == "h")
+            h_base = fetch_last_match_twin(slug, t_name, data, idx_s, t_mom, kademe)
+            f_str = resolve_team_formation(t_name, h_base.get("prev_tac", ""), t_mom, side_key == "h")
             b_ovr = 71 + int((t_mom - 50) * 0.14) + (3 if kademe == 1 else 0)
             sim_pos = ["GK", "LB", "CB", "CB", "RB", "CDM", "CM", "LW", "CAM", "RW", "ST"]
             sim_nums = ["1", "3", "4", "5", "2", "6", "8", "11", "10", "7", "9"]
-            sim_st = [{"name": f"{t_name[:3].upper()} #{sim_nums[i]}", "num": sim_nums[i], "pos": sim_pos[i], "rat": b_ovr + (i % 5) - 1} for i in range(11)]
-            sim_bn = [{"name": f"Sub #{i+12}", "num": str(i+12), "pos": "W", "rat": b_ovr + (2 if t_mom >= 55 else -2)} for i in range(4)]
-            hist_info = fetch_team_history_and_injuries(slug, t_name, data, idx_s, t_mom, f_str, 1, sim_st, sim_bn, kademe)
+            st_use = h_base.get("prev_st") or [{"name": f"{t_name[:3].upper()} #{sim_nums[i]}", "num": sim_nums[i], "pos": sim_pos[i], "rat": b_ovr + (i % 5) - 1} for i in range(11)]
+            bn_use = h_base.get("prev_bn") or [{"name": f"Sub #{i+12}", "num": str(i+12), "pos": "W", "rat": b_ovr + (2 if t_mom >= 55 else -2)} for i in range(4)]
+            r_cnt = safe_int(h_base.get("inj_cnt"), 1)
+            hist_info = build_team_hist_metrics(h_base, f_str, r_cnt, st_use, bn_use, t_mom, kademe)
             res[side_key] = {
-                "tac": f_str, "starters": sim_st, "bench": sim_bn, "rot_cnt": 1, "rot_gk": False, "hist": hist_info,
+                "tac": f_str, "starters": st_use[:11], "bench": bn_use[:5], "rot_cnt": r_cnt, "rot_gk": False, "hist": hist_info,
                 "ovr": b_ovr, "sho": b_ovr + 2, "att": b_ovr + 2, "pas": b_ovr + 1, "dri": b_ovr, "def": b_ovr - 1
             }
 
     if res["official"] or state == "in":
         MEM["roster_cache"][cache_key] = res
     return match_title, res
+
 
 # ==================== PARÇA 3B/8 ====================
 def format_form_badges(form_str):
