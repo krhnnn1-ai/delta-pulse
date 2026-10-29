@@ -1198,6 +1198,10 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
 url_prog = str(st.query_params.get("prog") or "").strip().lower()
+if "patron_unlocked" not in st.session_state:
+    st.session_state["patron_unlocked"] = False
+url_prog = str(st.query_params.get("prog") or "").strip().lower()
+mini_text = "\n".join(mini_lines)
 
 
 # ==================== PARÇA 8/8 ====================
