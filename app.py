@@ -275,26 +275,51 @@ def run_autonomous_telegram_marketing(pre_m, live_m, post_m, ak_pct, vip_pct):
         msg = f"⚡ <b>DELTA PULSE AI RADAR</b>\n⚽ {top_m['saat']} | <b>{top_m['mac']}</b> ({top_m['conf']}% Conf)\n👉 <a href='{MEM.get('app_public_url','')}'>Open Live VIP App</a>"
         if send_telegram_channel_post(msg):
             MEM["last_tg_post"] = time.time()
-# ==================== PARÇA 3/8 ====================
+# ==================== PARÇA 3A/8 ====================
 def resolve_team_formation(team_name, raw_form, mom_val, is_home=True):
     clean = str(raw_form or "").strip()
     if clean and "-" in clean and len(clean) >= 5:
         return clean
     pool = ["4-2-3-1", "4-3-3", "3-5-2", "3-4-2-1", "4-4-2", "4-1-4-1"]
-    idx = ( sum(ord(c) for c in str(team_name)) + (1 if is_home else 2) ) % len(pool)
+    idx = (sum(ord(c) for c in str(team_name)) + (1 if is_home else 2)) % len(pool)
     return pool[idx]
+
+def derive_match_weather(match_title, lig_adi, raw_weather=None):
+    if isinstance(raw_weather, dict) and raw_weather.get("temperature"):
+        t_f = safe_int(raw_weather.get("temperature"), 62)
+        t_c = int(round((t_f - 32) * 5.0 / 9.0)) if t_f > 42 else t_f
+        cond = str(raw_weather.get("displayValue") or "Clear")
+        return f"⛅ {t_c}°C • {cond} (Ideal Turf)"
+    seed = sum(ord(c) for c in str(match_title))
+    if "İSKOÇYA" in lig_adi or "İNGİLTERE" in lig_adi:
+        t_c = 9 + (seed % 5)
+        w_type = "🌧️ Yağışlı / Islak Zemin (Hızlı Top & Şut Avantajı)" if seed % 2 == 0 else "☁️ Parçalı Bulutlu • İdeal Çim"
+    elif "BREZİLYA" in lig_adi or "MEKSİKA" in lig_adi or "ARJANTİN" in lig_adi:
+        t_c = 21 + (seed % 7)
+        w_type = "🌙 Açık Gece • Kuru & İdeal Zemin" if seed % 3 != 0 else "🌦️ Nemli / Hızlı Zemin"
+    else:
+        t_c = 13 + (seed % 6)
+        w_type = "⛅ Açık • Kusursuz Stadyum Zemini" if seed % 3 != 0 else "🌧️ Hafif Yağışlı • Kaygan Zemin"
+    return f"{t_c}°C • {w_type}"
 
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task_tuple
-    cache_key = f"{ev_id}_{state}_v70"
+    cache_key = f"{ev_id}_{state}_v71_visual"
     if cache_key in MEM["roster_cache"]:
         return match_title, MEM["roster_cache"][cache_key]
 
-    res = {"official": False, "h": {}, "a": {}}
+    res = {"official": False, "weather": derive_match_weather(match_title, slug), "h": {}, "a": {}}
     try:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={ev_id}"
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3.5)
         data = r.json() if r.status_code == 200 else {}
+        g_info = data.get("gameInfo") or {}
+        if g_info.get("weather"):
+            res["weather"] = derive_match_weather(match_title, slug, g_info.get("weather"))
+        venue_name = str((g_info.get("venue") or {}).get("fullName") or "")
+        if venue_name:
+            res["venue"] = venue_name
+
         rosters = data.get("rosters") or []
         for idx, r_obj in enumerate(rosters[:2]):
             side_key = "h" if r_obj.get("homeAway") == "home" or idx == 0 else "a"
@@ -307,7 +332,7 @@ def fetch_and_analyze_roster(task_tuple):
                     continue
                 ath = p_entry.get("athlete") or {}
                 p_name = str(ath.get("shortName") or ath.get("displayName") or "Player")
-                jersey = str(p_entry.get("jersey") or ath.get("jersey") or "")
+                jersey = str(p_entry.get("jersey") or ath.get("jersey") or "10")
                 pos_obj = p_entry.get("position") or ath.get("position") or {}
                 pos_abbr = str(pos_obj.get("abbreviation") or "M")
                 is_starter = bool(p_entry.get("starter", False))
@@ -340,18 +365,21 @@ def fetch_and_analyze_roster(task_tuple):
         pass
 
     for side_key, t_name, t_mom in (("h", h_name, h_mom), ("a", a_name, a_mom)):
-        if not res.get(side_key):
-            f_str = resolve_team_formation(t_name, "", t_mom, side_key == "h")
+        if not res.get(side_key) or not res[side_key].get("starters"):
+            f_str = resolve_team_formation(t_name, (res.get(side_key) or {}).get("tac", ""), t_mom, side_key == "h")
             b_ovr = 71 + int((t_mom - 50) * 0.14) + (3 if kademe == 1 else 0)
+            sim_pos = ["GK", "LB", "CB", "CB", "RB", "CDM", "CM", "LW", "CAM", "RW", "ST"]
+            sim_nums = ["1", "3", "4", "5", "2", "6", "8", "11", "10", "7", "9"]
+            sim_st = [{"name": f"{t_name[:3].upper()} #{sim_nums[i]}", "num": sim_nums[i], "pos": sim_pos[i], "rat": b_ovr + (i % 5) - 1} for i in range(11)]
             res[side_key] = {
-                "tac": f_str, "starters": [], "bench": [], "rot_cnt": 1, "rot_gk": False,
+                "tac": f_str, "starters": sim_st, "bench": [], "rot_cnt": 1, "rot_gk": False,
                 "ovr": b_ovr, "sho": b_ovr + 2, "att": b_ovr + 2, "pas": b_ovr + 1, "dri": b_ovr, "def": b_ovr - 1
             }
 
     if res["official"] or state == "in":
         MEM["roster_cache"][cache_key] = res
     return match_title, res
-
+# ==================== PARÇA 3B/8 ====================
 def format_form_badges(form_str):
     out = []
     for ch in str(form_str or "")[:5]:
@@ -359,22 +387,94 @@ def format_form_badges(form_str):
         out.append(f"<span style='background:{c};color:#fff;padding:1px 4px;border-radius:3px;font-size:9.5px;font-weight:700;margin-right:2px;'>{ch}</span>")
     return "".join(out)
 
+def _split_players_by_formation(starters, tac_str, is_away=False):
+    pts = [safe_int(x, 0) for x in str(tac_str or "4-2-3-1").split("-") if safe_int(x, 0) > 0]
+    if sum(pts) != 10:
+        pts = [4, 2, 3, 1]
+    st_list = list(starters or [])[:11]
+    while len(st_list) < 11:
+        st_list.append({"name": "Player", "num": "99", "pos": "M", "rat": 70})
+    cols = [[st_list[0]]]
+    idx = 1
+    for cnt in pts:
+        cols.append(st_list[idx:idx + cnt])
+        idx += cnt
+    if is_away:
+        cols.reverse()
+    return cols
+
+def _render_team_half_nodes(cols, jersey_bg, border_col):
+    col_html = []
+    for c_players in cols:
+        nodes = []
+        for p in c_players:
+            p_num = str(p.get("num") or "")
+            p_rat = safe_int(p.get("rat"), 72)
+            p_short = str(p.get("name") or "")[:9]
+            rat_bg = "#2ea043" if p_rat >= 78 else ("#d29922" if p_rat >= 70 else "#f85149")
+            nodes.append(
+                f"<div style='display:flex;flex-direction:column;align-items:center;margin:3px 1px;'>"
+                f"<div style='position:relative;width:28px;height:28px;border-radius:50%;background:{jersey_bg};border:2px solid {border_col};display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;color:#fff;box-shadow:0 2px 5px rgba(0,0,0,0.6);'>"
+                f"{p_num}"
+                f"<span style='position:absolute;top:-5px;right:-8px;background:{rat_bg};color:#fff;font-size:8.5px;padding:0 3px;border-radius:4px;font-weight:800;border:1px solid #0d1117;'>{p_rat}</span>"
+                f"</div>"
+                f"<div style='background:rgba(13,17,23,0.85);color:#e6edf3;font-size:9px;font-weight:600;padding:1px 4px;border-radius:3px;margin-top:2px;white-space:nowrap;max-width:58px;overflow:hidden;text-overflow:ellipsis;'>{p_short}</div>"
+                f"</div>"
+            )
+        col_html.append(f"<div style='display:flex;flex-direction:column;justify-content:space-around;align-items:center;height:100%;'>{''.join(nodes)}</div>")
+    return f"<div style='display:flex;justify-content:space-around;align-items:center;width:49%;height:100%;z-index:2;'>{''.join(col_html)}</div>"
+
 def build_tactical_pitch_html(m):
     r_data = m.get("roster_data") or {}
     h_d, a_d = r_data.get("h") or {}, r_data.get("a") or {}
-    h_st, a_st = h_d.get("starters") or [], a_d.get("starters") or []
-    h_p_str = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in h_st[:6]]) if h_st else "Pre-Lineup Simulation Active"
-    a_p_str = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in a_st[:6]]) if a_st else "Pre-Lineup Simulation Active"
+    w_str = r_data.get("weather") or derive_match_weather(m["mac"], m["lig"])
+    venue_str = r_data.get("venue") or f"{m['h_name']} Stadium"
+    is_off = bool(m.get("is_off"))
+    xi_status = "✅ OFFICIAL CONFIRMED XI" if is_off else "⏳ PROJECTED TACTICAL XI"
+
+    h_cols = _split_players_by_formation(h_d.get("starters"), m["h_tac"], is_away=False)
+    a_cols = _split_players_by_formation(a_d.get("starters"), m["a_tac"], is_away=True)
+    left_half = _render_team_half_nodes(h_cols, "linear-gradient(135deg,#d9381e,#8b1a0e)", "#ffd33d")
+    right_half = _render_team_half_nodes(a_cols, "linear-gradient(135deg,#1f6feb,#0d3b8c)", "#79c0ff")
+
+    metrics = [("OVR", "ovr"), ("ATT", "sho"), ("PAS", "pas"), ("DRI", "dri"), ("DEF", "def")]
+    bars_html = []
+    for lbl, k in metrics:
+        hv, av = safe_int(h_d.get(k), 72), safe_int(a_d.get(k), 71)
+        h_col = "#f85149" if (k == "def" and hv <= 58) else "#3fb950"
+        a_col = "#f85149" if (k == "def" and av <= 58) else "#58a6ff"
+        bars_html.append(
+            f"<div style='flex:1;min-width:105px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:4px 7px;'>"
+            f"<div style='display:flex;justify-content:space-between;font-size:10px;font-weight:800;'>"
+            f"<span style='color:{h_col};'>{hv}</span><span style='color:#8b949e;'>{lbl}</span><span style='color:{a_col};'>{av}</span></div>"
+            f"<div style='display:flex;height:5px;background:#21262d;border-radius:3px;overflow:hidden;margin-top:3px;'>"
+            f"<div style='width:{int(hv*100/(hv+av))}%;background:{h_col};'></div>"
+            f"<div style='width:{100-int(hv*100/(hv+av))}%;background:{a_col};'></div></div></div>"
+        )
+
+    h_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (h_d.get("bench") or [])[:4]]) or "Standard Bench"
+    a_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (a_d.get("bench") or [])[:4]]) or "Standard Bench"
     m4_note = m.get("m4_summary", "")
+
     return (
-        f"<div style='background:linear-gradient(135deg,#0b2e13,#123d1b);border:2px solid #2ea043;border-radius:8px;padding:10px;color:#e6edf3;font-size:11.5px;'>"
-        f"<div style='display:flex;justify-content:space-between;border-bottom:1px solid #2ea043;padding-bottom:6px;margin-bottom:6px;'>"
-        f"<span>🏠 <b>{m['h_name']} ({m['h_tac']})</b> — OVR:<b>{h_d.get('ovr',72)}</b> | ATT:<b>{h_d.get('sho',73)}</b> | DEF:<b>{h_d.get('def',68)}</b> (Rot:{h_d.get('rot_cnt',0)})</span>"
-        f"<span>✈️ <b>{m['a_name']} ({m['a_tac']})</b> — OVR:<b>{a_d.get('ovr',71)}</b> | ATT:<b>{a_d.get('sho',72)}</b> | DEF:<b>{a_d.get('def',68)}</b> (Rot:{a_d.get('rot_cnt',0)})</span></div>"
-        f"<div style='margin-bottom:4px;'>🟢 <b>{m['h_name']} XI Core:</b> {h_p_str}</div>"
-        f"<div style='margin-bottom:6px;'>🔵 <b>{m['a_name']} XI Core:</b> {a_p_str}</div>"
-        f"<div style='background:#0d1117;padding:6px 8px;border-radius:5px;color:#ffd33d;'>🧮 <b>Model 4.0 Poisson & Gate Telemetry:</b> {m4_note}</div></div>"
+        f"<div style='background:#161b22;border:1px solid #2ea043;border-radius:10px;padding:10px;color:#e6edf3;font-size:11.5px;'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;background:#0d1117;padding:6px 10px;border-radius:6px;margin-bottom:8px;border:1px solid #30363d;'>"
+        f"<span>🏟️ <b>{venue_str}</b> • {w_str}</span>"
+        f"<span style='color:#56d364;font-weight:800;'>{xi_status} ({m['h_tac']} vs {m['a_tac']})</span></div>"
+        f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px;'>{''.join(bars_html)}</div>"
+        f"<div style='position:relative;width:100%;height:265px;background:repeating-linear-gradient(90deg,#145224 0px,#145224 38px,#19632c 38px,#19632c 76px);border:2px solid rgba(255,255,255,0.85);border-radius:8px;display:flex;justify-content:space-between;align-items:center;overflow:hidden;padding:6px 4px;box-sizing:border-box;'>"
+        f"<div style='position:absolute;left:50%;top:0;bottom:0;width:2px;background:rgba(255,255,255,0.65);transform:translateX(-50%);'></div>"
+        f"<div style='position:absolute;left:50%;top:50%;width:64px;height:64px;border:2px solid rgba(255,255,255,0.65);border-radius:50%;transform:translate(-50%,-50%);'></div>"
+        f"<div style='position:absolute;left:0;top:22%;width:38px;height:56%;border:2px solid rgba(255,255,255,0.6);border-left:none;'></div>"
+        f"<div style='position:absolute;right:0;top:22%;width:38px;height:56%;border:2px solid rgba(255,255,255,0.6);border-right:none;'></div>"
+        f"{left_half}{right_half}</div>"
+        f"<div style='display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-top:7px;font-size:10.5px;color:#c9d1d9;'>"
+        f"<div>🔴 <b>{m['h_name']} Bench:</b> {h_bench} (Rot:{h_d.get('rot_cnt',0)})</div>"
+        f"<div>🔵 <b>{m['a_name']} Bench:</b> {a_bench} (Rot:{a_d.get('rot_cnt',0)})</div></div>"
+        f"<div style='background:#0d1117;border-left:3px solid #f0b90b;padding:5px 8px;border-radius:4px;margin-top:6px;color:#ffd33d;font-size:11px;'>"
+        f"🧮 <b>Model 4.0 Poisson & Gate Telemetry:</b> {m4_note}</div></div>"
     )
+
 # ==================== PARÇA 4/8 ====================
 def american_to_prob(odd_val):
     v = safe_float(odd_val, 0.0)
