@@ -1133,6 +1133,11 @@ _DEFAULT_LGS = [
     ("uefa.champions", "UEFA ŞAMPİYONLAR LİGİ", 1), ("uefa.europa", "UEFA AVRUPA LİGİ", 1)
 ]
 
+# Eski Önbellek (KeyError) Otomatik Temizleyici
+for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
+    if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
+        MEM["live_signals"].pop(_k, None)
+
 if not globals().get("live_matches") and not globals().get("upcoming_matches"):
     raw_matches, roster_tasks = [], []
     with ThreadPoolExecutor(max_workers=10) as ex:
@@ -1169,10 +1174,15 @@ if not globals().get("live_matches") and not globals().get("upcoming_matches"):
                 pts = odd_str.split()
                 fav_abbr = pts[0].upper() if pts else h_abbr
                 fav_val = safe_int(pts[1], -130) if len(pts) > 1 else -130
+
             op_mem = MEM.setdefault("opening_odds", {})
-            if match_title not in op_mem:
-                op_mem[match_title] = {"fav_val": fav_val, "ou_val": ou_val}
-            op_fav, op_ou = op_mem[match_title]["fav_val"], op_mem[match_title]["ou_val"]
+            op_entry = op_mem.get(match_title)
+            if not isinstance(op_entry, dict) or "fav_val" not in op_entry or "ou_val" not in op_entry:
+                op_entry = {"fav_val": fav_val, "ou_val": ou_val}
+                op_mem[match_title] = op_entry
+            op_fav = safe_int(op_entry.get("fav_val"), fav_val)
+            op_ou = safe_float(op_entry.get("ou_val"), ou_val)
+
             disp_odd = f"{fav_abbr} {fav_val:+d}" if fav_val > 0 else f"{fav_abbr} {fav_val}"
             if fav_val != op_fav:
                 d_raw = fav_val - op_fav
@@ -1225,10 +1235,15 @@ if not globals().get("live_matches") and not globals().get("upcoming_matches"):
             m_int = safe_int(re.sub(r"[^0-9]", "", clk.split("+")[0]), 45 if "HT" in clk.upper() else 1)
             heat, sot_tag, _, _, _ = analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data)
             snaps = MEM.setdefault("live_snapshots", {})
-            if match_title not in snaps:
-                snaps[match_title] = {"min": m_int, "sh": h_sh + a_sh, "sot": h_sot + a_sot, "cor": h_cor + a_cor}
-            s0 = snaps[match_title]
-            d_str = f"|Δ({s0['min']}'->{m_int}'):+{max(0,(h_sh+a_sh)-s0['sh'])}/{max(0,(h_sot+a_sot)-s0['sot'])}Ş,+{max(0,(h_cor+a_cor)-s0['cor'])}/{max(0,a_cor)}K" if m_int > s0["min"] + 2 else ""
+            s0 = snaps.get(match_title)
+            if not isinstance(s0, dict) or "min" not in s0 or "sh" not in s0:
+                s0 = {"min": m_int, "sh": h_sh + a_sh, "sot": h_sot + a_sot, "cor": h_cor + a_cor}
+                snaps[match_title] = s0
+            s0_min = safe_int(s0.get("min"), m_int)
+            s0_sh = safe_int(s0.get("sh"), h_sh + a_sh)
+            s0_sot = safe_int(s0.get("sot"), h_sot + a_sot)
+            s0_cor = safe_int(s0.get("cor"), h_cor + a_cor)
+            d_str = f"|Δ({s0_min}'->{m_int}'):+{max(0,(h_sh+a_sh)-s0_sh)}/{max(0,(h_sot+a_sot)-s0_sot)}Ş,+{max(0,(h_cor+a_cor)-s0_cor)}/{max(0,a_cor)}K" if m_int > s0_min + 2 else ""
             base_obj.update({"heat": heat, "sot_tag": sot_tag, "delta_str": d_str})
             live_matches.append(base_obj)
         elif state == "post":
@@ -1246,16 +1261,16 @@ if not globals().get("live_matches") and not globals().get("upcoming_matches"):
         else:
             upcoming_matches.append(base_obj)
 
-    live_matches.sort(key=lambda x: x["heat"], reverse=True)
-    upcoming_matches.sort(key=lambda x: x["conf"], reverse=True)
-    finished_matches = list(fin_cache.values())[::-1]
+    live_matches.sort(key=lambda x: x.get("heat", 0), reverse=True)
+    upcoming_matches.sort(key=lambda x: x.get("conf", 0), reverse=True)
+    finished_matches = [x for x in list(fin_cache.values())[::-1] if isinstance(x, dict) and "h_name" in x]
     hist_vals = [x for x in MEM.get("history_scores", {}).values() if isinstance(x, dict)]
     g_w = MEM.get("base_w", 126) + sum(1 for x in hist_vals if x.get("won"))
     g_t = MEM.get("base_t", 177) + len(hist_vals)
     g_r = int(round((g_w * 100.0) / max(1, g_t)))
     ak_w = MEM.get("base_ak_w", 11) + sum(1 for x in hist_vals if x.get("ak") and x.get("won"))
     ak_t = MEM.get("base_ak_t", 13) + sum(1 for x in hist_vals if x.get("ak"))
-    lp_all = list(MEM.get("live_signals", {}).values())
+    lp_all = [x for x in MEM.get("live_signals", {}).values() if isinstance(x, dict)]
     lp_w = sum(1 for x in lp_all if x.get("status") == "WON")
     lp_t = sum(1 for x in lp_all if x.get("status") in ("WON", "LOST"))
     lp_act = sum(1 for x in lp_all if x.get("status") == "WAIT")
@@ -1266,7 +1281,8 @@ if not globals().get("live_matches") and not globals().get("upcoming_matches"):
     for m in upcoming_matches:
         k_tag = f"✅Kadro({m['h_tac']}v{m['a_tac']})" if m["is_off"] else "⏳KadroYok"
         e_tail = f" | {m['evo']} | Yan:{m['prop']}" if m["is_off"] else ""
-        mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m['m4']['p_over35']}|Sh:%{m['m4']['p_shield']}|Dw:{m['m4']['d_weak']}] -> {m['pick']}{e_tail}")
+        m4_d = m.get("m4") or {}
+        mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m4_d.get('p_over35',20)}|Sh:%{m4_d.get('p_shield',50)}|Dw:{m4_d.get('d_weak',15)}] -> {m['pick']}{e_tail}")
     for m in finished_matches[:6]:
         st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
         mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
@@ -1275,7 +1291,7 @@ def _safe_pitch_html(m):
     fn = globals().get("build_tactical_pitch_html")
     if not fn:
         return ""
-    for args in ((m,), (m["h_name"], m["a_name"], m["roster_data"]), (m["roster_data"], m["h_name"], m["a_name"])):
+    for args in ((m,), (m.get("h_name", ""), m.get("a_name", ""), m.get("roster_data", {})), (m.get("roster_data", {}), m.get("h_name", ""), m.get("a_name", ""))):
         try:
             return fn(*args)
         except TypeError:
@@ -1324,6 +1340,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         pr_disp = "🔒 Unlock VIP to view Corner & Card Physics" if locked_card else m["prop"]
         b_col = "#f0b90b" if m["conf"] >= 70 else "#2f81f7"
         k_badge = f"<span style='color:#56d364;font-weight:700;'>✅ Resmi 11 ({m['h_tac']}v{m['a_tac']})</span>" if m["is_off"] else f"<span style='color:#8b949e;'>⏳ Son Maç İkizi ({m['h_tac']}v{m['a_tac']})</span>"
+        m4_d = m.get("m4") or {}
         st.markdown(
             f"<div class='dp-card' style='border-left:4px solid {b_col};'>"
             f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8b949e;'>"
@@ -1331,7 +1348,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             f"<span style='background:#21262d;color:#ffd33d;padding:2px 8px;border-radius:6px;font-weight:800;'>AI Conf: %{m['conf']}</span></div>"
             f"<div style='font-size:15.5px;font-weight:800;margin:5px 0;color:#fff;'>{m['h_name']} vs {m['a_name']}</div>"
             f"<div style='font-size:11.5px;color:#c9d1d9;margin-bottom:4px;'>📈 <b>Form & Mom:</b> {format_form_badges(m['h_form'])} ({m['h_mom']}%) vs {format_form_badges(m['a_form'])} ({m['a_mom']}%)</div>"
-            f"<div style='font-size:11px;color:#79c0ff;'>🐋 <b>Oran & Fizik:</b> {m['odd']} | TG: {m['ou']} | <code>P4+:%{m['m4']['p_over35']} | Sh:%{m['m4']['p_shield']} | Dw:{m['m4']['d_weak']}</code></div>"
+            f"<div style='font-size:11px;color:#79c0ff;'>🐋 <b>Oran & Fizik:</b> {m['odd']} | TG: {m['ou']} | <code>P4+:%{m4_d.get('p_over35',20)} | Sh:%{m4_d.get('p_shield',50)} | Dw:{m4_d.get('d_weak',15)}</code></div>"
             f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
             f"<span>🎯 <b>Ana Hedef:</b> <b style='color:#56d364;'>{p_disp}</b> ({m['evo']})</span>"
             f"<span style='color:#d2a8ff;'>{pr_disp}</span></div></div>",
@@ -1350,7 +1367,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             st.markdown(
                 f"<div class='dp-card' style='border-left:4px solid {bd_col};background:#0d1117;'>"
                 f"<div style='display:flex;justify-content:space-between;font-size:11.5px;color:#8b949e;'>"
-                f"<span>🏁 <b>FT ({m['saat']})</b> • {m['lig']}</span>"
+                f"<span>🏁 <b>FT ({m.get('saat','20:30')})</b> • {m.get('lig','')}</span>"
                 f"<span style='background:{bd_col};color:#fff;padding:1px 8px;border-radius:5px;font-weight:800;'>{badge_txt}</span></div>"
                 f"<div style='font-size:15px;font-weight:800;margin:4px 0;color:#fff;'>{m['h_name']} <span style='color:#ffd33d;'>{m['h_score']} - {m['a_score']}</span> {m['a_name']}</div>"
                 f"<div style='font-size:11.5px;color:#c9d1d9;'>📊 <b>Maç Sonu İstatistik:</b> Şut: {m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']}) | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']} (Toplam: {m['h_cor']+m['a_cor']})</b> | 🟨 Kart: {m['cards']}</div>"
@@ -1359,6 +1376,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             )
             with st.expander(f"🏟️ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']} — Maç Sonu Kadro & Saha Özeti", expanded=False):
                 st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
+
 # ==================== PARÇA 8/8 ====================
 if "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
