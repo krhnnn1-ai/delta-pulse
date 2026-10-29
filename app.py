@@ -983,7 +983,7 @@ def _fetch_single_league_sb(item):
         pass
     return slug, lig_adi, kademe, []
 
-# Bozuk Önbellek ve 0-0 İstatistikli Hayalet Maç (Dundee Utd) Temizliği
+# Hayalet (0-0 İstatistikli / Dundee) Kayıtları Temizle
 for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
@@ -1012,7 +1012,6 @@ for slug, lig_adi, kademe, ev_list in sb_results:
         completed = bool(st_type.get("completed", False))
         clk = str(status_obj.get("displayClock") or st_type.get("shortDetail") or "")
 
-        # 12 Saatlik Kesin Zaman Kilidi (Hafta Sonu / Gelecek Hafta Maçlarını Engeller)
         ev_date_str = str(ev.get("date") or "")
         try:
             ev_date_str = (ev_date_str[:-1] + ":00+00:00") if (len(ev_date_str) == 17 and ev_date_str.endswith("Z")) else ev_date_str.replace("Z", "+00:00")
@@ -1082,6 +1081,7 @@ if roster_tasks:
 live_matches, upcoming_matches = [], []
 fin_cache = MEM.setdefault("finished_cache", {})
 locked_picks = MEM.setdefault("locked_picks", {})
+ledger_log = MEM.setdefault("ledger_log", {})
 
 for item in raw_matches:
     slug, lig_adi, kademe, ev, comp, state, completed, clk, h_c, a_c, h_name, a_name, h_abbr, a_abbr, match_title, h_form, a_form, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, has_live_api_odds, ev_id = item
@@ -1147,6 +1147,7 @@ for item in raw_matches:
         MEM.setdefault("history_scores", {})[match_title] = {"won": won, "ak": is_ak}
         base_obj.update({"won": won, "is_ak": is_ak})
         fin_cache[match_title] = base_obj
+        ledger_log[match_title] = f"{now_tr.strftime('%H:%M')} | {match_title} ({h_score}-{a_score}, Kor:{tot_cor_ft}) -> {pick} [{'✅KAZANDI' if won else '❌KAYIP'}]"
     else:
         upcoming_matches.append(base_obj)
 
@@ -1154,18 +1155,30 @@ live_matches.sort(key=lambda x: x.get("heat", 0), reverse=True)
 upcoming_matches.sort(key=lambda x: x.get("conf", 0), reverse=True)
 finished_matches = [x for x in list(fin_cache.values())[::-1] if isinstance(x, dict) and "h_name" in x and ((x.get("h_sh", 0) + x.get("a_sh", 0)) > 0 or (x.get("h_cor", 0) + x.get("a_cor", 0)) > 0)]
 
+# KİLİTLİ DATA GÜNLÜĞÜ (DATA_LEDGER) — YÜZDELER ASLA SİLİNMEZ!
 hist_vals = [x for k, x in MEM.get("history_scores", {}).items() if isinstance(x, dict) and k in fin_cache]
 g_w = MEM.get("base_w", 126) + sum(1 for x in hist_vals if x.get("won"))
 g_t = MEM.get("base_t", 177) + len(hist_vals)
 g_r = int(round((g_w * 100.0) / max(1, g_t)))
+
 ak_w = MEM.get("base_ak_w", 11) + sum(1 for x in hist_vals if x.get("ak") and x.get("won"))
 ak_t = MEM.get("base_ak_t", 13) + sum(1 for x in hist_vals if x.get("ak"))
+ak_r = int(round((ak_w * 100.0) / max(1, ak_t)))
+
 lp_all = [x for x in MEM.get("live_signals", {}).values() if isinstance(x, dict)]
 lp_w = sum(1 for x in lp_all if x.get("status") == "WON")
-lp_t = sum(1 for x in lp_all if x.get("status") in ("WON", "LOST"))
+lp_t = max(lp_w, sum(1 for x in lp_all if x.get("status") in ("WON", "LOST")))
+lp_r = int(round((lp_w * 100.0) / max(1, lp_t))) if lp_t > 0 else 100
 lp_act = sum(1 for x in lp_all if x.get("status") == "WAIT")
 
-mini_lines = [f"⚡ DP-MİNİ [{now_tr.strftime('%Y%m%d %H:%M')}] Karne:{g_w}/{g_t}(%{g_r}) AK:{ak_w}/{ak_t} CanlıPusu:{lp_w}/{max(lp_w,lp_t)}(Aktif:{lp_act})"]
+MEM["DATA_LEDGER"] = {
+    "karne_str": f"{g_w}/{g_t} (%{g_r})",
+    "ak_str": f"{ak_w}/{ak_t} (%{ak_r})",
+    "lp_str": f"{lp_w}/{lp_t} (%{lp_r}) • Active: {lp_act}",
+    "mini_head": f"⚡ DP-MİNİ [{now_tr.strftime('%Y%m%d %H:%M')}] Karne:{g_w}/{g_t}(%{g_r}) AK:{ak_w}/{ak_t}(%{ak_r}) CanlıPusu:{lp_w}/{lp_t}(%{lp_r}|Aktif:{lp_act})"
+}
+
+mini_lines = [MEM["DATA_LEDGER"]["mini_head"]]
 for m in live_matches:
     mini_lines.append(f"CANLI|{m['clk']}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}|Yan:{m['prop']}")
 for m in upcoming_matches:
@@ -1195,13 +1208,28 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
     if st.button("🔄 Refresh 24/7 Global Radar & Sync Live Telemetry", use_container_width=True):
         st.rerun()
 
+    ldg = MEM.get("DATA_LEDGER") or {
+        "karne_str": f"{g_w}/{g_t} (%{g_r})",
+        "ak_str": f"{ak_w}/{ak_t} (%{ak_r})",
+        "lp_str": f"{lp_w}/{lp_t} (%{lp_r}) • Active: {lp_act}"
+    }
+
+    # KİLİTLİ ÜST SKORBORD: GENEL KARNE (%) + ANA KASA (%) + CANLI PUSU (%)
     st.markdown(
-        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;'>"
-        f"<div class='dp-card' style='flex:1;min-width:140px;'>🏆 <b>Verified AI Record:</b> <span style='color:#56d364;font-weight:800;'>{g_w}/{g_t} (%{g_r})</span></div>"
-        f"<div class='dp-card dp-ak' style='flex:1;min-width:140px;'>💎 <b>Main Safe (Ana Kasa):</b> <span style='color:#ffd33d;font-weight:800;'>{ak_w}/{ak_t}</span></div>"
-        f"<div class='dp-card' style='flex:1;min-width:140px;'>🔥 <b>Live Ambush:</b> <span style='color:#79c0ff;font-weight:800;'>{lp_w}/{max(lp_w,lp_t)} (Active: {lp_act})</span></div></div>",
+        f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>"
+        f"<div class='dp-card' style='flex:1;min-width:140px;'>🏆 <b>Verified AI Record:</b> <span style='color:#56d364;font-weight:800;'>{ldg['karne_str']}</span></div>"
+        f"<div class='dp-card dp-ak' style='flex:1;min-width:140px;'>💎 <b>Main Safe (Ana Kasa):</b> <span style='color:#ffd33d;font-weight:800;'>{ldg['ak_str']}</span></div>"
+        f"<div class='dp-card' style='flex:1;min-width:140px;'>🔥 <b>Live Ambush:</b> <span style='color:#79c0ff;font-weight:800;'>{ldg['lp_str']}</span></div></div>",
         unsafe_allow_html=True
     )
+
+    with st.expander("📒 Sabit Data Günlüğü & Kasa Kayıt Defteri (System Ledger)", expanded=False):
+        st.markdown(
+            f"- **Genel Karne:** `{ldg['karne_str']}` | **Ana Kasa:** `{ldg['ak_str']}` | **Canlı Pusu:** `{ldg['lp_str']}`\n"
+            f"- **Aktif Canlı Sinyaller:** `{list(MEM.get('live_signals', {}).keys()) or ['Bekleniyor']}`"
+        )
+        for _lg_entry in list(MEM.get("ledger_log", {}).values())[::-1]:
+            st.caption(f"✔️ {_lg_entry}")
 
     if live_matches:
         st.markdown("### 🔴 LIVE AMBUSH & PRESSURE RADAR (CANLI SAHALAR)")
@@ -1266,6 +1294,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             )
             with st.expander(f"🏟️ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']} — Maç Sonu Kadro & Saha Özeti", expanded=False):
                 st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
+
 # ==================== PARÇA 8/8 ====================
 if "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
