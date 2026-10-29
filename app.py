@@ -1134,7 +1134,6 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         unsafe_allow_html=True
     )
 
-    # 1. CANLI MAÇLAR + CANLI SAHA VE KADRO DİZİLİMİ (ARTIK KAYBOLMAZ!)
     if live_matches:
         st.markdown("### 🔴 LIVE AMBUSH & PRESSURE RADAR (CANLI SAHALAR)")
         for m in live_matches:
@@ -1155,7 +1154,6 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Canlı Saha Dizilimi, Kadro & 5D Güç Radarı ({m['h_tac']} vs {m['a_tac']})", expanded=False):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-    # 2. BAŞLAMAMIŞ (MAÇ ÖNÜ) MAÇLAR + SAHA GÖRSELİ
     st.markdown("### ⏳ PRE-MATCH WHALE & POISSON TELEMETRY")
     for m in upcoming_matches:
         locked_card = (m["conf"] >= 68 and not is_unlocked)
@@ -1179,7 +1177,6 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Tactical Pitch, Weather & 5D Power Radar", expanded=False):
             st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 
-    # 3. EN ALTTA BİTEN MAÇLAR & DOĞRULANMIŞ KARNE SONUÇLARI
     if finished_matches:
         st.markdown("---")
         st.markdown("### 🏁 BİTEN MAÇLAR & DOĞRULANMIŞ KARNE SONUÇLARI (FINISHED & VERIFIED)")
@@ -1199,6 +1196,9 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             )
             with st.expander(f"🏟️ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']} — Maç Sonu Kadro & Saha Özeti", expanded=False):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
+
+url_prog = str(st.query_params.get("prog") or "").strip().lower()
+
 
 # ==================== PARÇA 8/8 ====================
 if url_prog == "patron":
