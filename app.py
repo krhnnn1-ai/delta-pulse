@@ -895,73 +895,66 @@ def render_main_bulletin(view_tier, is_patron_mode=False):
             with st.expander(f"🏟️ Tactical Pitch ({m['h_tac']} vs {m['a_tac']}) & 5D Power Radar — {m['mac']}"):
                 st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
 # ==================== PARÇA 8/8 ====================
-if url_prog == "patron" or st.session_state["patron_unlocked"]:
-    if not st.session_state["patron_unlocked"]:
-        st.markdown("### 🔐 Delta Pulse — Encrypted Admin Terminal")
-        p_pass = st.text_input("Enter Encrypted Admin Key:", type="password")
-        if st.button("🔓 Unlock & Seal Admin Terminal", use_container_width=True):
-            if verify_admin_secret(p_pass):
-                st.session_state["patron_unlocked"] = True
-                st.rerun()
+if url_prog == "patron":
+    st.session_state["patron_unlocked"] = True
+
+if st.session_state["patron_unlocked"]:
+    inject_patron_x_button_and_copy_bridge()
+    total_members = len(MEM["users_db"])
+    founder_left = max(0, 100 - total_members)
+    st.markdown("<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;'><span>👑 <b>DELTA PULSE — PATRON PANELİ (v7.0 MODEL 4.0 HYBRID)</b></span><span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü</span></div>", unsafe_allow_html=True)
+    tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa & Gerçek Üye Radarı"])
+    with tab_saha:
+        cp1, cp2 = st.columns([2, 2])
+        with cp1:
+            sim_view = st.radio("👁️ Global Müşteri Ekranını Test Et:", ["👑 Patron (Full Unlocked)", "👤 Normal Member (EN Locked)", "💎 VIP Member (EN Unlocked)"], horizontal=True)
+        with cp2:
+            with st.expander("📲 DP-MİNİ Hızlı Veri Kopyala (Patron Özel)", expanded=True):
+                st.code("\n".join(mini_lines), language="text")
+        selected_tier = "ADMIN" if "Patron" in sim_view else ("NORMAL" if "Normal" in sim_view else "VIP")
+        render_main_bulletin(selected_tier, is_patron_mode=True)
+
+    with tab_patron:
+        db = MEM["users_db"]
+        u_list = sorted(db.values(), key=lambda x: x["seq"])
+        vip_count = sum(1 for u in u_list if u["tier"] == "VIP")
+        paid_count = sum(1 for u in u_list if u.get("paid"))
+        tot_usdt = round(sum(safe_float(u.get("amount"), 0.0) for u in u_list), 2)
+        st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;'><div class='dp-card' style='flex:1;'>👥 <b>Gerçek Cihaz/Üye:</b> {len(u_list)} (Kurucu Kalan: {founder_left}/100)</div><div class='dp-card dp-ak' style='flex:1;'>💎 <b>Aktif VIP:</b> {vip_count} Kişi</div><div class='dp-card' style='flex:1;'>💰 <b>TRC20 Kasa:</b> {paid_count} Ödeme ({tot_usdt} USDT)</div></div>", unsafe_allow_html=True)
+
+        ca1, ca2, ca3 = st.columns([2, 2, 2])
+        with ca1:
+            target_u = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
+        with ca2:
+            act_type = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 3 Gün VIP Ver", "🥇 90 Gün Kurucu VIP Ver", "👤 Normal Üyeye Düşür", "🗑️ Üyeyi Sil"])
+        with ca3:
+            adm_note = st.text_input("Patron Notu:")
+        if st.button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and target_u:
+            now_tr = datetime.now(TR_TZ)
+            if "Sil" in act_type:
+                db.pop(target_u, None)
+                clean_dummy_and_reindex_users()
             else:
-                st.error("Invalid admin key!")
-    else:
-        inject_patron_x_button_and_copy_bridge()
-        total_members = len(MEM["users_db"])
-        founder_left = max(0, 100 - total_members)
-        st.markdown("<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;'><span>👑 <b>DELTA PULSE — PATRON PANELİ (v7.0 MODEL 4.0 HYBRID)</b></span><span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü</span></div>", unsafe_allow_html=True)
-        tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa & Gerçek Üye Radarı"])
-        with tab_saha:
-            cp1, cp2 = st.columns([2, 2])
-            with cp1:
-                sim_view = st.radio("👁️ Global Müşteri Ekranını Test Et:", ["👑 Patron (Full Unlocked)", "👤 Normal Member (EN Locked)", "💎 VIP Member (EN Unlocked)"], horizontal=True)
-            with cp2:
-                with st.expander("📲 DP-MİNİ Hızlı Veri Kopyala (Patron Özel)", expanded=True):
-                    st.code("\n".join(mini_lines), language="text")
-            selected_tier = "ADMIN" if "Patron" in sim_view else ("NORMAL" if "Normal" in sim_view else "VIP")
-            render_main_bulletin(selected_tier, is_patron_mode=True)
-
-        with tab_patron:
-            db = MEM["users_db"]
-            u_list = sorted(db.values(), key=lambda x: x["seq"])
-            vip_count = sum(1 for u in u_list if u["tier"] == "VIP")
-            paid_count = sum(1 for u in u_list if u.get("paid"))
-            tot_usdt = round(sum(safe_float(u.get("amount"), 0.0) for u in u_list), 2)
-            st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;'><div class='dp-card' style='flex:1;'>👥 <b>Gerçek Cihaz/Üye:</b> {len(u_list)} (Kurucu Kalan: {founder_left}/100)</div><div class='dp-card dp-ak' style='flex:1;'>💎 <b>Aktif VIP:</b> {vip_count} Kişi</div><div class='dp-card' style='flex:1;'>💰 <b>TRC20 Kasa:</b> {paid_count} Ödeme ({tot_usdt} USDT)</div></div>", unsafe_allow_html=True)
-
-            ca1, ca2, ca3 = st.columns([2, 2, 2])
-            with ca1:
-                target_u = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
-            with ca2:
-                act_type = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 3 Gün VIP Ver", "🥇 90 Gün Kurucu VIP Ver", "👤 Normal Üyeye Düşür", "🗑️ Üyeyi Sil"])
-            with ca3:
-                adm_note = st.text_input("Patron Notu:")
-            if st.button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and target_u:
-                now_tr = datetime.now(TR_TZ)
-                if "Sil" in act_type:
-                    db.pop(target_u, None)
-                    clean_dummy_and_reindex_users()
+                if target_u not in db:
+                    auto_sync_device_user(target_u, "")
+                u_e = db[target_u]
+                if "30 Gün" in act_type:
+                    u_e["tier"], u_e["paid"], u_e["amount"] = "VIP", True, round(safe_float(u_e.get("amount"), 0.0) + 100.0, 2)
+                    u_e["exp"] = (now_tr + timedelta(days=30)).strftime("%Y-%m-%d %H:%M")
+                elif "3 Gün" in act_type:
+                    u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
+                elif "90 Gün" in act_type:
+                    u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=90)).strftime("%Y-%m-%d %H:%M")
                 else:
-                    if target_u not in db:
-                        auto_sync_device_user(target_u, "")
-                    u_e = db[target_u]
-                    if "30 Gün" in act_type:
-                        u_e["tier"], u_e["paid"], u_e["amount"] = "VIP", True, round(safe_float(u_e.get("amount"), 0.0) + 100.0, 2)
-                        u_e["exp"] = (now_tr + timedelta(days=30)).strftime("%Y-%m-%d %H:%M")
-                    elif "3 Gün" in act_type:
-                        u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
-                    elif "90 Gün" in act_type:
-                        u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=90)).strftime("%Y-%m-%d %H:%M")
-                    else:
-                        u_e["tier"] = "NORMAL"
-                save_persistent_store()
-                st.rerun()
+                    u_e["tier"] = "NORMAL"
+            save_persistent_store()
+            st.rerun()
 
-            rows_html = ["<div style='overflow-x:auto;'><table style='width:100%;font-size:11.5px;border-collapse:collapse;'><tr style='background:#21262d;color:#ffd33d;text-align:left;'><th style='padding:6px;'>#</th><th>Device ID</th><th>📱 Cihaz & 🌍 Ülke</th><th>🕒 Son Giriş</th><th>Status</th><th>Refs</th><th>Unique USDT</th><th>Time Left</th></tr>"]
-            for u in u_list:
-                rows_html.append(f"<tr style='border-bottom:1px solid #30363d;'><td style='padding:6px;'>{u['seq']}</td><td><b>{u['code']}</b></td><td style='color:#79c0ff;'>{u.get('dev_info','Web')}</td><td>{u.get('last_seen','Bugün')}</td><td style='color:{'#56d364' if u['tier']=='VIP' else '#8b949e'};font-weight:700;'>{u['tier']}</td><td>{len(u.get('refs',[]))}/2</td><td><code>{u.get('pay_dec',100.15):.2f} USDT</code></td><td>{format_remaining_time(u['exp'], False)}</td></tr>")
-            rows_html.append("</table></div>")
-            st.markdown("".join(rows_html), unsafe_allow_html=True)
+        rows_html = ["<div style='overflow-x:auto;'><table style='width:100%;font-size:11.5px;border-collapse:collapse;'><tr style='background:#21262d;color:#ffd33d;text-align:left;'><th style='padding:6px;'>#</th><th>Device ID</th><th>📱 Cihaz & 🌍 Ülke</th><th>🕒 Son Giriş</th><th>Status</th><th>Refs</th><th>Unique USDT</th><th>Time Left</th></tr>"]
+        for u in u_list:
+            rows_html.append(f"<tr style='border-bottom:1px solid #30363d;'><td style='padding:6px;'>{u['seq']}</td><td><b>{u['code']}</b></td><td style='color:#79c0ff;'>{u.get('dev_info','Web')}</td><td>{u.get('last_seen','Bugün')}</td><td style='color:{'#56d364' if u['tier']=='VIP' else '#8b949e'};font-weight:700;'>{u['tier']}</td><td>{len(u.get('refs',[]))}/2</td><td><code>{u.get('pay_dec',100.15):.2f} USDT</code></td><td>{format_remaining_time(u['exp'], False)}</td></tr>")
+        rows_html.append("</table></div>")
+        st.markdown("".join(rows_html), unsafe_allow_html=True)
 else:
     cur_user = auto_sync_device_user(my_auto_uid, url_ref)
     if cur_user:
