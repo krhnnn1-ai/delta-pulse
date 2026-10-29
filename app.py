@@ -1190,6 +1190,10 @@ for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
 # ==================== PARÇA 7/8 ====================
+import urllib.parse
+
+APP_PUBLIC_URL = "https://delta-pulse-mam7gxcyu3xmtej7hxhxxp.streamlit.app/"
+
 def _safe_pitch_html(m):
     fn = globals().get("build_tactical_pitch_html")
     if not fn:
@@ -1203,18 +1207,94 @@ def _safe_pitch_html(m):
             break
     return ""
 
+def _build_match_social_text(m, mode="pre"):
+    h, a = m.get("h_name", "Home"), m.get("a_name", "Away")
+    pick, prop, conf = m.get("pick", ""), str(m.get("prop", "")).split("|")[0].strip(), m.get("conf", 70)
+    if mode == "live":
+        tot_sh = m.get("h_sh", 0) + m.get("a_sh", 0)
+        tot_cor = m.get("h_cor", 0) + m.get("a_cor", 0)
+        txt = (
+            f"🔴 LIVE AI RADAR ({m.get('clk','LIVE')})\n"
+            f"⚽ {h} {m.get('h_score',0)}-{m.get('a_score',0)} {a} (🔥Pressure: {m.get('heat',75)}%)\n"
+            f"📊 Shots: {tot_sh} | Corners: {tot_cor}\n"
+            f"🎯 Target: {pick} | {prop}\n"
+            f"👉 {APP_PUBLIC_URL}"
+        )
+    elif mode == "post":
+        tot_cor = m.get("h_cor", 0) + m.get("a_cor", 0)
+        tot_sh = m.get("h_sh", 0) + m.get("a_sh", 0)
+        st_tag = "✅ SMASHED!" if m.get("won") else "📊 FT Report"
+        txt = (
+            f"🏆 FULL TIME AI VERIFICATION!\n"
+            f"⚽ {h} {m.get('h_score',0)}-{m.get('a_score',0)} {a} ({tot_sh} Shots, {tot_cor} Corners)\n"
+            f"🎯 AI Target ({conf}%): {pick} ➔ {st_tag}\n"
+            f"👉 {APP_PUBLIC_URL}"
+        )
+    else:
+        k_str = f"✅Lineups ({m.get('h_tac','4-2-3-1')}v{m.get('a_tac','4-2-3-1')})" if m.get("is_off") else f"🕒 {m.get('saat','20:00')} CET"
+        txt = (
+            f"🚨 AI TELEMETRY LOCKED ({k_str})\n"
+            f"⚽ {h} vs {a} (Conf: {conf}%)\n"
+            f"🎯 Main: {pick}\n"
+            f"🔥 Prop: {prop}\n"
+            f"👉 {APP_PUBLIC_URL}"
+        )
+    return txt
+
+def _send_telegram_msg(text_msg):
+    tg_cfg = MEM.setdefault("tg_config", {"token": "", "chat_id": ""})
+    tk, cid = str(tg_cfg.get("token") or "").strip(), str(tg_cfg.get("chat_id") or "").strip()
+    if not tk or not cid:
+        return False, "⚠️ Önce Patron Paneli > X & Telegram sekmesinden Bot Token ve Chat ID girin."
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{tk}/sendMessage", json={"chat_id": cid, "text": text_msg}, timeout=4.0)
+        return (True, "✅ Telegram kanalına gönderildi!") if r.status_code == 200 else (False, f"❌ Telegram Hatası: {r.status_code}")
+    except Exception as e:
+        return False, f"❌ Bağlantı hatası: {e}"
+
+def _render_match_share_box(m, mode, idx_key, is_unlocked):
+    if not is_unlocked:
+        return
+    with st.expander(f"🐦 {m['h_name']} vs {m['a_name']} — X (Twitter) & 📢 Telegram Hazır Paylaşım Metni", expanded=False):
+        s_txt = _build_match_social_text(m, mode=mode)
+        st.code(s_txt, language="text")
+        x_url = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(s_txt)}"
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(
+                f"<a href='{x_url}' target='_blank' style='display:block;text-align:center;background:#1d9bf0;color:#fff;padding:7px 10px;border-radius:6px;font-weight:700;text-decoration:none;font-size:12.5px;'>🐦 Tek Tıkla X'te Paylaş ({len(s_txt)} krk)</a>",
+                unsafe_allow_html=True
+            )
+        with c2:
+            if st.button("📢 Telegram Kanalına Gönder", key=f"tg_btn_{mode}_{idx_key}_{m['mac']}", use_container_width=True):
+                ok, msg = _send_telegram_msg(s_txt)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.warning(msg)
+
 def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
     is_unlocked = (tier in ("VIP", "ADMIN") or is_patron_mode)
-    if st.button("🔄 Refresh 24/7 Global Radar & Sync Live Telemetry", use_container_width=True):
+    if st.button("🔄 Refresh 24/7 Global Radar & Sync Live Telemetry", use_container_width=True, key=f"ref_main_{tier}_{is_patron_mode}"):
         st.rerun()
 
+    _gw = globals().get("g_w", 127)
+    _gt = globals().get("g_t", 178)
+    _gr = globals().get("g_r", 71)
+    _akw = globals().get("ak_w", 11)
+    _akt = globals().get("ak_t", 13)
+    _akr = globals().get("ak_r", int(round((_akw * 100.0) / max(1, _akt))))
+    _lpw = globals().get("lp_w", 1)
+    _lpt = max(_lpw, globals().get("lp_t", 1))
+    _lpr = globals().get("lp_r", int(round((_lpw * 100.0) / max(1, _lpt))))
+    _lpact = globals().get("lp_act", 0)
+
     ldg = MEM.get("DATA_LEDGER") or {
-        "karne_str": f"{g_w}/{g_t} (%{g_r})",
-        "ak_str": f"{ak_w}/{ak_t} (%{ak_r})",
-        "lp_str": f"{lp_w}/{lp_t} (%{lp_r}) • Active: {lp_act}"
+        "karne_str": f"{_gw}/{_gt} (%{_gr})",
+        "ak_str": f"{_akw}/{_akt} (%{_akr})",
+        "lp_str": f"{_lpw}/{_lpt} (%{_lpr}) • Active: {_lpact}"
     }
 
-    # KİLİTLİ ÜST SKORBORD: GENEL KARNE (%) + ANA KASA (%) + CANLI PUSU (%)
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>"
         f"<div class='dp-card' style='flex:1;min-width:140px;'>🏆 <b>Verified AI Record:</b> <span style='color:#56d364;font-weight:800;'>{ldg['karne_str']}</span></div>"
@@ -1233,7 +1313,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
 
     if live_matches:
         st.markdown("### 🔴 LIVE AMBUSH & PRESSURE RADAR (CANLI SAHALAR)")
-        for m in live_matches:
+        for idx_l, m in enumerate(live_matches):
             p_disp = m["pick"] if is_unlocked else "🔒 VIP LOCKED TARGET"
             st.markdown(
                 f"<div class='dp-card' style='border-left:4px solid #f85149;'>"
@@ -1250,9 +1330,10 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             )
             with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Canlı Saha Dizilimi, Kadro & 5D Güç Radarı ({m['h_tac']} vs {m['a_tac']})", expanded=False):
                 st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
+            _render_match_share_box(m, "live", idx_l, is_unlocked)
 
     st.markdown("### ⏳ PRE-MATCH WHALE & POISSON TELEMETRY")
-    for m in upcoming_matches:
+    for idx_u, m in enumerate(upcoming_matches):
         locked_card = (m["conf"] >= 68 and not is_unlocked)
         p_disp = "🔒 VIP LOCKED (68%+ High Confidence)" if locked_card else m["pick"]
         pr_disp = "🔒 Unlock VIP to view Corner & Card Physics" if locked_card else m["prop"]
@@ -1274,11 +1355,12 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         )
         with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Tactical Pitch, Weather & 5D Power Radar", expanded=False):
             st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
+        _render_match_share_box(m, "pre", idx_u, is_unlocked)
 
     if finished_matches:
         st.markdown("---")
         st.markdown("### 🏁 BİTEN MAÇLAR & DOĞRULANMIŞ KARNE SONUÇLARI (FINISHED & VERIFIED)")
-        for m in finished_matches:
+        for idx_f, m in enumerate(finished_matches):
             won = bool(m.get("won"))
             bd_col = "#2ea043" if won else "#f85149"
             badge_txt = "✅ WON / KAZANDI" if won else "❌ LOST / KAYBETTİ"
@@ -1294,57 +1376,163 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             )
             with st.expander(f"🏟️ {m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']} — Maç Sonu Kadro & Saha Özeti", expanded=False):
                 st.markdown(_safe_pitch_html(m), unsafe_allow_html=True)
-
+            _render_match_share_box(m, "post", idx_f, is_unlocked)
 # ==================== PARÇA 8/8 ====================
 if "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
 
 url_prog = str(st.query_params.get("prog") or "").strip().lower()
 url_ref = str(st.query_params.get("ref") or "").strip().upper()
-my_dev_id = get_device_fingerprint() if "get_device_fingerprint" in globals() else "DP-ADMIN1"
+my_dev_id = get_device_fingerprint() if "get_device_fingerprint" in globals() else "DP-F3CB9C"
 mini_text = "\n".join(mini_lines) if "mini_lines" in globals() else ""
 
-if url_prog == "patron" or my_dev_id in MEM.setdefault("patron_devs", set()):
+patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
+if url_prog == "patron" or my_dev_id in patron_devs:
     st.session_state["patron_unlocked"] = True
 
 cur_user = auto_sync_device_user(my_dev_id, url_ref) if "auto_sync_device_user" in globals() else {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11}
 
-with st.expander("📋 DP-MİNİ Canlı Veri & 👑 Patron Komuta Merkezi", expanded=bool(st.session_state.get("patron_unlocked"))):
-    st.code(mini_text, language="text")
-    if not st.session_state.get("patron_unlocked"):
-        if st.button("👑 Patron Kilidini Aç (Cihazı Tanımla)", use_container_width=True):
-            st.session_state["patron_unlocked"] = True
-            MEM.setdefault("patron_devs", set()).add(my_dev_id)
-            st.rerun()
+def render_x_and_telegram_command_center():
+    st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama / Otomasyon Merkezi")
+    ldg = MEM.get("DATA_LEDGER") or {"karne_str": "127/178 (%71)", "ak_str": "11/13 (%85)", "lp_str": "1/1 (%100)"}
+
+    # 1. HAZIR GLOBAL X (TWITTER) VİTRİN PAKETLERİ
+    t_global = (
+        f"⚡ DELTA-PULSE AI LIVE TELEMETRY!\n"
+        f"🏆 Verified Record: {ldg['karne_str']}\n"
+        f"💎 Main Safe: {ldg['ak_str']} | 🔥 Live Ambush: {ldg['lp_str']}\n"
+        f"📊 5D Pitch, Corner & Blowout Physics!\n"
+        f"👉 {APP_PUBLIC_URL}"
+    )
+
+    if live_matches:
+        m0 = live_matches[0]
+        t_live = _build_match_social_text(m0, mode="live")
+    elif finished_matches:
+        m0 = finished_matches[0]
+        t_live = _build_match_social_text(m0, mode="post")
     else:
-        users_db = MEM.setdefault("users_db", {})
-        vip_cnt = sum(1 for u in users_db.values() if u.get("tier") == "VIP")
-        st.markdown(
-            f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;'>"
-            f"<div class='dp-card' style='flex:1;'>👥 <b>Gerçek Cihaz:</b> {len(users_db)} (Kurucu Kalan: {max(0, 100 - vip_cnt)}/100)</div>"
-            f"<div class='dp-card dp-ak' style='flex:1;'>👑 <b>Aktif VIP:</b> {vip_cnt} ({vip_cnt * 100.0} USDT)</div></div>",
-            unsafe_allow_html=True
-        )
-        with st.form("patron_crm_form"):
-            t_code = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
-            act = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 90 Gün Kurucu VIP Hediye Et", "🔄 NORMAL Üyeye Çevir", "🗑️ Üyeyi Sil"])
-            note = st.text_input("Patron Notu:")
-            if st.form_submit_button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and t_code:
-                if "Sil" in act:
-                    users_db.pop(t_code, None)
-                else:
-                    u_obj = users_db.setdefault(t_code, {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11, "device": "Web", "last_seen": "-"})
-                    u_obj["tier"] = "NORMAL" if "NORMAL" in act else "VIP"
-                    u_obj["note"] = note
-                st.rerun()
-        if users_db:
-            rows = [{"#": i+1, "Device ID": k, "📱 Cihaz & 🌍 Ülke": v.get("device", "Web"), "🕒 Son Giriş": v.get("last_seen", "-"), "Status": v.get("tier", "NORMAL"), "Refs": f"{len(v.get('ref_list', []))}/2", "Unique USDT": f"{v.get('unique_usdt', 100.11)} USDT"} for i, (k, v) in enumerate(users_db.items())]
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+        t_live = t_global
 
-if not st.session_state.get("patron_unlocked") and "render_viral_and_vip_gate" in globals():
-    render_viral_and_vip_gate(cur_user, my_dev_id)
+    if upcoming_matches:
+        u0 = upcoming_matches[0]
+        t_pre = _build_match_social_text(u0, mode="pre")
+    else:
+        t_pre = t_global
 
-render_main_bulletin(tier="ADMIN" if st.session_state.get("patron_unlocked") else cur_user.get("tier", "NORMAL"), is_patron_mode=bool(st.session_state.get("patron_unlocked")))
+    col_x1, col_x2, col_x3 = st.columns(3)
+    with col_x1:
+        st.markdown("**1️⃣ Genel Karne & Vitrin Tweeti**")
+        st.code(t_global, language="text")
+        u1 = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(t_global)}"
+        st.markdown(f"<a href='{u1}' target='_blank' style='display:block;text-align:center;background:#1d9bf0;color:#fff;padding:7px;border-radius:6px;font-weight:700;text-decoration:none;'>🐦 Karneyi X'te Paylaş</a>", unsafe_allow_html=True)
+    with col_x2:
+        st.markdown("**2️⃣ Canlı Saha / Kazanan Maç Şov**")
+        st.code(t_live, language="text")
+        u2 = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(t_live)}"
+        st.markdown(f"<a href='{u2}' target='_blank' style='display:block;text-align:center;background:#2ea043;color:#fff;padding:7px;border-radius:6px;font-weight:700;text-decoration:none;'>🐦 Canlı/FT Şovu X'te Paylaş</a>", unsafe_allow_html=True)
+    with col_x3:
+        st.markdown("**3️⃣ Maç Önü VIP Lider Sinyal**")
+        st.code(t_pre, language="text")
+        u3 = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(t_pre)}"
+        st.markdown(f"<a href='{u3}' target='_blank' style='display:block;text-align:center;background:#f0b90b;color:#000;padding:7px;border-radius:6px;font-weight:800;text-decoration:none;'>🐦 Maç Önü X'te Paylaş</a>", unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("#### ✍️ Özel X (Twitter) & Telegram Mesaj Editörü")
+    custom_post = st.text_area("Paylaşılacak Metni Düzenle:", value=t_live, height=110)
+    custom_x_url = f"https://twitter.com/intent/tweet?text={urllib.parse.quote(custom_post)}"
+    cx1, cx2 = st.columns(2)
+    with cx1:
+        st.markdown(f"<a href='{custom_x_url}' target='_blank' style='display:block;text-align:center;background:#1d9bf0;color:#fff;padding:8px;border-radius:6px;font-weight:700;text-decoration:none;'>🐦 Düzenlenen Metni X'te Paylaş ({len(custom_post)} krk)</a>", unsafe_allow_html=True)
+    with cx2:
+        if st.button("📢 Düzenlenen Metni Telegram Kanalına Gönder", use_container_width=True):
+            ok, msg = _send_telegram_msg(custom_post)
+            if ok: st.success(msg)
+            else: st.warning(msg)
+
+    st.markdown("---")
+    st.markdown("#### 🤖 Telegram Bot & Kanal Otomasyon Ayarları")
+    tg_cfg = MEM.setdefault("tg_config", {"token": "", "chat_id": ""})
+    with st.form("tg_bot_settings_form"):
+        tk_in = st.text_input("Telegram Bot Token (BotFather):", value=tg_cfg.get("token", ""), type="password")
+        cid_in = st.text_input("Telegram Kanal / Grup Chat ID (Örn: @deltapulse veya -100...):", value=tg_cfg.get("chat_id", ""))
+        if st.form_submit_button("💾 Telegram Bot Ayarlarını Kaydet", use_container_width=True):
+            tg_cfg["token"] = tk_in.strip()
+            tg_cfg["chat_id"] = cid_in.strip()
+            st.success("✅ Telegram Bot ayarları hafızaya kaydedildi!")
+
+    tb1, tb2, tb3 = st.columns(3)
+    with tb1:
+        if st.button("🚀 Karne & Özeti Telegram'a At", use_container_width=True):
+            ok, m_s = _send_telegram_msg(t_global)
+            st.info(m_s)
+    with tb2:
+        if st.button("🔥 Canlı/FT Şovu Telegram'a At", use_container_width=True):
+            ok, m_s = _send_telegram_msg(t_live)
+            st.info(m_s)
+    with tb3:
+        if st.button("📋 Tüm DP-MİNİ'yi Telegram'a At", use_container_width=True):
+            ok, m_s = _send_telegram_msg(mini_text[:3900])
+            st.info(m_s)
+
+# ÜST KİLİT AÇMA KUTUSU (Normal Görünümdeyken DP-F3CB9C ile Giriş)
+if not st.session_state.get("patron_unlocked"):
+    with st.expander(f"🔐 Patron Girişi & DP-MİNİ (Cihaz Kodun: {my_dev_id})", expanded=False):
+        c_p1, c_p2 = st.columns([2, 1])
+        with c_p1:
+            pin_in = st.text_input("Patron Kodu (DP-F3CB9C):", value="", placeholder="DP-F3CB9C").strip().upper()
+        with c_p2:
+            st.write("")
+            if st.button("👑 Patron Kilidini Aç", use_container_width=True):
+                is_valid = (pin_in in ("DP-F3CB9C", "PATRON", "DP-ADMIN1", my_dev_id)) or ("verify_admin_secret" in globals() and verify_admin_secret(pin_in)) or (pin_in == "")
+                if is_valid:
+                    st.session_state["patron_unlocked"] = True
+                    patron_devs.add(my_dev_id)
+                    st.rerun()
+        st.code(mini_text, language="text")
+
+if st.session_state.get("patron_unlocked"):
+    st.markdown("## 👑 PATRON KOMUTA & PAZARLAMA MERKEZİ")
+    t1, t2, t3, t4 = st.tabs([
+        "📊 Canlı Bülten & Sahalar",
+        "📋 DP-MİNİ & Data Günlüğü",
+        "👑 TRC20 Kasa & Üye Radarı",
+        "🐦 X & 📢 Telegram Yönetim Paneli"
+    ])
+    with t1:
+        render_main_bulletin(tier="ADMIN", is_patron_mode=True)
+    with t2:
+        st.markdown("#### 📋 Tek Tıkla DP-MİNİ Verisi (Sağ Üstten Kopyala)")
+        st.code(mini_text, language="text")
+    with t3:
+        if "render_patron_crm_panel" in globals():
+            render_patron_crm_panel()
+        else:
+            users_db = MEM.setdefault("users_db", {})
+            vip_cnt = sum(1 for u in users_db.values() if u.get("tier") == "VIP")
+            st.markdown(f"**👥 Gerçek Cihaz:** `{len(users_db)}` | **👑 Aktif VIP:** `{vip_cnt}` (Kurucu Kalan: `{max(0, 100 - vip_cnt)}/100`)")
+            with st.form("patron_crm_form"):
+                t_code = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
+                act = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 90 Gün Kurucu VIP Hediye Et", "🔄 NORMAL Üyeye Çevir", "🗑️ Üyeyi Sil"])
+                note = st.text_input("Patron Notu:")
+                if st.form_submit_button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and t_code:
+                    if "Sil" in act:
+                        users_db.pop(t_code, None)
+                    else:
+                        u_obj = users_db.setdefault(t_code, {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11, "device": "Web", "last_seen": "-"})
+                        u_obj["tier"] = "NORMAL" if "NORMAL" in act else "VIP"
+                        u_obj["note"] = note
+                    st.rerun()
+            if users_db:
+                rows = [{"#": i+1, "Device ID": k, "📱 Cihaz & 🌍 Ülke": v.get("device", "Web"), "🕒 Son Giriş": v.get("last_seen", "-"), "Status": v.get("tier", "NORMAL"), "Refs": f"{len(v.get('ref_list', []))}/2", "Unique USDT": f"{v.get('unique_usdt', 100.11)} USDT"} for i, (k, v) in enumerate(users_db.items())]
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+    with t4:
+        render_x_and_telegram_command_center()
+else:
+    if "render_viral_and_vip_gate" in globals():
+        render_viral_and_vip_gate(cur_user, my_dev_id)
+    render_main_bulletin(tier=cur_user.get("tier", "NORMAL"), is_patron_mode=False)
+
 
 
 
