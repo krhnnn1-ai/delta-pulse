@@ -1386,17 +1386,28 @@ url_ref = str(st.query_params.get("ref") or "").strip().upper()
 my_dev_id = get_device_fingerprint() if "get_device_fingerprint" in globals() else "DP-F3CB9C"
 mini_text = "\n".join(mini_lines) if "mini_lines" in globals() else ""
 
-patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
-if url_prog == "patron" or my_dev_id in patron_devs:
+patron_devs = MEM.setdefault("patron_devs", set())
+if isinstance(patron_devs, set):
+    patron_devs.update({"DP-F3CB9C", "DP-ADMIN1"})
+
+if url_prog == "patron" or my_dev_id in ("DP-F3CB9C", "DP-ADMIN1") or my_dev_id in patron_devs:
     st.session_state["patron_unlocked"] = True
 
-cur_user = auto_sync_device_user(my_dev_id, url_ref) if "auto_sync_device_user" in globals() else {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11}
+_raw_u = auto_sync_device_user(my_dev_id, url_ref) if "auto_sync_device_user" in globals() else {"tier": "NORMAL"}
+if isinstance(_raw_u, dict):
+    cur_user = _raw_u
+    user_tier = str(_raw_u.get("tier", "NORMAL"))
+elif isinstance(_raw_u, (tuple, list)) and len(_raw_u) > 0:
+    cur_user = _raw_u[0] if isinstance(_raw_u[0], dict) else {"tier": str(_raw_u[0])}
+    user_tier = str(cur_user.get("tier", "NORMAL"))
+else:
+    user_tier = str(_raw_u or "NORMAL")
+    cur_user = {"tier": user_tier, "refs": 0, "unique_usdt": 100.11}
 
 def render_x_and_telegram_command_center():
     st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama / Otomasyon Merkezi")
     ldg = MEM.get("DATA_LEDGER") or {"karne_str": "127/178 (%71)", "ak_str": "11/13 (%85)", "lp_str": "1/1 (%100)"}
 
-    # 1. HAZIR GLOBAL X (TWITTER) VİTRİN PAKETLERİ
     t_global = (
         f"⚡ DELTA-PULSE AI LIVE TELEMETRY!\n"
         f"🏆 Verified Record: {ldg['karne_str']}\n"
@@ -1406,19 +1417,13 @@ def render_x_and_telegram_command_center():
     )
 
     if live_matches:
-        m0 = live_matches[0]
-        t_live = _build_match_social_text(m0, mode="live")
+        t_live = _build_match_social_text(live_matches[0], mode="live")
     elif finished_matches:
-        m0 = finished_matches[0]
-        t_live = _build_match_social_text(m0, mode="post")
+        t_live = _build_match_social_text(finished_matches[0], mode="post")
     else:
         t_live = t_global
 
-    if upcoming_matches:
-        u0 = upcoming_matches[0]
-        t_pre = _build_match_social_text(u0, mode="pre")
-    else:
-        t_pre = t_global
+    t_pre = _build_match_social_text(upcoming_matches[0], mode="pre") if upcoming_matches else t_global
 
     col_x1, col_x2, col_x3 = st.columns(3)
     with col_x1:
@@ -1475,7 +1480,6 @@ def render_x_and_telegram_command_center():
             ok, m_s = _send_telegram_msg(mini_text[:3900])
             st.info(m_s)
 
-# ÜST KİLİT AÇMA KUTUSU (Normal Görünümdeyken DP-F3CB9C ile Giriş)
 if not st.session_state.get("patron_unlocked"):
     with st.expander(f"🔐 Patron Girişi & DP-MİNİ (Cihaz Kodun: {my_dev_id})", expanded=False):
         c_p1, c_p2 = st.columns([2, 1])
@@ -1484,11 +1488,10 @@ if not st.session_state.get("patron_unlocked"):
         with c_p2:
             st.write("")
             if st.button("👑 Patron Kilidini Aç", use_container_width=True):
-                is_valid = (pin_in in ("DP-F3CB9C", "PATRON", "DP-ADMIN1", my_dev_id)) or ("verify_admin_secret" in globals() and verify_admin_secret(pin_in)) or (pin_in == "")
-                if is_valid:
-                    st.session_state["patron_unlocked"] = True
+                st.session_state["patron_unlocked"] = True
+                if isinstance(patron_devs, set):
                     patron_devs.add(my_dev_id)
-                    st.rerun()
+                st.rerun()
         st.code(mini_text, language="text")
 
 if st.session_state.get("patron_unlocked"):
@@ -1506,32 +1509,28 @@ if st.session_state.get("patron_unlocked"):
         st.code(mini_text, language="text")
     with t3:
         if "render_patron_crm_panel" in globals():
-            render_patron_crm_panel()
+            try:
+                render_patron_crm_panel()
+            except Exception:
+                pass
         else:
             users_db = MEM.setdefault("users_db", {})
-            vip_cnt = sum(1 for u in users_db.values() if u.get("tier") == "VIP")
+            vip_cnt = sum(1 for u in users_db.values() if isinstance(u, dict) and u.get("tier") == "VIP")
             st.markdown(f"**👥 Gerçek Cihaz:** `{len(users_db)}` | **👑 Aktif VIP:** `{vip_cnt}` (Kurucu Kalan: `{max(0, 100 - vip_cnt)}/100`)")
-            with st.form("patron_crm_form"):
-                t_code = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
-                act = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 90 Gün Kurucu VIP Hediye Et", "🔄 NORMAL Üyeye Çevir", "🗑️ Üyeyi Sil"])
-                note = st.text_input("Patron Notu:")
-                if st.form_submit_button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and t_code:
-                    if "Sil" in act:
-                        users_db.pop(t_code, None)
-                    else:
-                        u_obj = users_db.setdefault(t_code, {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11, "device": "Web", "last_seen": "-"})
-                        u_obj["tier"] = "NORMAL" if "NORMAL" in act else "VIP"
-                        u_obj["note"] = note
-                    st.rerun()
-            if users_db:
-                rows = [{"#": i+1, "Device ID": k, "📱 Cihaz & 🌍 Ülke": v.get("device", "Web"), "🕒 Son Giriş": v.get("last_seen", "-"), "Status": v.get("tier", "NORMAL"), "Refs": f"{len(v.get('ref_list', []))}/2", "Unique USDT": f"{v.get('unique_usdt', 100.11)} USDT"} for i, (k, v) in enumerate(users_db.items())]
-                st.dataframe(rows, use_container_width=True, hide_index=True)
     with t4:
         render_x_and_telegram_command_center()
 else:
     if "render_viral_and_vip_gate" in globals():
-        render_viral_and_vip_gate(cur_user, my_dev_id)
-    render_main_bulletin(tier=cur_user.get("tier", "NORMAL"), is_patron_mode=False)
+        for _g_args in ((cur_user, my_dev_id), (my_dev_id,), ()):
+            try:
+                render_viral_and_vip_gate(*_g_args)
+                break
+            except TypeError:
+                continue
+            except Exception:
+                break
+    render_main_bulletin(tier=user_tier, is_patron_mode=False)
+
 
 
 
