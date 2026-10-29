@@ -302,18 +302,31 @@ def derive_match_weather(match_title, lig_adi, raw_weather=None):
         w_type = "⛅ Açık • Kusursuz Stadyum Zemini" if seed % 3 != 0 else "🌧️ Hafif Yağışlı • Kaygan Zemin"
     return f"{t_c}°C • {w_type}"
 
+def extract_referee_profile(g_info, match_title, lig_adi):
+    offs = (g_info or {}).get("officials") or []
+    ref_name = ""
+    if offs and isinstance(offs[0], dict):
+        ref_name = str(offs[0].get("displayName") or offs[0].get("fullName") or "").strip()
+    seed = sum(ord(c) for c in (ref_name if ref_name else str(match_title)))
+    hot_base = 4.4 if any(k in str(lig_adi).upper() for k in ("SERIE", "BREZİLYA", "ARJANTİN", "LA LIGA", "TÜRKİYE", "bra.", "ita.", "esp.")) else 3.6
+    ref_avg = round(hot_base + ((seed % 7) - 3) * 0.35, 1)
+    style = "🟥Sert" if ref_avg >= 4.7 else ("🕊️Toleranslı" if ref_avg <= 3.5 else "⚖️Dengeli")
+    disp = f"{ref_name} ({style} • Ort:{ref_avg})" if ref_name else f"Atama Bekleniyor ({style} • Ort:{ref_avg})"
+    return {"name": ref_name, "avg": ref_avg, "style": style, "disp": disp}
+
 def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
     hist_mem = MEM.setdefault("team_hist_cache", {})
-    ck = f"{slug}_{t_name}_v3_twin"
+    ck = f"{slug}_{t_name}_v4_refcard"
     if ck in hist_mem:
         return dict(hist_mem[ck])
 
     seed = sum(ord(c) for c in str(t_name))
     cor_avg = round(3.8 + (t_mom * 0.022) + ((seed % 4) * 0.25), 1)
     sh_avg = round(9.2 + (t_mom * 0.055) + ((seed % 4) * 0.5), 1)
+    card_avg = round(1.8 + ((seed % 4) * 0.3), 1)
+    foul_avg = round(10.5 + ((seed % 5) * 0.6), 1)
     prev_tac = resolve_team_formation(t_name, "", t_mom, side_idx == 0)
-    inj_names, wing_inj = set(), False
-    prev_st, prev_bn = [], []
+    inj_names, wing_inj, prev_st, prev_bn = set(), False, [], []
 
     inj_list = data.get("injuries") or []
     if side_idx < len(inj_list) and isinstance(inj_list[side_idx], dict):
@@ -322,14 +335,13 @@ def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
             p_nm = str(ath.get("shortName") or ath.get("displayName") or "").strip()
             if p_nm:
                 inj_names.add(p_nm.lower())
-            pos_ab = str((ath.get("position") or {}).get("abbreviation") or "")
-            if any(k in pos_ab for k in ("W", "M", "F", "ST")):
+            if any(k in str((ath.get("position") or {}).get("abbreviation") or "") for k in ("W", "M", "F", "ST")):
                 wing_inj = True
 
     l5 = data.get("lastFiveGames") or []
     if side_idx < len(l5) and isinstance(l5[side_idx], dict):
         evs = [e for e in (l5[side_idx].get("events") or []) if isinstance(e, dict)][:2]
-        c_vals, s_vals = [], []
+        c_vals, s_vals, crd_vals, fl_vals = [], [], [], []
         for e_idx, ev_item in enumerate(evs):
             last_id = str(ev_item.get("id") or ev_item.get("eventId") or "")
             if not last_id:
@@ -342,10 +354,12 @@ def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
                         bt_nm = str((bt.get("team") or {}).get("shortDisplayName") or (bt.get("team") or {}).get("displayName") or "")
                         if t_name.lower() in bt_nm.lower() or bt_nm.lower() in t_name.lower():
                             c_v, s_v = get_stat(bt, ["wonCorners", "corners"]), get_stat(bt, ["totalShots", "shotsSummary"])
-                            if c_v > 0:
-                                c_vals.append(c_v)
-                            if s_v > 0:
-                                s_vals.append(s_v)
+                            y_v = get_stat(bt, ["yellowCards"]) + get_stat(bt, ["redCards"])
+                            f_v = get_stat(bt, ["foulsCommitted"])
+                            if c_v > 0: c_vals.append(c_v)
+                            if s_v > 0: s_vals.append(s_v)
+                            crd_vals.append(y_v)
+                            if f_v > 0: fl_vals.append(f_v)
                     if e_idx == 0:
                         for r_old in (d_h.get("rosters") or []):
                             rt_nm = str((r_old.get("team") or {}).get("shortDisplayName") or (r_old.get("team") or {}).get("displayName") or "")
@@ -359,33 +373,29 @@ def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
                                     pos_a = str(((pe.get("position") or ath.get("position")) or {}).get("abbreviation") or "M")
                                     b_r = 73 + (sum(ord(c) for c in p_n) % 11) + (2 if kademe == 1 else 0)
                                     p_obj = {"name": p_n, "num": j_n, "pos": pos_a, "rat": min(91, b_r)}
-                                    if pe.get("starter"):
-                                        prev_st.append(p_obj)
+                                    if pe.get("starter"): prev_st.append(p_obj)
                                     else:
                                         p_obj["rat"] = max(66, b_r - (2 if kademe == 1 else 5))
                                         prev_bn.append(p_obj)
             except Exception:
                 pass
-        if c_vals:
-            cor_avg = round(sum(c_vals) / len(c_vals), 1)
-        if s_vals:
-            sh_avg = round(sum(s_vals) / len(s_vals), 1)
+        if c_vals: cor_avg = round(sum(c_vals) / len(c_vals), 1)
+        if s_vals: sh_avg = round(sum(s_vals) / len(s_vals), 1)
+        if crd_vals: card_avg = round(sum(crd_vals) / len(crd_vals), 1)
+        if fl_vals: foul_avg = round(sum(fl_vals) / len(fl_vals), 1)
 
-    # Son Maçın 11'inde Sakat Varsa Yedekten Otomatik Oyuncu Montajı
     if prev_st and inj_names:
         clean_st, sub_pool = [], list(prev_bn)
         for p in prev_st:
             if p["name"].lower() in inj_names:
                 wing_inj = True
-                if sub_pool:
-                    clean_st.append(sub_pool.pop(0))
-            else:
-                clean_st.append(p)
+                if sub_pool: clean_st.append(sub_pool.pop(0))
+            else: clean_st.append(p)
         prev_st, prev_bn = clean_st, sub_pool
 
     h_base = {
-        "cor_avg": cor_avg, "sh_avg": sh_avg, "prev_tac": prev_tac,
-        "inj_cnt": len(inj_names), "wing_inj": wing_inj,
+        "cor_avg": cor_avg, "sh_avg": sh_avg, "card_avg": card_avg, "foul_avg": foul_avg,
+        "prev_tac": prev_tac, "inj_cnt": len(inj_names), "wing_inj": wing_inj,
         "prev_st": prev_st[:11], "prev_bn": prev_bn[:5]
     }
     hist_mem[ck] = h_base
@@ -406,6 +416,7 @@ def build_team_hist_metrics(h_base, cur_form, rot_cnt, starters, bench, t_mom, k
     def_shift = (cur_form in ("5-3-2", "5-4-1", "4-5-1") and h_base.get("prev_tac") in ("4-3-3", "4-2-3-1", "3-4-3")) or (total_missing >= 3 and sub_rat <= 72)
     return {
         "cor_avg": h_base.get("cor_avg", 4.5), "sh_avg": h_base.get("sh_avg", 10.5),
+        "card_avg": h_base.get("card_avg", 1.8), "foul_avg": h_base.get("foul_avg", 11.0),
         "prev_tac": h_base.get("prev_tac", cur_form), "sub_rat": sub_rat,
         "hungry_sub": hungry_sub, "wing_drop": real_wing_drop,
         "wing_impact": wing_impact, "def_shift": def_shift
@@ -413,11 +424,11 @@ def build_team_hist_metrics(h_base, cur_form, rot_cnt, starters, bench, t_mom, k
 
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task_tuple
-    cache_key = f"{ev_id}_{state}_v74_twin"
+    cache_key = f"{ev_id}_{state}_v75_refcard"
     if cache_key in MEM["roster_cache"]:
         return match_title, MEM["roster_cache"][cache_key]
 
-    res = {"official": False, "weather": derive_match_weather(match_title, slug), "h": {}, "a": {}}
+    res = {"official": False, "weather": derive_match_weather(match_title, slug), "ref": extract_referee_profile({}, match_title, slug), "h": {}, "a": {}}
     data = {}
     try:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={ev_id}"
@@ -426,6 +437,7 @@ def fetch_and_analyze_roster(task_tuple):
         g_info = data.get("gameInfo") or {}
         if g_info.get("weather"):
             res["weather"] = derive_match_weather(match_title, slug, g_info.get("weather"))
+        res["ref"] = extract_referee_profile(g_info, match_title, slug)
         if (g_info.get("venue") or {}).get("fullName"):
             res["venue"] = str(g_info["venue"]["fullName"])
 
@@ -455,8 +467,7 @@ def fetch_and_analyze_roster(task_tuple):
                 prev_names = {p["name"].lower() for p in (h_base.get("prev_st") or [])}
                 rot_cnt = sum(1 for p in starters if p["name"].lower() not in prev_names) if len(prev_names) >= 8 else sum(1 for p in starters if safe_int(p["num"], 10) >= 28)
             else:
-                starters = list(h_base.get("prev_st") or [])
-                bench = list(h_base.get("prev_bn") or [])
+                starters, bench = list(h_base.get("prev_st") or []), list(h_base.get("prev_bn") or [])
                 rot_cnt = safe_int(h_base.get("inj_cnt"), 0)
 
             if len(starters) >= 8:
@@ -734,9 +745,9 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
 def compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4):
     h_d = (r_data.get("h") or {}) if isinstance(r_data, dict) else {}
     a_d = (r_data.get("a") or {}) if isinstance(r_data, dict) else {}
-    def_h = {"cor_avg": 4.8, "sh_avg": 11.0, "sub_rat": 74, "hungry_sub": False, "wing_drop": False, "wing_impact": 0, "def_shift": False}
-    h_hist = h_d.get("hist") or def_h
-    a_hist = a_d.get("hist") or def_h
+    ref_d = (r_data.get("ref") or {"avg": 4.0, "style": "⚖️Dengeli", "disp": "Standart"}) if isinstance(r_data, dict) else {"avg": 4.0, "style": "⚖️Dengeli", "disp": "Standart"}
+    def_h = {"cor_avg": 4.8, "sh_avg": 11.0, "card_avg": 1.8, "sub_rat": 74, "hungry_sub": False, "wing_drop": False, "wing_impact": 0, "def_shift": False}
+    h_hist, a_hist = (h_d.get("hist") or def_h), (a_d.get("hist") or def_h)
     w_str = str((r_data.get("weather") or "") if isinstance(r_data, dict) else "")
     h_tac, a_tac = str(h_d.get("tac") or "4-2-3-1"), str(a_d.get("tac") or "4-2-3-1")
     h_dri, a_dri = safe_int(h_d.get("dri"), 71), safe_int(a_d.get("dri"), 71)
@@ -748,58 +759,70 @@ def compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_da
     opp_def = a_def if fav_h else h_def
     fav_hist = h_hist if fav_h else a_hist
 
-    # Son 2 Maç Korner Ortalaması + Oyuncu Güç Puanı Bazlı Yedek Etkisi (+4p Aç Yedek vs -12p Zayıf Yedek)
+    # 1. FUTBOLCU GÜCÜ + SAVUNMA ZAAFINDAN ERKEN KOPMA / HANDİKAP (-1.5) OLASILIĞI
+    power_gap = int(round(((att_sho + att_dri) / 2.0) - opp_def))
+    hungry_bonus = 6 if fav_hist.get("hungry_sub") else 0
+    p_blowout = min(89, max(18, int(m4["p_team"] * 0.58 + max(0, power_gap) * 1.5 + m4["d_weak"] * 0.38 + hungry_bonus)))
+
+    # 2. KORNER OLASILIĞI (Geçmiş Boxscore + Kanat Sürtünmesi + Yedek Gücü)
     hist_tot_cor = round(safe_float(h_hist.get("cor_avg"), 4.8) + safe_float(a_hist.get("cor_avg"), 4.5), 1)
     hist_cor_bonus = int(round((hist_tot_cor - 9.0) * 3.5))
     sub_power_adj = safe_int(fav_hist.get("wing_impact"), 0)
     def_shift_flag = bool(h_hist.get("def_shift") or a_hist.get("def_shift"))
 
-    wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "4-2-3-1", "3-4-2-1")
-    passive_tacs = ("4-4-2", "5-3-2", "5-4-1", "4-5-1")
+    wing_tacs, passive_tacs = ("4-3-3", "3-4-3", "3-5-2", "4-2-3-1", "3-4-2-1"), ("4-4-2", "5-3-2", "5-4-1", "4-5-1")
     wet_bonus = 8 if any(k in w_str for k in ("🌧️", "Yağış", "Islak", "Nemli", "Rain")) else 0
     st_list = (h_d.get("starters") or []) + (a_d.get("starters") or [])
     tall_st = 5 if any(p.get("pos") in ("ST", "F", "CF") and safe_int(p.get("rat"), 70) >= 77 for p in st_list) else 0
 
-    def_friction = -8 if (opp_def <= 58 and att_sho >= 74) else (11 if 61 <= opp_def <= 74 and (att_dri >= 72 or att_sho >= 73) else 3)
+    def_friction = -6 if (opp_def <= 57 and m4["bus_score"] < 45) else (11 if 60 <= opp_def <= 75 and (att_dri >= 72 or att_sho >= 73) else 4)
     tac_cor = 7 if (h_tac in wing_tacs or a_tac in wing_tacs) else (-9 if (h_tac in passive_tacs and a_tac in passive_tacs) else 0)
     p_cor = min(89, max(32, 48 + def_friction + tac_cor + wet_bonus + tall_st + hist_cor_bonus + sub_power_adj + int(m4["bus_score"] * 0.08)))
 
+    # 3. KART OLASILIĞI (Erken Kopan Maçta -20p Otomatik Kart Freni!)
+    hist_tot_card = round(safe_float(h_hist.get("card_avg"), 1.8) + safe_float(a_hist.get("card_avg"), 1.8), 1)
+    ref_avg = safe_float(ref_d.get("avg"), 4.0)
+    ref_card_adj = int(round((ref_avg - 4.0) * 7.5)) + int(round((hist_tot_card - 3.8) * 4.0))
+    blowout_damp = -20 if p_blowout >= 62 else (-10 if p_blowout >= 54 else 0)
+
     mom_gap = abs(h_mom - a_mom)
-    hot_lig = 8 if any(k in lig_adi for k in ("SERIE", "BREZİLYA", "ARJANTİN", "LA LIGA", "TÜRKİYE")) else 2
-    derby_tens = 10 if (mom_gap <= 15 and h_mom >= 45 and a_mom >= 45) else (5 if abs(fav_val) <= 135 else 0)
-    p_card = min(86, max(38, 46 + hot_lig + derby_tens + (6 if max(h_dri, a_dri) >= opp_def + 3 else 2) + (wet_bonus // 2)))
+    hot_lig = 7 if any(k in lig_adi for k in ("SERIE", "BREZİLYA", "ARJANTİN", "LA LIGA", "TÜRKİYE")) else 2
+    derby_tens = 10 if (mom_gap <= 15 and h_mom >= 45 and a_mom >= 45 and blowout_damp == 0) else 0
+    p_card = min(86, max(22, 45 + hot_lig + derby_tens + ref_card_adj + blowout_damp + (5 if max(h_dri, a_dri) >= opp_def + 3 else 0) + (wet_bonus // 2)))
 
     cor_line = "9.5" if ("PREMIER" in lig_adi or "EFL" in lig_adi or "İSKOÇYA" in lig_adi or ou_val >= 3.5) else "8.5"
-    card_line = "4.5" if hot_lig >= 8 else "3.5"
-    return p_cor, p_card, cor_line, card_line, hist_tot_cor, fav_hist, def_shift_flag
+    card_line = "4.5" if (hot_lig >= 7 and ref_avg >= 4.0) else "3.5"
+    return p_cor, p_card, p_blowout, cor_line, card_line, hist_tot_cor, hist_tot_card, ref_d, fav_hist, def_shift_flag
 
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi):
     m4 = compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi)
-    p_cor, p_card, cor_line, card_line, hist_cor, fav_hist, def_shift = compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4)
-    m4.update({"p_cor": p_cor, "p_card": p_card, "cor_line": cor_line, "card_line": card_line, "hist_cor": hist_cor})
+    p_cor, p_card, p_blowout, cor_line, card_line, hist_cor, hist_card, ref_d, fav_hist, def_shift = compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4)
+    m4.update({"p_cor": p_cor, "p_card": p_card, "p_blowout": p_blowout, "cor_line": cor_line, "card_line": card_line, "hist_cor": hist_cor})
 
     fav_team = h_name if m4["fav_is_home"] else a_name
     dc_code = "1X" if m4["fav_is_home"] else "X2"
     mom_gap, warn_flag = abs(h_mom - a_mom), ("⚠️Δ+" in disp_odd)
-    wing_drop = bool(fav_hist.get("wing_drop"))
-    hungry_sub = bool(fav_hist.get("hungry_sub"))
+    wing_drop, hungry_sub = bool(fav_hist.get("wing_drop")), bool(fav_hist.get("hungry_sub"))
     sub_rat = safe_int(fav_hist.get("sub_rat"), 74)
 
     if f"📊Son2Kor:{hist_cor}" not in disp_odd:
         disp_odd += f" 📊Son2Kor:{hist_cor}"
+    if p_blowout >= 62 and "💥ErkenKopar" not in disp_odd:
+        disp_odd += f" 💥ErkenKopar(%{p_blowout})"
     if hungry_sub and "🔥AçYedek" not in disp_odd:
         disp_odd += f" 🔥AçYedek({sub_rat}p)"
     elif wing_drop and "🏥KanatKaybı" not in disp_odd:
         disp_odd += f" 🏥KanatKaybı({sub_rat}p)"
     if def_shift and "🛡️SakatKapanma" not in disp_odd:
         disp_odd += " 🛡️SakatKapanma"
-        m4["p_over35"] = max(10, m4["p_over35"] - 6)
-        m4["p_shield"] = min(82, m4["p_shield"] + 7)
+        m4["p_over35"], m4["p_shield"] = max(10, m4["p_over35"] - 6), min(82, m4["p_shield"] + 7)
 
-    veto_under35 = (m4["p_over35"] >= 26 or (ou_val >= 3.5 and not def_shift) or m4["d_weak"] >= 58)
+    veto_under35 = (m4["p_over35"] >= 26 or (ou_val >= 3.5 and not def_shift) or m4["d_weak"] >= 58 or p_blowout >= 64)
 
-    if fav_val <= -215 and mom_gap >= 32 and m4["p_team"] >= 50 and not warn_flag and not wing_drop:
+    if fav_val <= -210 and mom_gap >= 30 and m4["p_team"] >= 50 and not warn_flag and not wing_drop:
         pick, conf = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)", min(97, max(86, m4["p_team"] + 30))
+    elif p_blowout >= 66 and fav_val <= -135 and mom_gap >= 10 and not warn_flag:
+        pick, conf = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)", min(88, max(72, p_blowout + 6))
     elif veto_under35:
         pick, conf = ("Maç 2.5 Gol Üst", min(88, max(70, m4["p_over25"] + 16))) if ("💥TG↑" in disp_odd or m4["p_over25"] >= 52) else (f"{fav_team} Takım Golü 1.5 Üst", min(86, max(68, m4["p_team"] + 16)))
     elif m4["p_shield"] >= 51 and m4["p_over35"] <= 22 and (fav_val <= -110 or mom_gap >= 18 or def_shift):
@@ -807,33 +830,44 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     else:
         pick, conf = "Maç 3.5 Gol Alt", min(62 if def_shift else 56, max(46, int((100 - m4["p_over35"]) * 0.56)))
 
-    if conf <= 59 and max(p_cor, p_card) >= conf + 6 and not def_shift:
-        pick, conf = (f"🚩 {cor_line} Korner Üst & 🟨 {card_line} Kart Üst", int(round((p_cor + p_card) / 2.0))) if (p_cor >= 66 and p_card >= 66) else ((f"🚩 {cor_line} Korner Üst", p_cor) if p_cor >= p_card else (f"🟨 {card_line} Kart Üst", p_card))
+    if conf <= 62 and max(p_cor, p_card) >= conf + 6 and not def_shift:
+        if p_cor >= 66 and p_card >= 66 and p_blowout < 58:
+            pick, conf = f"🚩 {cor_line} Korner Üst & 🟨 {card_line} Kart Üst", int(round((p_cor + p_card) / 2.0))
+        elif p_cor >= p_card:
+            pick, conf = f"🚩 {cor_line} Korner Üst", p_cor
+        else:
+            pick, conf = f"🟨 {card_line} Kart Üst", p_card
 
     if "🔥Δ-" in disp_odd:
         conf = min(97, conf + 4)
-    m4_str = f"Son2Kor:{hist_cor} | YedekGüç:{sub_rat} | xG:{m4['lam_h']}-{m4['lam_a']} | P(4+):%{m4['p_over35']} | 🚩Kor:%{p_cor} | 🟨Kart:%{p_card}"
+    m4_str = f"Son2Kor:{hist_cor} | 💥Kopma:%{p_blowout} | P(4+):%{m4['p_over35']} | 🚩Kor:%{p_cor} | 🟨Kart:%{p_card}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
-
 # ==================== PARÇA 5B/8 ====================
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4):
     wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "3-4-2-1", "4-2-3-1")
     if (h_tac in wing_tacs or a_tac in wing_tacs) and "📐KanatKorner" not in disp_odd:
         disp_odd += " 📐KanatKorner"
 
+    fav_is_home = m4["fav_is_home"]
+    fav_team = h_name if fav_is_home else a_name
     p_cor = m4.get("p_cor", 64)
     p_card = m4.get("p_card", 62)
+    p_blowout = m4.get("p_blowout", 45)
     cor_line = m4.get("cor_line", "8.5")
     card_line = m4.get("card_line", "4.5")
-    prop_str = f"🚩 {cor_line} Korner Üst (%{p_cor}) | 🟨 {card_line} Kart Üst (%{p_card})"
+
+    # Erken Kopma Yüksekse Yan Tercihten Kartı Siler, Yerine Handikap (-1.5) / Takım 1.5 Üst Koyar!
+    if p_blowout >= 62 or p_card <= 52:
+        second_prop = f"💥 {fav_team} Handikap -1.5 / 1.5 Gol Üst (%{p_blowout})"
+    else:
+        second_prop = f"🟨 {card_line} Kart Üst (%{p_card})"
+    prop_str = f"🚩 {cor_line} Korner Üst (%{p_cor}) | {second_prop}"
 
     if not is_off:
         MEM["pre_lineup_memory"][match_title] = pick
         return conf, pick, disp_odd, "⏳ Resmi Kadro Bekleniyor", prop_str, False
 
     old_pick = MEM["pre_lineup_memory"].get(match_title, pick)
-    fav_is_home = m4["fav_is_home"]
-    fav_team = h_name if fav_is_home else a_name
     fav_info = (r_data.get("h") if fav_is_home else r_data.get("a")) or {}
     rot_cnt = safe_int(fav_info.get("rot_cnt"), 0)
 
@@ -846,15 +880,19 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
         conf = max(36, conf - 4)
         disp_odd += " 🧬HafifRotasyon(-4p)"
 
-    # Resmi 11'de zayıf savunma yakalanırsa Korner/Alt yerine doğrudan Gol Üstüne geçer
-    if ("3.5 Alt" in pick or "Korner" in pick) and (m4["p_over35"] >= 27 or m4["d_weak"] >= 58 or (h_tac == "4-3-3" and a_tac == "4-3-3")):
-        pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 52 else "Maç 2.5 Gol Üst"
-        conf = max(conf, 68)
-        evo_changed = (pick != old_pick)
-    # Resmi 11'de 5'li savunma otobüsü + güçlü kanat varsa doğrudan Korner Üstüne geçer
-    elif m4["bus_score"] >= 60 and p_cor >= 68 and "Ana Kasa" not in pick:
+    # Resmi 11'de 5'li savunma otobüsü + yüksek korner varsa Korner Üstüne geçer
+    if m4["bus_score"] >= 60 and p_cor >= 72 and "Ana Kasa" not in pick:
         pick = f"🚩 {cor_line} Korner Üst"
         conf = max(conf, p_cor)
+        evo_changed = (pick != old_pick)
+    # Resmi 11'de erken kopma (%66+) ve favori gücü onaylanırsa Kazanır & 1.5 Üst / Gol Üstüne geçer
+    elif p_blowout >= 66 and fav_val <= -135 and ("3.5 Alt" in pick or "Kart" in pick):
+        pick = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
+        conf = max(conf, p_blowout + 5)
+        evo_changed = (pick != old_pick)
+    elif ("3.5 Alt" in pick or "Korner" in pick) and (m4["p_over35"] >= 28 or m4["d_weak"] >= 58):
+        pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 54 else "Maç 2.5 Gol Üst"
+        conf = max(conf, 68)
         evo_changed = (pick != old_pick)
 
     evo_str = f"🔄 {old_pick} ➔ ✅ {pick}" if evo_changed else "✅ Kadro Onaylı (Sabit)"
@@ -887,6 +925,10 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     p = str(pick or "")
     tot = h_score + a_score
+    if "Kazanır & 1.5 Gol Üst" in p:
+        return (h_score > a_score and tot >= 2) if h_name in p else (a_score > h_score and tot >= 2)
+    if "Handikap" in p:
+        return (h_score - a_score >= 2) if h_name in p else (a_score - h_score >= 2)
     if "2.5 Gol Üst" in p:
         return tot >= 3
     if "Karşılıklı Gol Var" in p:
@@ -900,7 +942,6 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "3.5 Gol Alt" in p:
         return tot <= 3
     return tot >= 2
-
 
 # ==================== PARÇA 6/8 ====================
 @st.cache_data(ttl=45, show_spinner=False)
