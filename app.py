@@ -610,12 +610,56 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         "p_over25": int(round(p_over25 * 100)), "p_over35": int(round(p_over35 * 100)),
         "p_btts": int(round(p_btts * 100)), "lam_h": round(lam_h, 2), "lam_a": round(lam_a, 2)
     }
-# ==================== PARÇA 5/8 ====================
+# ==================== PARÇA 5A/8 ====================
+def compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4):
+    h_d = (r_data.get("h") or {}) if isinstance(r_data, dict) else {}
+    a_d = (r_data.get("a") or {}) if isinstance(r_data, dict) else {}
+    w_str = str((r_data.get("weather") or "") if isinstance(r_data, dict) else "")
+    h_tac, a_tac = str(h_d.get("tac") or "4-2-3-1"), str(a_d.get("tac") or "4-2-3-1")
+    h_dri, a_dri = safe_int(h_d.get("dri"), 71), safe_int(a_d.get("dri"), 71)
+    h_sho, a_sho = safe_int(h_d.get("sho"), 72), safe_int(a_d.get("sho"), 72)
+    h_def, a_def = safe_int(h_d.get("def"), 68), safe_int(a_d.get("def"), 68)
+
+    fav_h = m4["fav_is_home"]
+    att_dri, att_sho = (h_dri if fav_h else a_dri), (h_sho if fav_h else a_sho)
+    opp_def = a_def if fav_h else h_def
+
+    # 1. Kanat Kabiliyeti vs Orta Seviye Savunma Sürtünmesi + Hava Durumu + Pivot ST
+    wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "4-2-3-1", "3-4-2-1")
+    passive_tacs = ("4-4-2", "5-3-2", "5-4-1", "4-5-1")
+    wet_bonus = 8 if any(k in w_str for k in ("🌧️", "Yağış", "Islak", "Nemli", "Rain")) else 0
+
+    st_list = (h_d.get("starters") or []) + (a_d.get("starters") or [])
+    tall_st = 5 if any(p.get("pos") in ("ST", "F", "CF") and safe_int(p.get("rat"), 70) >= 77 for p in st_list) else 0
+
+    if opp_def <= 58 and att_sho >= 74:
+        def_friction = -8  # Zayıf savunma geçilir -> Korner değil doğrudan GOL olur
+    elif 61 <= opp_def <= 74 and (att_dri >= 72 or att_sho >= 73):
+        def_friction = 11  # Orta-sert savunma + hızlı kanat -> Maksimum KORNER
+    else:
+        def_friction = 3
+
+    tac_cor = 7 if (h_tac in wing_tacs or a_tac in wing_tacs) else (-9 if (h_tac in passive_tacs and a_tac in passive_tacs) else 0)
+    p_cor = min(88, max(35, 48 + def_friction + tac_cor + wet_bonus + tall_st + int(m4["bus_score"] * 0.08)))
+
+    # 2. Derbi / Kafa Kafaya Tempo & Dripling Faul Sürtünmesi (Kart Olasılığı)
+    mom_gap = abs(h_mom - a_mom)
+    hot_lig = 8 if any(k in lig_adi for k in ("SERIE", "BREZİLYA", "ARJANTİN", "LA LIGA", "TÜRKİYE")) else 2
+    derby_tens = 10 if (mom_gap <= 15 and h_mom >= 45 and a_mom >= 45) else (5 if abs(fav_val) <= 135 else 0)
+    dri_foul = 6 if max(h_dri, a_dri) >= opp_def + 3 else 2
+    p_card = min(86, max(38, 46 + hot_lig + derby_tens + dri_foul + (wet_bonus // 2)))
+
+    cor_line = "9.5" if ("PREMIER" in lig_adi or "EFL" in lig_adi or "İSKOÇYA" in lig_adi or ou_val >= 3.5) else "8.5"
+    card_line = "4.5" if hot_lig >= 8 else "3.5"
+    return p_cor, p_card, cor_line, card_line
+
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi):
     m4 = compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi)
-    fav_is_home = m4["fav_is_home"]
-    fav_team = h_name if fav_is_home else a_name
-    dc_code = "1X" if fav_is_home else "X2"
+    p_cor, p_card, cor_line, card_line = compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4)
+    m4["p_cor"], m4["p_card"], m4["cor_line"], m4["card_line"] = p_cor, p_card, cor_line, card_line
+
+    fav_team = h_name if m4["fav_is_home"] else a_name
+    dc_code = "1X" if m4["fav_is_home"] else "X2"
     mom_gap = abs(h_mom - a_mom)
     warn_flag = ("⚠️Δ+" in disp_odd)
 
@@ -628,47 +672,43 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     veto_under35 = (m4["p_over35"] >= 26 or ou_val >= 3.5 or m4["d_weak"] >= 58)
 
     if fav_val <= -215 and mom_gap >= 32 and m4["p_team"] >= 50 and not warn_flag:
-        pick = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)"
-        conf = min(97, max(86, m4["p_team"] + 30))
+        pick, conf = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)", min(97, max(86, m4["p_team"] + 30))
     elif veto_under35:
         if "💥TG↑" in disp_odd or m4["p_over25"] >= 52:
-            pick = "Maç 2.5 Gol Üst"
-            conf = min(88, max(70, m4["p_over25"] + (18 if "💥TG↑" in disp_odd else 15)))
+            pick, conf = "Maç 2.5 Gol Üst", min(88, max(70, m4["p_over25"] + (18 if "💥TG↑" in disp_odd else 15)))
         elif m4["p_team"] >= 52 and fav_val <= -165 and not warn_flag:
-            pick = f"{fav_team} Takım Golü 1.5 Üst"
-            conf = min(86, max(68, m4["p_team"] + 16))
-        elif btts_sim and m4["p_btts"] >= 46:
-            pick = "Karşılıklı Gol Var (KG Var)"
-            conf = min(82, max(68, m4["p_btts"] + 16))
+            pick, conf = f"{fav_team} Takım Golü 1.5 Üst", min(86, max(68, m4["p_team"] + 16))
         else:
-            pick = "Maç 2.5 Gol Üst"
-            conf = min(84, max(67, m4["p_over25"] + 14))
-    elif btts_sim and m4["p_btts"] >= 42 and (mom_gap <= 15 or warn_flag):
-        pick = "Karşılıklı Gol Var (KG Var)"
-        conf = min(76, max(59, m4["p_btts"] + 15))
+            pick, conf = "Maç 2.5 Gol Üst", min(84, max(67, m4["p_over25"] + 14))
     elif m4["p_shield"] >= 51 and m4["p_over35"] <= 22 and (fav_val <= -110 or mom_gap >= 18):
-        pick = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt"
-        conf = min(78, max(56, m4["p_shield"] + int(mom_gap * 0.38)))
+        pick, conf = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt", min(78, max(58, m4["p_shield"] + int(mom_gap * 0.38)))
     else:
-        pick = "Maç 3.5 Gol Alt"
-        conf = min(62, max(46, int((100 - m4["p_over35"]) * 0.56)))
+        pick, conf = "Maç 3.5 Gol Alt", min(56, max(45, int((100 - m4["p_over35"]) * 0.54)))
+
+    # TEK HAVUZ KURALI: Korner veya Kart olasılığı zayıf Gol/Alt tahmininden yüksekse Ana Hedefe geçer!
+    if conf <= 59 and max(p_cor, p_card) >= conf + 6:
+        if p_cor >= 66 and p_card >= 66:
+            pick, conf = f"🚩 {cor_line} Korner Üst & 🟨 {card_line} Kart Üst", int(round((p_cor + p_card) / 2.0))
+        elif p_cor >= p_card:
+            pick, conf = f"🚩 {cor_line} Korner Üst", p_cor
+        else:
+            pick, conf = f"🟨 {card_line} Kart Üst", p_card
 
     if "🔥Δ-" in disp_odd:
         conf = min(97, conf + 4)
-    elif warn_flag and "Ana Kasa" not in pick:
-        conf = max(36, conf - 4)
-
-    m4_str = f"xG:{m4['lam_h']}-{m4['lam_a']} | P(4+Gol):%{m4['p_over35']} | P_Shield:%{m4['p_shield']} | P_Team1.5:%{m4['p_team']} | D_weak:{m4['d_weak']} | Bus:{m4['bus_score']}"
+    m4_str = f"xG:{m4['lam_h']}-{m4['lam_a']} | P(4+):%{m4['p_over35']} | Sh:%{m4['p_shield']} | 🚩Kor:%{p_cor} | 🟨Kart:%{p_card} | Dw:{m4['d_weak']}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
-
+# ==================== PARÇA 5B/8 ====================
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4):
     wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "3-4-2-1", "4-2-3-1")
     if (h_tac in wing_tacs or a_tac in wing_tacs) and "📐KanatKorner" not in disp_odd:
         disp_odd += " 📐KanatKorner"
 
-    cor_line = "9.5" if ("PREMIER" in lig_adi or "EFL" in lig_adi or "LEAGUE ONE" in lig_adi or "İSKOÇYA" in lig_adi or ou_val >= 3.5) else "8.5"
-    card_line = "4.5" if ("SERIE" in lig_adi or "LA LIGA" in lig_adi or "BREZİLYA" in lig_adi or "ARJANTİN" in lig_adi) else "3.5"
-    prop_str = f"🚩 {cor_line} Korner Üst | 🟨 {card_line} Kart Üst"
+    p_cor = m4.get("p_cor", 64)
+    p_card = m4.get("p_card", 62)
+    cor_line = m4.get("cor_line", "8.5")
+    card_line = m4.get("card_line", "4.5")
+    prop_str = f"🚩 {cor_line} Korner Üst (%{p_cor}) | 🟨 {card_line} Kart Üst (%{p_card})"
 
     if not is_off:
         MEM["pre_lineup_memory"][match_title] = pick
@@ -677,7 +717,6 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
     old_pick = MEM["pre_lineup_memory"].get(match_title, pick)
     fav_is_home = m4["fav_is_home"]
     fav_team = h_name if fav_is_home else a_name
-    dc_code = "1X" if fav_is_home else "X2"
     fav_info = (r_data.get("h") if fav_is_home else r_data.get("a")) or {}
     rot_cnt = safe_int(fav_info.get("rot_cnt"), 0)
 
@@ -687,18 +726,18 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
         if "✅KadroOnay" not in disp_odd:
             disp_odd += " ✅KadroOnay(+5p)"
     elif rot_cnt >= 3:
-        if fav_val <= -210 or m4["d_weak"] >= 55:
-            conf = max(38, conf - 3)
-            disp_odd += " 🧬HafifRotasyon(-3p)"
-        else:
-            conf = max(34, conf - 6)
-            disp_odd += " 🧬FavRotasyon(-6p)"
+        conf = max(36, conf - 4)
+        disp_odd += " 🧬HafifRotasyon(-4p)"
 
-    if "3.5 Alt" in pick and (m4["p_over35"] >= 26 or m4["d_weak"] >= 58 or (h_tac == "4-3-3" and a_tac == "4-3-3")):
+    # Resmi 11'de zayıf savunma yakalanırsa Korner/Alt yerine doğrudan Gol Üstüne geçer
+    if ("3.5 Alt" in pick or "Korner" in pick) and (m4["p_over35"] >= 27 or m4["d_weak"] >= 58 or (h_tac == "4-3-3" and a_tac == "4-3-3")):
         pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 52 else "Maç 2.5 Gol Üst"
+        conf = max(conf, 68)
         evo_changed = (pick != old_pick)
-    elif m4["bus_score"] >= 62 and m4["p_over35"] <= 21 and "Takım Golü 1.5 Üst" in pick and fav_val > -210:
-        pick = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt"
+    # Resmi 11'de 5'li savunma otobüsü + güçlü kanat varsa doğrudan Korner Üstüne geçer
+    elif m4["bus_score"] >= 60 and p_cor >= 68 and "Ana Kasa" not in pick:
+        pick = f"🚩 {cor_line} Korner Üst"
+        conf = max(conf, p_cor)
         evo_changed = (pick != old_pick)
 
     evo_str = f"🔄 {old_pick} ➔ ✅ {pick}" if evo_changed else "✅ Kadro Onaylı (Sabit)"
@@ -744,6 +783,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "3.5 Gol Alt" in p:
         return tot <= 3
     return tot >= 2
+
 
 # ==================== PARÇA 6/8 ====================
 @st.cache_data(ttl=45, show_spinner=False)
