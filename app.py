@@ -1203,94 +1203,52 @@ url_prog = str(st.query_params.get("prog") or "").strip().lower()
 mini_text = "\n".join(mini_lines)
 
 # ==================== PARÇA 8/8 ====================
+if "patron_unlocked" not in st.session_state:
+    st.session_state["patron_unlocked"] = False
+
+url_prog = str(st.query_params.get("prog") or "").strip().lower()
+url_ref = str(st.query_params.get("ref") or "").strip().upper()
+my_dev_id = get_device_fingerprint() if "get_device_fingerprint" in globals() else "DP-ADMIN1"
+mini_text = "\n".join(mini_lines) if "mini_lines" in globals() else ""
+
 if url_prog == "patron":
     st.session_state["patron_unlocked"] = True
 
-if st.session_state["patron_unlocked"]:
-    inject_patron_x_button_and_copy_bridge()
-    total_members = len(MEM["users_db"])
-    founder_left = max(0, 100 - total_members)
-    st.markdown("<div style='background:linear-gradient(90deg,#3d2800,#161b22);border:1px solid #f0b90b;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;'><span>👑 <b>DELTA PULSE — PATRON PANELİ (v7.0 MODEL 4.0 HYBRID)</b></span><span style='font-size:11px;color:#56d364;'>🔒 DP-F3CB9C Mühürlü</span></div>", unsafe_allow_html=True)
-    tab_saha, tab_patron = st.tabs(["🏟️ Patron Canlı Saha & DP-MİNİ", "👑 TRC20 Kasa & Gerçek Üye Radarı"])
-    with tab_saha:
-        cp1, cp2 = st.columns([2, 2])
-        with cp1:
-            sim_view = st.radio("👁️ Global Müşteri Ekranını Test Et:", ["👑 Patron (Full Unlocked)", "👤 Normal Member (EN Locked)", "💎 VIP Member (EN Unlocked)"], horizontal=True)
-        with cp2:
-            with st.expander("📲 DP-MİNİ Hızlı Veri Kopyala (Patron Özel)", expanded=True):
-                st.code("\n".join(mini_lines), language="text")
-        selected_tier = "ADMIN" if "Patron" in sim_view else ("NORMAL" if "Normal" in sim_view else "VIP")
-        render_main_bulletin(selected_tier, is_patron_mode=True)
+cur_user = auto_sync_device_user(my_dev_id, url_ref) if "auto_sync_device_user" in globals() else {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11}
 
-    with tab_patron:
-        db = MEM["users_db"]
-        u_list = sorted(db.values(), key=lambda x: x["seq"])
-        vip_count = sum(1 for u in u_list if u["tier"] == "VIP")
-        paid_count = sum(1 for u in u_list if u.get("paid"))
-        tot_usdt = round(sum(safe_float(u.get("amount"), 0.0) for u in u_list), 2)
-        st.markdown(f"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;'><div class='dp-card' style='flex:1;'>👥 <b>Gerçek Cihaz/Üye:</b> {len(u_list)} (Kurucu Kalan: {founder_left}/100)</div><div class='dp-card dp-ak' style='flex:1;'>💎 <b>Aktif VIP:</b> {vip_count} Kişi</div><div class='dp-card' style='flex:1;'>💰 <b>TRC20 Kasa:</b> {paid_count} Ödeme ({tot_usdt} USDT)</div></div>", unsafe_allow_html=True)
-
-        ca1, ca2, ca3 = st.columns([2, 2, 2])
-        with ca1:
-            target_u = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
-        with ca2:
-            act_type = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 3 Gün VIP Ver", "🥇 90 Gün Kurucu VIP Ver", "👤 Normal Üyeye Düşür", "🗑️ Üyeyi Sil"])
-        with ca3:
-            adm_note = st.text_input("Patron Notu:")
-        if st.button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and target_u:
-            now_tr = datetime.now(TR_TZ)
-            if "Sil" in act_type:
-                db.pop(target_u, None)
-                clean_dummy_and_reindex_users()
-            else:
-                if target_u not in db:
-                    auto_sync_device_user(target_u, "")
-                u_e = db[target_u]
-                if "30 Gün" in act_type:
-                    u_e["tier"], u_e["paid"], u_e["amount"] = "VIP", True, round(safe_float(u_e.get("amount"), 0.0) + 100.0, 2)
-                    u_e["exp"] = (now_tr + timedelta(days=30)).strftime("%Y-%m-%d %H:%M")
-                elif "3 Gün" in act_type:
-                    u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
-                elif "90 Gün" in act_type:
-                    u_e["tier"], u_e["exp"] = "VIP", (now_tr + timedelta(days=90)).strftime("%Y-%m-%d %H:%M")
-                else:
-                    u_e["tier"] = "NORMAL"
-            save_persistent_store()
-            st.rerun()
-
-        rows_html = ["<div style='overflow-x:auto;'><table style='width:100%;font-size:11.5px;border-collapse:collapse;'><tr style='background:#21262d;color:#ffd33d;text-align:left;'><th style='padding:6px;'>#</th><th>Device ID</th><th>📱 Cihaz & 🌍 Ülke</th><th>🕒 Son Giriş</th><th>Status</th><th>Refs</th><th>Unique USDT</th><th>Time Left</th></tr>"]
-        for u in u_list:
-            rows_html.append(f"<tr style='border-bottom:1px solid #30363d;'><td style='padding:6px;'>{u['seq']}</td><td><b>{u['code']}</b></td><td style='color:#79c0ff;'>{u.get('dev_info','Web')}</td><td>{u.get('last_seen','Bugün')}</td><td style='color:{'#56d364' if u['tier']=='VIP' else '#8b949e'};font-weight:700;'>{u['tier']}</td><td>{len(u.get('refs',[]))}/2</td><td><code>{u.get('pay_dec',100.15):.2f} USDT</code></td><td>{format_remaining_time(u['exp'], False)}</td></tr>")
-        rows_html.append("</table></div>")
-        st.markdown("".join(rows_html), unsafe_allow_html=True)
-else:
-    cur_user = auto_sync_device_user(my_auto_uid, url_ref)
-    if cur_user:
-        cur_user["dev_info"] = detect_visitor_device_and_lang()
-        cur_user["last_seen"] = datetime.now(TR_TZ).strftime("%d.%m %H:%M")
-        save_persistent_store()
-    effective_tier = cur_user["tier"] if cur_user else "NORMAL"
-    pay_dec_val = cur_user.get("pay_dec", 100.15) if cur_user else 100.15
-    founder_left = max(0, 100 - len(MEM["users_db"]))
-    ref_cnt = len(cur_user.get("refs", []))
-    app_pub = MEM.get("app_public_url", "https://deltapulse.streamlit.app")
-    my_ref_url = f"{app_pub}?ref={cur_user['code']}"
-    tg_share = f"https://t.me/share/url?url={urllib.parse.quote(my_ref_url)}&text={urllib.parse.quote('🔥 24/7 AI Football Whale & Poisson Radar! Click for instant access:')}"
-    st.markdown(f"<div style='background:linear-gradient(90deg,#131d2e,#161b22);border:1px solid #2f81f7;border-radius:8px;padding:9px 12px;margin-bottom:8px;font-size:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;'><div>🆔 <b>Your Auto Device ID:</b> <code style='color:#ffd33d;'>{cur_user['code']}</code> | 🏆 <b>Founder Spots Left:</b> {founder_left}/100 | 👥 <b>Refs:</b> {ref_cnt}/2</div><div><a href='{tg_share}' target='_blank' style='background:#1f6feb;color:#fff;padding:7px 11px;border-radius:6px;font-weight:700;text-decoration:none;'>📲 Share with 2 Friends ➔ FREE 90d VIP</a></div></div>", unsafe_allow_html=True)
-    if effective_tier != "VIP":
-        with st.expander(f"⚡ Instant Auto-VIP Unlock ({pay_dec_val:.2f} USDT TRC20)", expanded=False):
-            st.markdown(f"Send exact **`{pay_dec_val:.2f} USDT` (TRC20)** to: `{MEM.get('trc20_wallet','')}`")
-            tx_inp = st.text_input("TxID (Optional):")
-            if st.button("🔓 Verify Payment on Blockchain & Unlock VIP", use_container_width=True):
-                ok_tx, msg_tx = verify_trc20_blockchain_payment(cur_user["code"], tx_inp)
-                st.info(msg_tx)
-                if ok_tx:
+if st.session_state.get("patron_unlocked"):
+    st.markdown("## 👑 PATRON KOMUTA & RADAR MERKEZİ")
+    t1, t2, t3 = st.tabs(["📊 Canlı Bülten & Sahalar", "📋 DP-MİNİ Kopyala", "👑 TRC20 Kasa & Gerçek Üye Radarı"])
+    with t1:
+        render_main_bulletin(tier="ADMIN", is_patron_mode=True)
+    with t2:
+        st.markdown("#### 📋 Tek Tıkla DP-MİNİ Verisi (Sağ Üstten Kopyala)")
+        st.code(mini_text, language="text")
+    with t3:
+        if "render_patron_crm_panel" in globals():
+            render_patron_crm_panel()
+        else:
+            users_db = MEM.setdefault("users_db", {})
+            vip_cnt = sum(1 for u in users_db.values() if u.get("tier") == "VIP")
+            st.markdown(f"**Toplam Gerçek Cihaz:** `{len(users_db)}` | **Aktif VIP:** `{vip_cnt}` (Kurucu Kalan: `{max(0, 100 - vip_cnt)}/100`)")
+            with st.form("patron_crm_form"):
+                t_code = st.text_input("Cihaz/Üye Kodu (Örn: DP-8F4A2C):").strip().upper()
+                act = st.selectbox("İşlem:", ["💰 100 USDT Ödeme Onayla ➔ 30 Gün VIP Yap", "🎁 90 Gün Kurucu VIP Hediye Et", "🔄 NORMAL Üyeye Çevir", "🗑️ Üyeyi Sil"])
+                note = st.text_input("Patron Notu:")
+                if st.form_submit_button("✅ Üye İşlemini Uygula ve Kaydet", use_container_width=True) and t_code:
+                    if "Sil" in act:
+                        users_db.pop(t_code, None)
+                    else:
+                        u_obj = users_db.setdefault(t_code, {"tier": "NORMAL", "refs": 0, "unique_usdt": 100.11, "device": "Web", "last_seen": "-"})
+                        u_obj["tier"] = "NORMAL" if "NORMAL" in act else "VIP"
+                        u_obj["note"] = note
                     st.rerun()
-    render_main_bulletin(effective_tier, is_patron_mode=False)
-    with st.expander("⚙️ System Sync & Admin Terminal", expanded=False):
-        adm_inp = st.text_input("Admin Key:", type="password")
-        if st.button("👑 Seal Admin Mode on This Device") and verify_admin_secret(adm_inp):
-            st.session_state["patron_unlocked"] = True
-            st.rerun()
-# ==================== PARÇA 8/8 SONU ====================
+            if users_db:
+                rows = [{"#": i+1, "Device ID": k, "📱 Cihaz & 🌍 Ülke": v.get("device", "Web"), "🕒 Son Giriş": v.get("last_seen", "-"), "Status": v.get("tier", "NORMAL"), "Refs": f"{len(v.get('ref_list', []))}/2", "Unique USDT": f"{v.get('unique_usdt', 100.11)} USDT"} for i, (k, v) in enumerate(users_db.items())]
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+else:
+    if "render_viral_and_vip_gate" in globals():
+        render_viral_and_vip_gate(cur_user, my_dev_id)
+    render_main_bulletin(tier=cur_user.get("tier", "NORMAL"), is_patron_mode=False)
+
 
