@@ -742,107 +742,139 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         "p_btts": int(round(p_btts * 100)), "lam_h": round(lam_h, 2), "lam_a": round(lam_a, 2)
     }
 # ==================== PARÇA 5A/8 ====================
-def compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4):
-    h_d = (r_data.get("h") or {}) if isinstance(r_data, dict) else {}
-    a_d = (r_data.get("a") or {}) if isinstance(r_data, dict) else {}
-    ref_d = (r_data.get("ref") or {"avg": 4.0, "style": "⚖️Dengeli", "disp": "Standart"}) if isinstance(r_data, dict) else {"avg": 4.0, "style": "⚖️Dengeli", "disp": "Standart"}
-    def_h = {"cor_avg": 4.8, "sh_avg": 11.0, "card_avg": 1.8, "sub_rat": 74, "hungry_sub": False, "wing_drop": False, "wing_impact": 0, "def_shift": False}
-    h_hist, a_hist = (h_d.get("hist") or def_h), (a_d.get("hist") or def_h)
-    w_str = str((r_data.get("weather") or "") if isinstance(r_data, dict) else "")
-    h_tac, a_tac = str(h_d.get("tac") or "4-2-3-1"), str(a_d.get("tac") or "4-2-3-1")
-    h_dri, a_dri = safe_int(h_d.get("dri"), 71), safe_int(a_d.get("dri"), 71)
-    h_sho, a_sho = safe_int(h_d.get("sho"), 72), safe_int(a_d.get("sho"), 72)
-    h_def, a_def = safe_int(h_d.get("def"), 68), safe_int(a_d.get("def"), 68)
+def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi=""):
+    r_d = r_data or {}
+    h_d = r_d.get("h") or {}
+    a_d = r_d.get("a") or {}
+    ref_d = r_d.get("ref") or {}
+    wx_d = r_d.get("wx") or {}
 
-    fav_h = m4["fav_is_home"]
-    att_dri, att_sho = (h_dri if fav_h else a_dri), (h_sho if fav_h else a_sho)
-    opp_def = a_def if fav_h else h_def
-    fav_hist = h_hist if fav_h else a_hist
+    h_cor_avg = safe_float(h_d.get("cor_avg"), 5.2)
+    a_cor_avg = safe_float(a_d.get("cor_avg"), 4.8)
+    real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
 
-    # 1. FUTBOLCU GÜCÜ + SAVUNMA ZAAFINDAN ERKEN KOPMA / HANDİKAP (-1.5) OLASILIĞI
-    power_gap = int(round(((att_sho + att_dri) / 2.0) - opp_def))
-    hungry_bonus = 6 if fav_hist.get("hungry_sub") else 0
-    p_blowout = min(89, max(18, int(m4["p_team"] * 0.58 + max(0, power_gap) * 1.5 + m4["d_weak"] * 0.38 + hungry_bonus)))
+    wing_asym = bool(h_d.get("wing_asym") or a_d.get("wing_asym") or ("3" in str(h_tac) or "3" in str(a_tac)) or ("4-2-3-1" in str(h_tac)) or ("4-3-3" in str(h_tac)))
+    hungry_pts = max(safe_int(h_d.get("hungry_sub"), 0), safe_int(a_d.get("hungry_sub"), 0))
+    rot_pen = safe_int(h_d.get("rot_pen"), 0) + safe_int(a_d.get("rot_pen"), 0)
+    inj_wing = bool(h_d.get("inj_wing") or a_d.get("inj_wing"))
+    inj_def = bool(h_d.get("inj_def") or a_d.get("inj_def"))
 
-    # 2. KORNER OLASILIĞI (Geçmiş Boxscore + Kanat Sürtünmesi + Yedek Gücü)
-    hist_tot_cor = round(safe_float(h_hist.get("cor_avg"), 4.8) + safe_float(a_hist.get("cor_avg"), 4.5), 1)
-    hist_cor_bonus = int(round((hist_tot_cor - 9.0) * 3.5))
-    sub_power_adj = safe_int(fav_hist.get("wing_impact"), 0)
-    def_shift_flag = bool(h_hist.get("def_shift") or a_hist.get("def_shift"))
+    mom_gap = abs(safe_int(h_mom, 50) - safe_int(a_mom, 50))
+    abs_fav = abs(safe_int(fav_val, -130))
+    blowout_prob = 20
+    if (fav_val <= -210) or (mom_gap >= 24 and fav_val <= -145) or (ou_val >= 3.5 and fav_val <= -175):
+        blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
+    is_blowout = (blowout_prob >= 58)
 
-    wing_tacs, passive_tacs = ("4-3-3", "3-4-3", "3-5-2", "4-2-3-1", "3-4-2-1"), ("4-4-2", "5-3-2", "5-4-1", "4-5-1")
-    wet_bonus = 8 if any(k in w_str for k in ("🌧️", "Yağış", "Islak", "Nemli", "Rain")) else 0
-    st_list = (h_d.get("starters") or []) + (a_d.get("starters") or [])
-    tall_st = 5 if any(p.get("pos") in ("ST", "F", "CF") and safe_int(p.get("rat"), 70) >= 77 for p in st_list) else 0
+    cor_score = 54 + int((real_cor_sum - 9.0) * 4.2)
+    if wing_asym:
+        cor_score += 8
+    if hungry_pts >= 75:
+        cor_score += 4
+    if inj_wing:
+        cor_score -= 9
+    if "PREMIER" in str(lig_adi).upper() or "İSKOÇYA" in str(lig_adi).upper() or "EFL" in str(lig_adi).upper():
+        cor_score += 5
+    cor_score = min(93, max(35, cor_score))
 
-    def_friction = -6 if (opp_def <= 57 and m4["bus_score"] < 45) else (11 if 60 <= opp_def <= 75 and (att_dri >= 72 or att_sho >= 73) else 4)
-    tac_cor = 7 if (h_tac in wing_tacs or a_tac in wing_tacs) else (-9 if (h_tac in passive_tacs and a_tac in passive_tacs) else 0)
-    p_cor = min(89, max(32, 48 + def_friction + tac_cor + wet_bonus + tall_st + hist_cor_bonus + sub_power_adj + int(m4["bus_score"] * 0.08)))
+    ref_strict = safe_int(ref_d.get("strictness"), 62)
+    card_score = 50 + int((ref_strict - 55) * 0.7) + int(max(0, 22 - mom_gap) * 0.6)
+    if "SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper():
+        card_score += 8
+    if is_blowout:
+        card_score -= 20
+    card_score = min(90, max(25, card_score))
 
-    # 3. KART OLASILIĞI (Erken Kopan Maçta -20p Otomatik Kart Freni!)
-    hist_tot_card = round(safe_float(h_hist.get("card_avg"), 1.8) + safe_float(a_hist.get("card_avg"), 1.8), 1)
-    ref_avg = safe_float(ref_d.get("avg"), 4.0)
-    ref_card_adj = int(round((ref_avg - 4.0) * 7.5)) + int(round((hist_tot_card - 3.8) * 4.0))
-    blowout_damp = -20 if p_blowout >= 62 else (-10 if p_blowout >= 54 else 0)
+    tags = [f"📊Son2Kor:{real_cor_sum}"]
+    if hungry_pts >= 75:
+        tags.append(f"🔥AçYedek({hungry_pts}p)")
+    if is_blowout:
+        tags.append(f"💥ErkenKopar(%{blowout_prob})")
+    if wing_asym and not inj_wing:
+        tags.append("📐KanatKorner")
+    if inj_wing:
+        tags.append("🏥KanatKaybı")
+    if inj_def:
+        tags.append("🛡️SakatKapanma")
+    if rot_pen < 0:
+        tags.append(f"🧬HafifRotasyon({rot_pen}p)")
+    if wx_d.get("tag"):
+        tags.append(str(wx_d["tag"]))
 
-    mom_gap = abs(h_mom - a_mom)
-    hot_lig = 7 if any(k in lig_adi for k in ("SERIE", "BREZİLYA", "ARJANTİN", "LA LIGA", "TÜRKİYE")) else 2
-    derby_tens = 10 if (mom_gap <= 15 and h_mom >= 45 and a_mom >= 45 and blowout_damp == 0) else 0
-    p_card = min(86, max(22, 45 + hot_lig + derby_tens + ref_card_adj + blowout_damp + (5 if max(h_dri, a_dri) >= opp_def + 3 else 0) + (wet_bonus // 2)))
+    return {
+        "cor_score": cor_score,
+        "card_score": card_score,
+        "real_cor_sum": real_cor_sum,
+        "wing_asym": wing_asym,
+        "is_blowout": is_blowout,
+        "blowout_prob": blowout_prob,
+        "hungry_pts": hungry_pts,
+        "rot_pen": rot_pen,
+        "inj_wing": inj_wing,
+        "inj_def": inj_def,
+        "tags_str": " ".join(tags)
+    }
 
-    cor_line = "9.5" if ("PREMIER" in lig_adi or "EFL" in lig_adi or "İSKOÇYA" in lig_adi or ou_val >= 3.5) else "8.5"
-    card_line = "4.5" if (hot_lig >= 7 and ref_avg >= 4.0) else "3.5"
-    return p_cor, p_card, p_blowout, cor_line, card_line, hist_tot_cor, hist_tot_card, ref_d, fav_hist, def_shift_flag
 
-def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi):
-    m4 = compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi)
-    p_cor, p_card, p_blowout, cor_line, card_line, hist_cor, hist_card, ref_d, fav_hist, def_shift = compute_friction_physics(h_name, a_name, h_mom, a_mom, fav_val, ou_val, r_data, lig_adi, m4)
-    m4.update({"p_cor": p_cor, "p_card": p_card, "p_blowout": p_blowout, "cor_line": cor_line, "card_line": card_line, "hist_cor": hist_cor})
+def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi=""):
+    h_tac = str(((r_data or {}).get("h") or {}).get("tac") or "4-2-3-1")
+    a_tac = str(((r_data or {}).get("a") or {}).get("tac") or "4-2-3-1")
 
-    fav_team = h_name if m4["fav_is_home"] else a_name
-    dc_code = "1X" if m4["fav_is_home"] else "X2"
-    mom_gap, warn_flag = abs(h_mom - a_mom), ("⚠️Δ+" in disp_odd)
-    wing_drop, hungry_sub = bool(fav_hist.get("wing_drop")), bool(fav_hist.get("hungry_sub"))
-    sub_rat = safe_int(fav_hist.get("sub_rat"), 74)
-
-    if f"📊Son2Kor:{hist_cor}" not in disp_odd:
-        disp_odd += f" 📊Son2Kor:{hist_cor}"
-    if p_blowout >= 62 and "💥ErkenKopar" not in disp_odd:
-        disp_odd += f" 💥ErkenKopar(%{p_blowout})"
-    if hungry_sub and "🔥AçYedek" not in disp_odd:
-        disp_odd += f" 🔥AçYedek({sub_rat}p)"
-    elif wing_drop and "🏥KanatKaybı" not in disp_odd:
-        disp_odd += f" 🏥KanatKaybı({sub_rat}p)"
-    if def_shift and "🛡️SakatKapanma" not in disp_odd:
-        disp_odd += " 🛡️SakatKapanma"
-        m4["p_over35"], m4["p_shield"] = max(10, m4["p_over35"] - 6), min(82, m4["p_shield"] + 7)
-
-    veto_under35 = (m4["p_over35"] >= 26 or (ou_val >= 3.5 and not def_shift) or m4["d_weak"] >= 58 or p_blowout >= 64)
-
-    if fav_val <= -210 and mom_gap >= 30 and m4["p_team"] >= 50 and not warn_flag and not wing_drop:
-        pick, conf = f"{fav_team} Takım Golü 1.5 Üst (Ana Kasa)", min(97, max(86, m4["p_team"] + 30))
-    elif p_blowout >= 66 and fav_val <= -135 and mom_gap >= 10 and not warn_flag:
-        pick, conf = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)", min(88, max(72, p_blowout + 6))
-    elif veto_under35:
-        pick, conf = ("Maç 2.5 Gol Üst", min(88, max(70, m4["p_over25"] + 16))) if ("💥TG↑" in disp_odd or m4["p_over25"] >= 52) else (f"{fav_team} Takım Golü 1.5 Üst", min(86, max(68, m4["p_team"] + 16)))
-    elif m4["p_shield"] >= 51 and m4["p_over35"] <= 22 and (fav_val <= -110 or mom_gap >= 18 or def_shift):
-        pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
-
+    if "compute_model4_poisson_and_scores" in globals():
+        try:
+            m4 = compute_model4_poisson_and_scores(h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data, h_abbr, a_abbr)
+        except Exception:
+            m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 12, "veto_under35": False}
     else:
-        pick, conf = "Maç 3.5 Gol Alt", min(62 if def_shift else 56, max(46, int((100 - m4["p_over35"]) * 0.56)))
+        m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 12, "veto_under35": False}
 
-    if conf <= 62 and max(p_cor, p_card) >= conf + 6 and not def_shift:
-        if p_cor >= 66 and p_card >= 66 and p_blowout < 58:
-            pick, conf = f"🚩 {cor_line} Korner Üst & 🟨 {card_line} Kart Üst", int(round((p_cor + p_card) / 2.0))
-        elif p_cor >= p_card:
-            pick, conf = f"🚩 {cor_line} Korner Üst", p_cor
+    fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi)
+    m4["friction"] = fr
+    if fr["rot_pen"] < 0:
+        m4["d_weak"] = min(95, safe_int(m4.get("d_weak"), 12) + abs(fr["rot_pen"]) * 3)
+
+    if fr["tags_str"] and fr["tags_str"] not in disp_odd:
+        disp_odd = f"{disp_odd} {fr['tags_str']}".strip()
+
+    is_home_fav = (str(fav_abbr).upper() == str(h_abbr).upper()) or (h_mom >= a_mom and str(fav_abbr).upper() != str(a_abbr).upper())
+    fav_team = h_name if is_home_fav else a_name
+    dc_tag = "1X" if is_home_fav else "X2"
+
+    cor_line = "9.5 Korner Üst" if ("PREMIER" in str(lig_adi).upper() or "İSKOÇYA" in str(lig_adi).upper() or "EFL" in str(lig_adi).upper()) else "8.5 Korner Üst"
+    card_line = "4.5 Kart Üst" if ("SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper()) else "3.5 Kart Üst"
+
+    p_o35 = safe_int(m4.get("p_over35"), 18)
+    d_wk = safe_int(m4.get("d_weak"), 12)
+    veto_u35 = bool(m4.get("veto_under35")) or (p_o35 >= 28) or (ou_val >= 3.0)
+
+    warn_flag = False
+    if fr["is_blowout"] and is_home_fav and fav_val <= -175 and ou_val <= 3.0:
+        pick = f"{h_name} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
+        conf = min(86, 72 + int(fr["blowout_prob"] * 0.15))
+    elif p_o35 >= 30 or (ou_val >= 3.5 and d_wk >= 16):
+        pick = "Maç 2.5 Gol Üst"
+        conf = min(84, 68 + int((p_o35 - 25) * 0.6))
+    elif veto_u35 and (ou_val >= 3.0 or p_o35 >= 26):
+        pick = f"{fav_team} Takım Golü 1.5 Üst"
+        conf = 68 + (3 if fr["is_blowout"] else 0)
+    elif fr["cor_score"] >= 72 and not fr["inj_wing"]:
+        if fr["card_score"] >= 68 and not fr["is_blowout"]:
+            pick = f"🚩 {cor_line} & 🟨 {card_line}"
+            conf = min(89, int((fr["cor_score"] + fr["card_score"]) / 2) + 4)
         else:
-            pick, conf = f"🟨 {card_line} Kart Üst", p_card
+            pick = f"🚩 {cor_line}"
+            conf = min(89, fr["cor_score"] + 4)
+    elif fr["card_score"] >= 72 and not fr["is_blowout"]:
+        pick = f"🟨 {card_line}"
+        conf = min(82, fr["card_score"])
+    else:
+        # GÜNCELLENEN TEK SATIR: Momentum farkı >= 20 ise (Flamengo 1-4 gibi) 3.5 Alt yerine 1.5 Gol Üst seçer!
+        pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
+        conf = min(76, 63 + int(abs(h_mom - a_mom) * 0.25))
 
-    if "🔥Δ-" in disp_odd:
-        conf = min(97, conf + 4)
-    m4_str = f"Son2Kor:{hist_cor} | 💥Kopma:%{p_blowout} | P(4+):%{m4['p_over35']} | 🚩Kor:%{p_cor} | 🟨Kart:%{p_card}"
+    m4_str = f"P4+:%{p_o35}|Sh:%{m4.get('p_shield',54)}|Dw:{d_wk}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
+
 # ==================== PARÇA 5B/8 ====================
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4):
     wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "3-4-2-1", "4-2-3-1")
