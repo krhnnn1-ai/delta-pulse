@@ -826,7 +826,8 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     elif veto_under35:
         pick, conf = ("Maç 2.5 Gol Üst", min(88, max(70, m4["p_over25"] + 16))) if ("💥TG↑" in disp_odd or m4["p_over25"] >= 52) else (f"{fav_team} Takım Golü 1.5 Üst", min(86, max(68, m4["p_team"] + 16)))
     elif m4["p_shield"] >= 51 and m4["p_over35"] <= 22 and (fav_val <= -110 or mom_gap >= 18 or def_shift):
-        pick, conf = f"{fav_team} Çifte Şans ({dc_code}) & 3.5 Alt", min(80, max(58, m4["p_shield"] + int(mom_gap * 0.38) + (5 if def_shift else 0)))
+        pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
+
     else:
         pick, conf = "Maç 3.5 Gol Alt", min(62 if def_shift else 56, max(46, int((100 - m4["p_over35"]) * 0.56)))
 
