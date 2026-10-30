@@ -804,6 +804,8 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     return {
         "cor_score": cor_score,
         "card_score": card_score,
+        "cor_p": cor_score,
+        "card_p": card_score,
         "real_cor_sum": real_cor_sum,
         "wing_asym": wing_asym,
         "is_blowout": is_blowout,
@@ -820,28 +822,59 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     h_tac = str(((r_data or {}).get("h") or {}).get("tac") or "4-2-3-1")
     a_tac = str(((r_data or {}).get("a") or {}).get("tac") or "4-2-3-1")
 
+    is_home_fav = (str(fav_abbr).upper() == str(h_abbr).upper()) or (h_mom >= a_mom and str(fav_abbr).upper() != str(a_abbr).upper())
+    fav_team = h_name if is_home_fav else a_name
+    dc_tag = "1X" if is_home_fav else "X2"
+
+    m4 = None
     if "compute_model4_poisson_and_scores" in globals():
-        try:
-            m4 = compute_model4_poisson_and_scores(h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data, h_abbr, a_abbr)
-        except Exception:
-            m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 12, "veto_under35": False}
-    else:
+        for _args in (
+            (h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data),
+            (h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data, h_abbr, a_abbr),
+            (h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data),
+        ):
+            try:
+                m4 = compute_model4_poisson_and_scores(*_args)
+                if isinstance(m4, dict):
+                    break
+            except TypeError:
+                continue
+            except Exception:
+                break
+
+    if not isinstance(m4, dict):
         m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 12, "veto_under35": False}
 
     fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi)
+    cor_line = "9.5 Korner Üst" if ("PREMIER" in str(lig_adi).upper() or "İSKOÇYA" in str(lig_adi).upper() or "EFL" in str(lig_adi).upper()) else "8.5 Korner Üst"
+    card_line = "4.5 Kart Üst" if ("SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper()) else "3.5 Kart Üst"
+
+    # PARÇA 5B İLE TAM UYUMLU SÖZLÜK ANAHTARLARI (KeyError Koruması)
+    m4.setdefault("fav_is_home", is_home_fav)
+    m4.setdefault("is_home_fav", is_home_fav)
+    m4.setdefault("fav_team", fav_team)
+    m4.setdefault("dc_tag", dc_tag)
+    m4.setdefault("p_over35", 18)
+    m4.setdefault("p_over25", 52)
+    m4.setdefault("p_btts", 50)
+    m4.setdefault("p_shield", 54)
+    m4.setdefault("d_weak", 12)
+    m4.setdefault("veto_under35", False)
     m4["friction"] = fr
+    m4["cor_score"] = fr["cor_score"]
+    m4["card_score"] = fr["card_score"]
+    m4["cor_p"] = fr["cor_score"]
+    m4["card_p"] = fr["card_score"]
+    m4["cor_line"] = cor_line
+    m4["card_line"] = card_line
+    m4["is_blowout"] = fr["is_blowout"]
+    m4["blowout_prob"] = fr["blowout_prob"]
+
     if fr["rot_pen"] < 0:
         m4["d_weak"] = min(95, safe_int(m4.get("d_weak"), 12) + abs(fr["rot_pen"]) * 3)
 
     if fr["tags_str"] and fr["tags_str"] not in disp_odd:
         disp_odd = f"{disp_odd} {fr['tags_str']}".strip()
-
-    is_home_fav = (str(fav_abbr).upper() == str(h_abbr).upper()) or (h_mom >= a_mom and str(fav_abbr).upper() != str(a_abbr).upper())
-    fav_team = h_name if is_home_fav else a_name
-    dc_tag = "1X" if is_home_fav else "X2"
-
-    cor_line = "9.5 Korner Üst" if ("PREMIER" in str(lig_adi).upper() or "İSKOÇYA" in str(lig_adi).upper() or "EFL" in str(lig_adi).upper()) else "8.5 Korner Üst"
-    card_line = "4.5 Kart Üst" if ("SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper()) else "3.5 Kart Üst"
 
     p_o35 = safe_int(m4.get("p_over35"), 18)
     d_wk = safe_int(m4.get("d_weak"), 12)
@@ -868,7 +901,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
         pick = f"🟨 {card_line}"
         conf = min(82, fr["card_score"])
     else:
-        # GÜNCELLENEN TEK SATIR: Momentum farkı >= 20 ise (Flamengo 1-4 gibi) 3.5 Alt yerine 1.5 Gol Üst seçer!
         pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
         conf = min(76, 63 + int(abs(h_mom - a_mom) * 0.25))
 
