@@ -895,20 +895,38 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
         disp_odd = f"{disp_odd} {fr['tags_str']}".strip()
 
     p_o35 = safe_int(m4.get("p_over35"), 18)
+    p_shd = safe_int(m4.get("p_shield"), 54)
     d_wk = safe_int(m4.get("d_weak"), 12)
     veto_u35 = bool(m4.get("veto_under35")) or (p_o35 >= 28) or (ou_val >= 3.0)
 
     warn_flag = False
-    if fr["is_blowout"] and is_home_fav and fav_val <= -175 and ou_val <= 3.0:
+    # 1. ÖNCELİK: GERÇEK KORNER PATLAMASI (Son 2 maç korner >= 11.5 ve kanat sakatlığı yoksa)
+    if fr["cor_score"] >= 74 and not fr["inj_wing"] and fr["real_cor_sum"] >= 11.0:
+        if fr["card_score"] >= 68 and not fr["is_blowout"]:
+            pick = f"🚩 {cor_line} & 🟨 {card_line}"
+            conf = min(89, int((fr["cor_score"] + fr["card_score"]) / 2) + 4)
+        else:
+            pick = f"🚩 {cor_line}"
+            conf = min(89, fr["cor_score"] + 4)
+    elif fr["is_blowout"] and is_home_fav and fav_val <= -175 and ou_val <= 3.0:
         pick = f"{h_name} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
         conf = min(86, 72 + int(fr["blowout_prob"] * 0.15))
     elif p_o35 >= 30 or (ou_val >= 3.5 and d_wk >= 16):
-        pick = "Maç 2.5 Gol Üst"
-        conf = min(84, 68 + int((p_o35 - 25) * 0.6))
+        # KAPALI KALKAN (Sh >= %50) KORUMA FİLTRESİ (Villarreal & Sporting Tuzağı Önleyici)
+        if p_shd >= 50 and max(h_mom, a_mom) < 80:
+            if fr["real_cor_sum"] >= 9.5 and not fr["inj_wing"]:
+                pick = f"🚩 {cor_line}"
+                conf = min(84, max(70, fr["cor_score"] + 4))
+            else:
+                pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
+                conf = min(80, 69 + int(abs(h_mom - a_mom) * 0.2))
+        else:
+            pick = "Maç 2.5 Gol Üst"
+            conf = min(84, 68 + int((p_o35 - 25) * 0.6))
     elif veto_u35 and (ou_val >= 3.0 or p_o35 >= 26):
-        pick = f"{fav_team} Takım Golü 1.5 Üst"
-        conf = 68 + (3 if fr["is_blowout"] else 0)
-    elif fr["cor_score"] >= 72 and not fr["inj_wing"]:
+        pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
+        conf = 70 + (3 if fr["is_blowout"] else 0)
+    elif fr["cor_score"] >= 70 and not fr["inj_wing"]:
         if fr["card_score"] >= 68 and not fr["is_blowout"]:
             pick = f"🚩 {cor_line} & 🟨 {card_line}"
             conf = min(89, int((fr["cor_score"] + fr["card_score"]) / 2) + 4)
@@ -922,37 +940,50 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
         pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
         conf = min(76, 63 + int(abs(h_mom - a_mom) * 0.25))
 
-    m4_str = f"P4+:%{p_o35}|Sh:%{m4.get('p_shield',54)}|Dw:{d_wk}"
+    m4_str = f"P4+:%{p_o35}|Sh:%{p_shd}|Dw:{d_wk}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
-
-
 # ==================== PARÇA 5B/8 ====================
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4):
+    m4 = m4 or {}
     wing_tacs = ("4-3-3", "3-4-3", "3-5-2", "3-4-2-1", "4-2-3-1")
     if (h_tac in wing_tacs or a_tac in wing_tacs) and "📐KanatKorner" not in disp_odd:
         disp_odd += " 📐KanatKorner"
 
-    fav_is_home = m4["fav_is_home"]
+    fav_is_home = bool(m4.get("fav_is_home", True))
     fav_team = h_name if fav_is_home else a_name
-    p_cor = m4.get("p_cor", 64)
-    p_card = m4.get("p_card", 62)
-    p_blowout = m4.get("p_blowout", 45)
-    cor_line = m4.get("cor_line", "8.5")
-    card_line = m4.get("card_line", "4.5")
+    dc_tag = "1X" if fav_is_home else "X2"
+
+    p_cor = safe_int(m4.get("cor_p") or m4.get("p_cor") or m4.get("cor_score"), 64)
+    p_card = safe_int(m4.get("card_p") or m4.get("p_card") or m4.get("card_score"), 62)
+    p_blowout = safe_int(m4.get("blowout_prob") or m4.get("p_blowout"), 45)
+    p_shd = safe_int(m4.get("p_shield"), 54)
+    p_o35 = safe_int(m4.get("p_over35"), 18)
+    d_wk = safe_int(m4.get("d_weak"), 12)
+    bus_sc = safe_int(m4.get("bus_score"), 0)
+    p_tm = safe_int(m4.get("p_team"), 50)
+    fr = m4.get("friction") or {}
+    real_cor_sum = safe_float(fr.get("real_cor_sum"), 9.5)
+    inj_wing = bool(fr.get("inj_wing", False))
+
+    raw_cor_line = str(m4.get("cor_line") or "8.5 Korner Üst")
+    cor_label = raw_cor_line if "Korner" in raw_cor_line else f"{raw_cor_line} Korner Üst"
+    raw_card_line = str(m4.get("card_line") or "3.5 Kart Üst")
+    card_label = raw_card_line if "Kart" in raw_card_line else f"{raw_card_line} Kart Üst"
 
     # Erken Kopma Yüksekse Yan Tercihten Kartı Siler, Yerine Handikap (-1.5) / Takım 1.5 Üst Koyar!
     if p_blowout >= 62 or p_card <= 52:
         second_prop = f"💥 {fav_team} Handikap -1.5 / 1.5 Gol Üst (%{p_blowout})"
     else:
-        second_prop = f"🟨 {card_line} Kart Üst (%{p_card})"
-    prop_str = f"🚩 {cor_line} Korner Üst (%{p_cor}) | {second_prop}"
+        second_prop = f"🟨 {card_label} (%{p_card})"
+    prop_str = f"🚩 {cor_label} (%{p_cor}) | {second_prop}"
 
+    pre_mem = MEM.setdefault("pre_lineup_memory", {})
     if not is_off:
-        MEM["pre_lineup_memory"][match_title] = pick
+        pre_mem[match_title] = pick
         return conf, pick, disp_odd, "⏳ Resmi Kadro Bekleniyor", prop_str, False
 
-    old_pick = MEM["pre_lineup_memory"].get(match_title, pick)
-    fav_info = (r_data.get("h") if fav_is_home else r_data.get("a")) or {}
+    old_pick = pre_mem.get(match_title, pick)
+    fav_info = ((r_data or {}).get("h") if fav_is_home else (r_data or {}).get("a")) or {}
     rot_cnt = safe_int(fav_info.get("rot_cnt"), 0)
 
     evo_changed = False
@@ -962,25 +993,38 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
             disp_odd += " ✅KadroOnay(+5p)"
     elif rot_cnt >= 3:
         conf = max(36, conf - 4)
-        disp_odd += " 🧬HafifRotasyon(-4p)"
+        if "🧬HafifRotasyon(-4p)" not in disp_odd:
+            disp_odd += " 🧬HafifRotasyon(-4p)"
 
-    # Resmi 11'de 5'li savunma otobüsü + yüksek korner varsa Korner Üstüne geçer
-    if m4["bus_score"] >= 60 and p_cor >= 72 and "Ana Kasa" not in pick:
-        pick = f"🚩 {cor_line} Korner Üst"
+    # 1. Resmi 11'de 5'li savunma otobüsü + yüksek korner varsa Korner Üstüne geçer
+    if bus_sc >= 60 and p_cor >= 72 and "Ana Kasa" not in pick:
+        pick = f"🚩 {cor_label}"
         conf = max(conf, p_cor)
-        evo_changed = (pick != old_pick)
-    # Resmi 11'de erken kopma (%66+) ve favori gücü onaylanırsa Kazanır & 1.5 Üst / Gol Üstüne geçer
+    # 2. Resmi 11'de yüksek savunma zaafı (Dw >= 42) + yüksek korner (Son2Kor >= 10.0) varsa Korner Üstüne geçer (Lille & Huracan Evrimi)
+    elif d_wk >= 42 and real_cor_sum >= 10.0 and not inj_wing and "Korner" not in pick:
+        pick = f"🚩 {cor_label}"
+        conf = max(conf, min(86, p_cor + 4))
+    # 3. Kapalı Kalkan (Sh >= 50) varsa sahte "Maç 2.5 Gol Üst" tahminini Korner veya Favori & 1.5 Üst'e çevirir (Villarreal & Sporting Koruması)
+    elif pick == "Maç 2.5 Gol Üst" and p_shd >= 50 and max(h_mom, a_mom) < 80:
+        if real_cor_sum >= 9.5 and not inj_wing:
+            pick = f"🚩 {cor_label}"
+            conf = max(70, min(84, p_cor + 4))
+        else:
+            pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
+            conf = max(70, min(80, conf))
+    # 4. Resmi 11'de erken kopma (%66+) ve favori gücü onaylanırsa Kazanır & 1.5 Üst'e geçer
     elif p_blowout >= 66 and fav_val <= -135 and ("3.5 Alt" in pick or "Kart" in pick):
         pick = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
-        conf = max(conf, p_blowout + 5)
-        evo_changed = (pick != old_pick)
-    elif ("3.5 Alt" in pick or "Korner" in pick) and (m4["p_over35"] >= 28 or m4["d_weak"] >= 58):
-        pick = f"{fav_team} Takım Golü 1.5 Üst" if m4["p_team"] >= 54 else "Maç 2.5 Gol Üst"
-        conf = max(conf, 68)
-        evo_changed = (pick != old_pick)
+        conf = max(conf, min(88, p_blowout + 5))
+    # 5. Açık Kalkan (Sh < 50) ve yüksek gol beklentisi varsa 3.5 Alt'tan Gol Üstüne geçer (Korner tahminlerini ezmez!)
+    elif "3.5 Alt" in pick and p_shd < 50 and (p_o35 >= 28 or d_wk >= 35):
+        pick = f"{fav_team} Takım Golü 1.5 Üst" if p_tm >= 54 else "Maç 2.5 Gol Üst"
+        conf = max(conf, 72)
 
+    evo_changed = (pick != old_pick)
     evo_str = f"🔄 {old_pick} ➔ ✅ {pick}" if evo_changed else "✅ Kadro Onaylı (Sabit)"
     return conf, pick, disp_odd, evo_str, prop_str, evo_changed
+
 
 def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data):
     tot_sh, tot_sot, tot_cor = h_sh + a_sh, h_sot + a_sot, h_cor + a_cor
@@ -1006,6 +1050,7 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     sot_tag = "|" + "|".join(tags)
     return heat, sot_tag, "", "", heat
 
+
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     p = str(pick or "")
     tot = h_score + a_score
@@ -1019,13 +1064,18 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
         return h_score >= 1 and a_score >= 1
     if "Takım Golü 1.5 Üst" in p:
         return (h_score >= 2) if h_name in p else (a_score >= 2)
+    if "1X" in p and "1.5 Gol Üst" in p:
+        return h_score >= a_score and tot >= 2
+    if "X2" in p and "1.5 Gol Üst" in p:
+        return a_score >= h_score and tot >= 2
     if "1X" in p and "3.5 Alt" in p:
         return h_score >= a_score and tot <= 3
     if "X2" in p and "3.5 Alt" in p:
         return a_score >= h_score and tot <= 3
-    if "3.5 Gol Alt" in p:
+    if "3.5 Gol Alt" in p or "3.5 Alt" in p:
         return tot <= 3
     return tot >= 2
+
 
 # ==================== PARÇA 6/8 ====================
 import re
