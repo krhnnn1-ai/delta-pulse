@@ -1056,6 +1056,23 @@ def _true_form_mom(form_str, seed_name=""):
     w_sum = sum(pts[c] * weights[i] for i, c in enumerate(s[::-1]))
     return min(92, max(14, int(round(w_sum / sum(weights)))))
 
+def _count_real_match_cards(comp, h_c, a_c, r_data=None):
+    stat_cards = (
+        get_stat(h_c, ["yellowCards", "yellowCard"]) +
+        get_stat(a_c, ["yellowCards", "yellowCard"]) +
+        get_stat(h_c, ["redCards", "redCard"]) +
+        get_stat(a_c, ["redCards", "redCard"])
+    )
+    det_cards = 0
+    for d_item in ((comp or {}).get("details") or []):
+        if not isinstance(d_item, dict):
+            continue
+        t_txt = str((d_item.get("type") or {}).get("text") or "").lower()
+        if d_item.get("yellowCard") or d_item.get("redCard") or ("card" in t_txt):
+            det_cards += 1
+    r_cards = safe_int((r_data or {}).get("live_cards"), 0)
+    return max(stat_cards, det_cards, r_cards)
+
 def _fetch_single_league_sb(item):
     slug, lig_adi, kademe = item
     try:
@@ -1186,7 +1203,7 @@ for item in raw_matches:
     h_sot, a_sot = get_stat(h_c, ["shotsOnTarget", "onGoal"]), get_stat(a_c, ["shotsOnTarget", "onGoal"])
     h_cor, a_cor = get_stat(h_c, ["wonCorners", "corners"]), get_stat(a_c, ["wonCorners", "corners"])
     h_poss = get_stat(h_c, ["possessionPct", "possession"]) or 50
-    tot_cards = get_stat(h_c, ["yellowCards"]) + get_stat(a_c, ["yellowCards"]) + get_stat(h_c, ["redCards"]) + get_stat(a_c, ["redCards"])
+    tot_cards = _count_real_match_cards(comp, h_c, a_c, r_data)
 
     try:
         ev_d = str(ev.get("date") or "")
@@ -1225,13 +1242,17 @@ for item in raw_matches:
             won = (tot_cor_ft >= 10) if tot_cor_ft > 0 else ((h_score + a_score) >= 3)
         elif "8.5 Korner Üst" in pick:
             won = (tot_cor_ft >= 9) if tot_cor_ft > 0 else ((h_score + a_score) >= 3)
+        elif "4.5 Kart Üst" in pick:
+            won = (tot_cards >= 5)
+        elif "3.5 Kart Üst" in pick:
+            won = (tot_cards >= 4)
         else:
             won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-        is_ak = ("Ana Kasa" in pick or conf >= 82)
+        is_ak = ("Ana Kasa" in pick or conf >= 80)
         MEM.setdefault("history_scores", {})[match_title] = {"won": won, "ak": is_ak}
         base_obj.update({"won": won, "is_ak": is_ak})
         fin_cache[match_title] = base_obj
-        ledger_log[match_title] = f"{now_tr.strftime('%H:%M')} | {match_title} ({h_score}-{a_score}, Kor:{tot_cor_ft}) -> {pick} [{'✅KAZANDI' if won else '❌KAYIP'}]"
+        ledger_log[match_title] = f"{now_tr.strftime('%H:%M')} | {match_title} ({h_score}-{a_score}, Kor:{tot_cor_ft}, Kart:{tot_cards}) -> {pick} [{'✅KAZANDI' if won else '❌KAYIP'}]"
     else:
         upcoming_matches.append(base_obj)
 
@@ -1273,6 +1294,7 @@ for m in upcoming_matches:
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
+
 # ==================== PARÇA 7/8 ====================
 import urllib.parse
 
