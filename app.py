@@ -749,9 +749,20 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     ref_d = r_d.get("ref") or {}
     wx_d = r_d.get("wx") or {}
 
-    h_cor_avg = safe_float(h_d.get("cor_avg"), 5.2)
-    a_cor_avg = safe_float(a_d.get("cor_avg"), 4.8)
-    real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
+    def _pick_cor_val(d_obj, fallback_val):
+        for k in ("cor_avg", "last2_cor", "avg_cor", "son2_kor", "cor", "corners_avg", "last_cor"):
+            v = d_obj.get(k)
+            if v is not None and safe_float(v, 0.0) > 0.1:
+                return safe_float(v, fallback_val)
+        return fallback_val
+
+    direct_sum = safe_float(r_d.get("son2_kor") or r_d.get("real_cor_sum") or r_d.get("last2_cor_sum"), 0.0)
+    if direct_sum > 1.0:
+        real_cor_sum = round(direct_sum, 1)
+    else:
+        h_cor_avg = _pick_cor_val(h_d, 5.2)
+        a_cor_avg = _pick_cor_val(a_d, 4.8)
+        real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
 
     wing_asym = bool(h_d.get("wing_asym") or a_d.get("wing_asym") or ("3" in str(h_tac) or "3" in str(a_tac)) or ("4-2-3-1" in str(h_tac)) or ("4-3-3" in str(h_tac)))
     hungry_pts = max(safe_int(h_d.get("hungry_sub"), 0), safe_int(a_d.get("hungry_sub"), 0))
@@ -829,6 +840,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     m4 = None
     if "compute_model4_poisson_and_scores" in globals():
         for _args in (
+            (h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, ou_val, kademe, r_data),
             (h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data),
             (h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data, h_abbr, a_abbr),
             (h_name, a_name, h_mom, a_mom, fav_abbr, fav_val, ou_val, kademe, r_data),
@@ -849,7 +861,6 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     cor_line = "9.5 Korner Üst" if ("PREMIER" in str(lig_adi).upper() or "İSKOÇYA" in str(lig_adi).upper() or "EFL" in str(lig_adi).upper()) else "8.5 Korner Üst"
     card_line = "4.5 Kart Üst" if ("SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper()) else "3.5 Kart Üst"
 
-    # PARÇA 5B İLE TAM UYUMLU SÖZLÜK ANAHTARLARI (KeyError Koruması)
     m4.setdefault("fav_is_home", is_home_fav)
     m4.setdefault("is_home_fav", is_home_fav)
     m4.setdefault("fav_team", fav_team)
