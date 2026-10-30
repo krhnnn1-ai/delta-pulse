@@ -746,29 +746,34 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     r_d = r_data or {}
     h_d = r_d.get("h") or {}
     a_d = r_d.get("a") or {}
+    h_hist = h_d.get("hist") or {}
+    a_hist = a_d.get("hist") or {}
     ref_d = r_d.get("ref") or {}
-    wx_d = r_d.get("wx") or {}
+    wx_str = str(r_d.get("weather") or "")
 
-    def _pick_cor_val(d_obj, fallback_val):
-        for k in ("cor_avg", "last2_cor", "avg_cor", "son2_kor", "cor", "corners_avg", "last_cor"):
-            v = d_obj.get(k)
-            if v is not None and safe_float(v, 0.0) > 0.1:
-                return safe_float(v, fallback_val)
-        return fallback_val
+    # PARÇA 3A-2 İÇİNDEKİ "hist" SÖZLÜĞÜNDEN GERÇEK SON 2 MAÇ KORNERİNİ OKUR
+    h_cor_avg = safe_float(h_hist.get("cor_avg") or h_d.get("cor_avg"), 5.2)
+    a_cor_avg = safe_float(a_hist.get("cor_avg") or a_d.get("cor_avg"), 4.8)
+    real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
 
-    direct_sum = safe_float(r_d.get("son2_kor") or r_d.get("real_cor_sum") or r_d.get("last2_cor_sum"), 0.0)
-    if direct_sum > 1.0:
-        real_cor_sum = round(direct_sum, 1)
-    else:
-        h_cor_avg = _pick_cor_val(h_d, 5.2)
-        a_cor_avg = _pick_cor_val(a_d, 4.8)
-        real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
+    wing_asym = bool(
+        h_d.get("wing_asym") or a_d.get("wing_asym")
+        or ("3" in str(h_tac) or "3" in str(a_tac))
+        or ("4-2-3-1" in str(h_tac)) or ("4-3-3" in str(h_tac))
+        or ("4-2-3-1" in str(a_tac)) or ("4-3-3" in str(a_tac))
+    )
 
-    wing_asym = bool(h_d.get("wing_asym") or a_d.get("wing_asym") or ("3" in str(h_tac) or "3" in str(a_tac)) or ("4-2-3-1" in str(h_tac)) or ("4-3-3" in str(h_tac)))
-    hungry_pts = max(safe_int(h_d.get("hungry_sub"), 0), safe_int(a_d.get("hungry_sub"), 0))
-    rot_pen = safe_int(h_d.get("rot_pen"), 0) + safe_int(a_d.get("rot_pen"), 0)
-    inj_wing = bool(h_d.get("inj_wing") or a_d.get("inj_wing"))
-    inj_def = bool(h_d.get("inj_def") or a_d.get("inj_def"))
+    # PARÇA 3A-2 "hist" İÇİNDEKİ AÇ YEDEK, KANAT KAYBI VE ROTASYON VERİLERİ
+    h_sub_rat = safe_int(h_hist.get("sub_rat"), 0) if h_hist.get("hungry_sub") else 0
+    a_sub_rat = safe_int(a_hist.get("sub_rat"), 0) if a_hist.get("hungry_sub") else 0
+    hungry_pts = max(h_sub_rat, a_sub_rat, safe_int(h_d.get("hungry_sub"), 0), safe_int(a_d.get("hungry_sub"), 0))
+
+    rot_pen = safe_int(h_hist.get("wing_impact"), 0) + safe_int(a_hist.get("wing_impact"), 0)
+    if rot_pen >= 0:
+        rot_pen = -(safe_int(h_d.get("rot_cnt"), 0) + safe_int(a_d.get("rot_cnt"), 0)) if (safe_int(h_d.get("rot_cnt"), 0) + safe_int(a_d.get("rot_cnt"), 0)) >= 3 else 0
+
+    inj_wing = bool(h_hist.get("wing_drop") or a_hist.get("wing_drop") or h_d.get("inj_wing") or a_d.get("inj_wing"))
+    inj_def = bool(h_hist.get("def_shift") or a_hist.get("def_shift") or h_d.get("inj_def") or a_d.get("inj_def") or h_d.get("rot_gk") or a_d.get("rot_gk"))
 
     mom_gap = abs(safe_int(h_mom, 50) - safe_int(a_mom, 50))
     abs_fav = abs(safe_int(fav_val, -130))
@@ -788,8 +793,10 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         cor_score += 5
     cor_score = min(93, max(35, cor_score))
 
-    ref_strict = safe_int(ref_d.get("strictness"), 62)
-    card_score = 50 + int((ref_strict - 55) * 0.7) + int(max(0, 22 - mom_gap) * 0.6)
+    # PARÇA 3A-1 HAKEM ORTALAMASI ("avg") VE FAUL/KART GEÇMİŞİ
+    ref_avg = safe_float(ref_d.get("avg"), 4.0)
+    hist_cards = safe_float(h_hist.get("card_avg"), 1.8) + safe_float(a_hist.get("card_avg"), 1.8)
+    card_score = 48 + int((ref_avg - 3.6) * 10.0) + int((hist_cards - 3.4) * 4.0) + int(max(0, 22 - mom_gap) * 0.5)
     if "SERIE B" in str(lig_adi).upper() or "LA LIGA 2" in str(lig_adi).upper() or "BREZİLYA" in str(lig_adi).upper() or "ARJANTİN" in str(lig_adi).upper() or "SÜPER LİG" in str(lig_adi).upper():
         card_score += 8
     if is_blowout:
@@ -809,8 +816,8 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         tags.append("🛡️SakatKapanma")
     if rot_pen < 0:
         tags.append(f"🧬HafifRotasyon({rot_pen}p)")
-    if wx_d.get("tag"):
-        tags.append(str(wx_d["tag"]))
+    if "Yağışlı" in wx_str:
+        tags.append("🌧️IslakZemin")
 
     return {
         "cor_score": cor_score,
@@ -917,6 +924,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
 
     m4_str = f"P4+:%{p_o35}|Sh:%{m4.get('p_shield',54)}|Dw:{d_wk}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
+
 
 # ==================== PARÇA 5B/8 ====================
 def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4):
