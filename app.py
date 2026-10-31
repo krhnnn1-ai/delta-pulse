@@ -53,6 +53,24 @@ ADMIN_HASH = "5901b9952716f713fb0e0c7f1972fb2125c79e0c7c93d18d42ef1c8815b49b0e"
 APP_PUBLIC_URL = "https://delta-pulse-mam7gxcyu3xmtej7hxhxxp.streamlit.app/"
 STORE_FILE = "dp_persistent_store.json"
 
+def safe_int(val, default=0):
+    try:
+        return int(float(str(val).strip()))
+    except Exception:
+        return default
+
+def safe_float(val, default=0.0):
+    try:
+        return float(str(val).strip())
+    except Exception:
+        return default
+
+def get_stat(comp_side, keys):
+    for st_item in ((comp_side or {}).get("statistics") or []):
+        if st_item.get("name") in keys:
+            return safe_int(st_item.get("displayValue"), 0)
+    return 0
+
 @st.cache_resource
 def get_global_memory():
     seed_lp = {f"SeedLP_{i}": {"status": "WON", "score_at": "1-0", "cor_at": 9} for i in range(11)}
@@ -75,24 +93,6 @@ MEM["base_ak_t"] = max(safe_int(MEM.get("base_ak_t"), 19), 19)
 if len(MEM.setdefault("live_signals", {})) < 11:
     for _i in range(11):
         MEM["live_signals"].setdefault(f"SeedLP_{_i}", {"status": "WON", "score_at": "1-0", "cor_at": 9})
-
-def safe_int(val, default=0):
-    try:
-        return int(float(str(val).strip()))
-    except Exception:
-        return default
-
-def safe_float(val, default=0.0):
-    try:
-        return float(str(val).strip())
-    except Exception:
-        return default
-
-def get_stat(comp_side, keys):
-    for st_item in ((comp_side or {}).get("statistics") or []):
-        if st_item.get("name") in keys:
-            return safe_int(st_item.get("displayValue"), 0)
-    return 0
 
 def load_persistent_store():
     if os.path.exists(STORE_FILE):
