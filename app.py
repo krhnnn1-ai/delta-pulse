@@ -1133,7 +1133,7 @@ for m in upcoming_matches:
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
-    # ==================== MODÜL 5/6: GÖRSEL SAHA VE ARAYÜZ (UI) ====================
+   # ==================== MODÜL 5/6: GÖRSEL SAHA VE ARAYÜZ (UI) ====================
 def format_form_badges(form_str):
     out = []
     for ch in str(form_str or "")[:5]:
@@ -1254,6 +1254,17 @@ def _render_match_share_box(m, mode, idx_key, is_unlocked):
                 ok, msg = _send_telegram_msg(s_txt)
                 st.success(msg) if ok else st.warning(msg)
 
+def _time_sort_minutes(saat_str):
+    try:
+        pts = str(saat_str or "20:00").split(":")
+        h, m = int(pts[0]), int(pts[1])
+        # Gece 00:00 - 07:59 arası maçları gün sonuna (24:00+) koyar ki kronolojik sıra bozulmasın
+        if h < 8:
+            h += 24
+        return h * 60 + m
+    except Exception:
+        return 1200
+
 def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
     is_unlocked = (tier in ("VIP", "ADMIN") or is_patron_mode)
     if st.button("🔄 Refresh 24/7 Global Radar & Sync Live Telemetry", use_container_width=True, key=f"ref_main_{tier}_{is_patron_mode}"):
@@ -1292,7 +1303,34 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             _render_match_share_box(m, "live", idx_l, is_unlocked)
 
     st.markdown("### ⏳ PRE-MATCH WHALE & POISSON TELEMETRY")
-    for idx_u, m in enumerate(upcoming_matches):
+
+    # YENİ: SIRALAMA VE LİG FİLTRELEME KONTROL BARI
+    c_sort, c_flt = st.columns([2.2, 1.2])
+    with c_sort:
+        sort_mode = st.radio(
+            "📊 Bülten Sıralama Ölçütü:",
+            ["🔥 Güvene Göre", "🕒 Maç Saatine Göre", "🏆 Lige Göre", "🚩 Korner Gücüne Göre"],
+            horizontal=True,
+            key=f"sort_bar_{tier}_{is_patron_mode}"
+        )
+    with c_flt:
+        avail_leagues = ["🌍 Tüm Ligler (" + str(len(upcoming_matches)) + ")"] + sorted(list({m.get("lig", "") for m in upcoming_matches if m.get("lig")}))
+        sel_lig = st.selectbox("🏆 Lig Filtresi:", avail_leagues, key=f"lig_flt_{tier}_{is_patron_mode}")
+
+    disp_upcoming = list(upcoming_matches)
+    if not str(sel_lig).startswith("🌍"):
+        disp_upcoming = [m for m in disp_upcoming if m.get("lig") == sel_lig]
+
+    if "Maç Saatine" in sort_mode:
+        disp_upcoming.sort(key=lambda x: (_time_sort_minutes(x.get("saat", "20:00")), -x.get("conf", 0)))
+    elif "Lige Göre" in sort_mode:
+        disp_upcoming.sort(key=lambda x: (str(x.get("lig", "")), _time_sort_minutes(x.get("saat", "20:00")), -x.get("conf", 0)))
+    elif "Korner Gücüne" in sort_mode:
+        disp_upcoming.sort(key=lambda x: (safe_int((x.get("m4") or {}).get("cor_p"), 50), x.get("conf", 0)), reverse=True)
+    else:
+        disp_upcoming.sort(key=lambda x: (x.get("conf", 0), -_time_sort_minutes(x.get("saat", "20:00"))), reverse=True)
+
+    for idx_u, m in enumerate(disp_upcoming):
         locked_card = (m["conf"] >= 68 and not is_unlocked)
         p_disp = "🔒 VIP LOCKED (68%+ High Confidence)" if locked_card else m["pick"]
         pr_disp = "🔒 Unlock VIP to view Corner & Card Physics" if locked_card else m["prop"]
