@@ -49,9 +49,10 @@ header[data-testid="stHeader"], .stAppHeader, .stAppToolbar, [data-testid="stToo
 """, unsafe_allow_html=True)
 
 TR_TZ = timezone(timedelta(hours=3))
+# Sadece SHA-256 kriptografik özetleri (Plaintext şifre kaynak kodda yer almaz)
 ADMIN_HASHES = {
     "5901b9952716f713fb0e0c7f1972fb2125c79e0c7c93d18d42ef1c8815b49b0e",
-    hashlib.sha256(b"DP-F3CB9C").hexdigest()
+    "4c94485e0c21ae6c41ce1dfe7b6b28f56c779263487d408860f483029357900d"
 }
 APP_PUBLIC_URL = "https://delta-pulse-mam7gxcyu3xmtej7hxhxxp.streamlit.app/"
 STORE_FILE = "dp_persistent_store.json"
@@ -76,23 +77,19 @@ def get_stat(comp_side, keys):
 
 @st.cache_resource
 def get_global_memory():
-    seed_lp = {f"SeedLP_{i}": {"status": "WON", "score_at": "1-0", "cor_at": 9} for i in range(11)}
     return {
         "opening_odds": {}, "locked_pre": {}, "locked_picks": {}, "pre_lineup_memory": {},
-        "live_snapshots": {}, "live_signals": seed_lp, "settled_results": {}, "finished_cache": {},
+        "live_snapshots": {}, "live_signals": {}, "settled_results": {}, "finished_cache": {},
         "history_scores": {}, "ledger_log": {}, "roster_cache": {}, "team_hist_cache": {},
-        "users_db": {}, "used_txids": set(), "patron_devs": set(),
-        "base_w": 144, "base_t": 199, "base_ak_w": 16, "base_ak_t": 19,
+        "_calib_cache": {"count": -1, "factor": 1.0},
+        "users_db": {}, "used_txids": set(),
+        "base_w": 0, "base_t": 0, "base_ak_w": 0, "base_ak_t": 0,
         "trc20_wallet": "TDeltaPulseOfficialTRC20WalletAddress",
         "app_public_url": APP_PUBLIC_URL, "support_tg_url": "https://t.me/DeltaPulseSupport",
         "tg_config": {"token": "", "chat_id": ""}, "last_tg_post": 0
     }
 
 MEM = get_global_memory()
-MEM["base_w"] = max(safe_int(MEM.get("base_w"), 144), 144)
-MEM["base_t"] = max(safe_int(MEM.get("base_t"), 199), 199)
-MEM["base_ak_w"] = max(safe_int(MEM.get("base_ak_w"), 16), 16)
-MEM["base_ak_t"] = max(safe_int(MEM.get("base_ak_t"), 19), 19)
 
 def load_persistent_store():
     if os.path.exists(STORE_FILE):
@@ -103,13 +100,23 @@ def load_persistent_store():
                 MEM["users_db"].update(d["users_db"])
             if isinstance(d.get("used_txids"), list):
                 MEM["used_txids"].update(d["used_txids"])
+            for k in ("base_w", "base_t", "base_ak_w", "base_ak_t"):
+                if k in d:
+                    MEM[k] = safe_int(d[k], 0)
         except Exception:
             pass
 
 def save_persistent_store():
     try:
         with open(STORE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"users_db": MEM["users_db"], "used_txids": list(MEM["used_txids"])}, f, ensure_ascii=False)
+            json.dump({
+                "users_db": MEM["users_db"],
+                "used_txids": list(MEM["used_txids"]),
+                "base_w": safe_int(MEM.get("base_w"), 0),
+                "base_t": safe_int(MEM.get("base_t"), 0),
+                "base_ak_w": safe_int(MEM.get("base_ak_w"), 0),
+                "base_ak_t": safe_int(MEM.get("base_ak_t"), 0)
+            }, f, ensure_ascii=False)
     except Exception:
         pass
 
@@ -493,7 +500,6 @@ def poisson_pmf(k, lam):
     return (math.exp(-lam) * (lam ** k)) / math.factorial(k)
 
 def poisson_prob_over(line_val, lam):
-    # Tam Matematiksel CDF: 9.5 -> floor(9.5)=9 -> 1 - P(X<=9) = P(X>=10)
     k_max = int(math.floor(line_val))
     cdf = sum(poisson_pmf(k, lam) for k in range(k_max + 1))
     return min(0.94, max(0.06, 1.0 - cdf))
@@ -510,12 +516,21 @@ def dixon_coles_tau(gh, ga, lam_h, lam_a, rho=-0.09):
     return 1.0
 
 def _get_empirical_calibration_factor():
-    h_scores = [x for x in MEM.get("history_scores", {}).values() if isinstance(x, dict) and "brier" in x]
+    h_map = MEM.get("history_scores", {})
+    c_cache = MEM.setdefault("_calib_cache", {"count": -1, "factor": 1.0})
+    if len(h_map) == c_cache.get("count"):
+        return c_cache.get("factor", 1.0)
+    h_scores = [x for x in h_map.values() if isinstance(x, dict) and "brier" in x]
     if len(h_scores) < 8:
+        c_cache["count"] = len(h_map)
+        c_cache["factor"] = 1.0
         return 1.0
     emp_win = sum(1.0 for x in h_scores if x.get("won")) / len(h_scores)
     avg_conf = sum(safe_float(x.get("conf"), 72.0) / 100.0 for x in h_scores) / len(h_scores)
-    return min(1.08, max(0.88, emp_win / max(0.40, avg_conf)))
+    fac = min(1.20, max(0.65, emp_win / max(0.40, avg_conf)))
+    c_cache["count"] = len(h_map)
+    c_cache["factor"] = fac
+    return fac
 
 def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi=""):
     r_d = r_data if isinstance(r_data, dict) else {}
@@ -524,7 +539,7 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     h_hist, a_hist = h_info.get("hist") or {}, a_info.get("hist") or {}
     h_def, a_def = safe_int(h_info.get("def"), 68), safe_int(a_info.get("def"), 68)
     h_sho, a_sho = safe_int(h_info.get("sho"), 71), safe_int(a_info.get("sho"), 71)
-    h_ovr, a_ovr = safe_int(h_info.get("ovr"), 72), safe_int(a_info.get("ovr"), 71)
+    h_pas, a_pas = safe_int(h_info.get("pas"), 70), safe_int(a_info.get("pas"), 70)
     h_tac, a_tac = str(h_info.get("tac") or "4-2-3-1"), str(a_info.get("tac") or "4-2-3-1")
 
     fav_is_home = (str(fav_abbr).upper() == str(h_abbr).upper()) or (not fav_abbr and (h_mom + 12) >= a_mom)
@@ -556,15 +571,16 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     base_tot += (d_weak - 35) * 0.007 - (bus_score - 42) * 0.006
     base_tot = max(1.68, min(3.45, base_tot))
 
-    fav_share = min(0.76, max(0.50, p_mkt_fav * 0.84 + ((h_mom - a_mom if fav_is_home else a_mom - h_mom) * 0.0018)))
+    # Denetim Düzeltmesi Madde 3: Favori gol payı (0.84 -> 0.94) gerçekçi seviyeye çıkarıldı
+    fav_share = min(0.78, max(0.50, p_mkt_fav * 0.94 + ((h_mom - a_mom if fav_is_home else a_mom - h_mom) * 0.0015)))
     mkt_h = base_tot * (fav_share if fav_is_home else (1.0 - fav_share))
     mkt_a = base_tot * ((1.0 - fav_share) if fav_is_home else fav_share)
 
     struct_h = (h_xg_hist * h_fatigue) + ((h_sho - a_def) * 0.012) + (0.09 if fav_is_home else 0.0)
     struct_a = (a_xg_hist * a_fatigue) + ((a_sho - h_def) * 0.012) + (0.07 if not fav_is_home else 0.0)
 
-    lam_h = max(0.40, min(2.70, (mkt_h * 0.68) + (struct_h * 0.32)))
-    lam_a = max(0.30, min(2.30, (mkt_a * 0.68) + (struct_a * 0.32)))
+    lam_h = max(0.40, min(2.75, (mkt_h * 0.65) + (struct_h * 0.35)))
+    lam_a = max(0.30, min(2.35, (mkt_a * 0.65) + (struct_a * 0.35)))
 
     mat = {}
     tot_norm = 0.0
@@ -601,16 +617,16 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         if gh >= 1 and ga >= 1:
             p_btts += p_ij
 
-    # ELO / Rating Tabanlı Bağımsız Model + Poisson Ensemble (%70 Poisson + %30 ELO)
-    elo_diff = ((h_ovr - a_ovr) * 14.0 + (h_mom - a_mom) * 2.2 + 45.0) if fav_is_home else ((a_ovr - h_ovr) * 14.0 + (a_mom - h_mom) * 2.2 - 25.0)
-    p_elo_fav = 1.0 / (1.0 + (10.0 ** (-elo_diff / 400.0)))
-    p_ens_fav = (0.70 * p_struct_fav) + (0.30 * p_elo_fav)
+    # Denetim Düzeltmesi Madde 5: Momentumdan bağımsız Taktik/Kadro/Dinlenme ELO bileşeni
+    tac_elo_diff = (((h_def + h_pas) - (a_def + a_pas)) * 8.5 + (h_rest - a_rest) * 12.0 + 50.0) if fav_is_home else (((a_def + a_pas) - (h_def + h_pas)) * 8.5 + (a_rest - h_rest) * 12.0 - 30.0)
+    p_elo_fav = 1.0 / (1.0 + (10.0 ** (-tac_elo_diff / 400.0)))
+    p_ens_fav = (0.75 * p_struct_fav) + (0.25 * p_elo_fav)
 
     sc_prob = min(36, max(14, int(round(best_p * 100.0 * 1.38))))
     return {
         "fav_is_home": fav_is_home, "p_fav": round(p_mkt_fav * 100, 1),
         "p_struct_fav": round(p_ens_fav * 100, 1), "p_struct_dc": round(p_struct_dc * 100, 1),
-        "mat": mat, "tot_norm": tot_norm,
+        "fav_val": fav_val, "mat": mat, "tot_norm": tot_norm,
         "d_weak": d_weak, "bus_score": bus_score, "h_rest": h_rest, "a_rest": a_rest,
         "p_shield": int(round(p_shield * 100)), "p_team": int(round(p_team * 100)),
         "p_over25": int(round(p_over25 * 100)), "p_over35": int(round(p_over35 * 100)),
@@ -655,7 +671,6 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
     is_blowout = (blowout_prob >= 58)
 
-    # Denetim Düzeltmesi Madde 2: Tam Doğru Poisson CDF Line (cor_line_num ve card_line_num doğrudan kullanılır!)
     wx_mult = 1.06 if "Yağışlı" in wx_str else 1.0
     wing_mult = 1.07 if (wing_asym and not inj_wing) else (0.86 if inj_wing else 1.0)
     cor_lambda = max(6.0, min(15.5, real_cor_sum * 0.94 * wing_mult * wx_mult))
@@ -703,22 +718,20 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     }
 
 def _compute_pick_specific_value(pick, conf, m4, ou_val):
+    # Denetim Düzeltmesi Madde 4: Uydurma Kelly kaldırıldı, sadece Model vs Piyasa Farkı (Edge) gösterilir
     p_pick = min(0.92, max(0.35, conf / 100.0))
     if "2.5 Gol Üst" in str(pick):
-        p_mkt = 0.58 if ou_val >= 3.0 else 0.50
+        p_mkt = 0.56 if ou_val >= 3.0 else 0.48
     elif "Korner" in str(pick) or "Kart" in str(pick):
-        p_mkt = 0.54
+        p_mkt = 0.52
     elif "Çifte Şans" in str(pick):
-        p_mkt = min(0.78, max(0.52, safe_float(m4.get("p_fav"), 52.0) / 100.0 + 0.12))
+        p_mkt = min(0.78, max(0.52, safe_float(m4.get("p_fav"), 52.0) / 100.0 + 0.14))
     else:
         p_mkt = safe_float(m4.get("p_fav"), 52.0) / 100.0
 
     edge = round((p_pick - p_mkt) * 100.0, 1)
-    b_net = max(0.25, (1.0 / max(0.15, p_mkt)) - 1.0)
-    kelly_f = max(0.0, ((b_net * p_pick) - (1.0 - p_pick)) / b_net) * 0.25
-    kelly_pct = round(min(4.8, max(0.5, kelly_f * 100.0)), 1)
     val_tag = "💎VALUE" if edge >= 8.0 else ("✅MARGINAL" if edge >= 3.0 else "⚪FAIR")
-    return edge, kelly_pct, val_tag
+    return edge, val_tag
 
 def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
     mat = m4.get("mat") or {}
@@ -749,9 +762,9 @@ def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
     c_p = safe_int(m4.get("cor_p"), 68)
     k_cnt = safe_int(fr.get("est_card_cnt"), 4)
     k_p = safe_int(m4.get("card_p"), 62)
-    edge_v, kelly_v, val_t = _compute_pick_specific_value(pick, conf, m4, ou_val)
+    edge_v, val_t = _compute_pick_specific_value(pick, conf, m4, ou_val)
     return {
-        "ui": f"👑 <b>Patron Özel Simülasyon:</b> ⚽ <b>Gol/Skor Matrisi:</b> <span style='color:#56d364;font-weight:800;'>{est_sc} (%{sc_p} • λ:{lam_h}-{lam_a})</span> &nbsp;|&nbsp; 🚩 <b>Tahmini Korner:</b> <span style='color:#ffd33d;font-weight:800;'>{c_cnt} Korner (%{c_p})</span> &nbsp;|&nbsp; 🟨 <b>Tahmini Kart:</b> <span style='color:#ff7b72;font-weight:800;'>{k_cnt} Kart (%{k_p})</span> &nbsp;|&nbsp; {val_t} (Edge:{edge_v:+.1f}% • Kelly:%{kelly_v})",
+        "ui": f"👑 <b>Patron Özel Simülasyon:</b> ⚽ <b>Gol Matrisi:</b> <span style='color:#56d364;font-weight:800;'>{est_sc} (%{sc_p} • λ:{lam_h}-{lam_a})</span> &nbsp;|&nbsp; 🚩 <b>Tahmini Korner:</b> <span style='color:#ffd33d;font-weight:800;'>{c_cnt} Korner (%{c_p})</span> &nbsp;|&nbsp; 🟨 <b>Tahmini Kart:</b> <span style='color:#ff7b72;font-weight:800;'>{k_cnt} Kart (%{k_p})</span> &nbsp;|&nbsp; {val_t} (Edge:{edge_v:+.1f}%)",
         "mini": f"[👑Skor:{est_sc}(%{sc_p})|λ:{lam_h}-{lam_a}|Kor:{c_cnt}(%{c_p})|Kart:{k_cnt}(%{k_p})|{val_t}]"
     }
 
@@ -927,18 +940,20 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
     fav_is_home = (fav_abbr == h_abbr) or ((h_mom + 12) >= a_mom)
     fav_team = h_name if fav_is_home else a_name
     fav_losing = (h_score < a_score) if fav_is_home else (a_score < h_score)
+    odd_src_tag = "📈CanlıOranAktif" if has_live_api_odds else "⏳CanlıOranYok(SahaFiziği)"
 
-    # Denetim Düzeltmesi Madde 6: Gerçek Canlı Tahmin (live_pick) Üretimi
-    if fav_losing and m_int <= 75 and exp_rem_g >= 0.70:
-        live_pick = f"🎯Canlı: {fav_team} Sıradaki Gol / +2.5 Korner (%{min(88, p_next_goal + 10)})"
+    if not has_live_api_odds and heat < 68:
+        live_pick = f"⏳ Canlı Oran Bekleniyor • Saha Kalan xG: {exp_rem_g} (Gol İhtimali: %{p_next_goal})"
+    elif fav_losing and m_int <= 75 and exp_rem_g >= 0.70:
+        live_pick = f"🎯 Canlı Pusu Hedefi: {fav_team} Sıradaki Gol / +2.5 Korner (%{min(88, p_next_goal + 10)})"
     elif exp_rem_g >= 0.85 and m_int <= 78:
-        live_pick = f"🎯Canlı: {h_score + a_score + 0.5} Gol Üst (%{p_next_goal})"
+        live_pick = f"🎯 Canlı Pusu Hedefi: {h_score + a_score + 0.5} Gol Üst (%{p_next_goal})"
     elif tot_cor >= int(m_int * 0.12) and m_int <= 75:
-        live_pick = f"🎯Canlı: Toplam {tot_cor + 2.5} Korner Üst"
+        live_pick = f"🎯 Canlı Pusu Hedefi: Toplam {tot_cor + 2.5} Korner Üst (Kalan xG: {exp_rem_g})"
     else:
-        live_pick = f"🎯Canlı: Mevcut Tempo Dengeli (Kalan xG:{exp_rem_g})"
+        live_pick = f"🎯 Canlı Saha Projeksiyonu: Kalan xG {exp_rem_g} (Gol: %{p_next_goal})"
 
-    tags = [f"⚡KalanxG:{exp_rem_g}(Gol:%{p_next_goal})", live_pick]
+    tags = [f"⚡KalanxG:{exp_rem_g}(Gol:%{p_next_goal})", odd_src_tag]
     if abs(h_poss - 50) >= 12:
         tags.append("📐KanatAsimetri")
     if fav_losing and heat >= 70:
@@ -979,7 +994,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
         return a_score >= h_score and tot <= 3
     if "3.5 Gol Alt" in p or "3.5 Alt" in p:
         return tot <= 3
-    return tot >= 2
+    return False
     # ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ ====================
 _ACTIVE_LEAGUES = [
     ("tur.1", "TÜRKİYE SÜPER LİG", 1), ("esp.1", "İSPANYA LA LIGA", 1),
@@ -1256,13 +1271,15 @@ for m in upcoming_matches:
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
-   # ==================== MODÜL 5/6: GÖRSEL SAHA VE ARAYÜZ (UI) ====================
+  # ==================== MODÜL 5/6: GÖRSEL SAHA VE ARAYÜZ (UI) ====================
 def format_form_badges(form_str):
     out = []
     for ch in str(form_str or "")[:5]:
+        if ch not in ("W", "D", "L"):
+            continue
         c = "#2ea043" if ch == "W" else ("#d29922" if ch == "D" else "#f85149")
         out.append(f"<span style='background:{c};color:#fff;padding:1px 4px;border-radius:3px;font-size:9.5px;font-weight:700;margin-right:2px;'>{ch}</span>")
-    return "".join(out)
+    return "".join(out) if out else "<span style='color:#8b949e;'>—</span>"
 
 def _split_players_by_formation(starters, tac_str, is_away=False):
     pts = [safe_int(x, 0) for x in str(tac_str or "4-2-3-1").split("-") if safe_int(x, 0) > 0]
@@ -1381,7 +1398,6 @@ def _time_sort_minutes(saat_str):
     try:
         pts = str(saat_str or "20:00").split(":")
         h, m = int(pts[0]), int(pts[1])
-        # Gece 00:00 - 07:59 arası maçları gün sonuna (24:00+) koyar ki kronolojik sıra bozulmasın
         if h < 8:
             h += 24
         return h * 60 + m
@@ -1393,7 +1409,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
     if st.button("🔄 Refresh 24/7 Global Radar & Sync Live Telemetry", use_container_width=True, key=f"ref_main_{tier}_{is_patron_mode}"):
         st.rerun()
 
-    ldg = MEM.get("DATA_LEDGER") or {"karne_str": "144/199 (%72)", "ak_str": "16/19 (%84)", "lp_str": "11/11 (%100)"}
+    ldg = MEM.get("DATA_LEDGER") or {"karne_str": "0/0", "ak_str": "0/0", "lp_str": "0/0"}
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>"
         f"<div class='dp-card' style='flex:1;min-width:140px;'>🏆 <b>Verified AI Record:</b> <span style='color:#56d364;font-weight:800;'>{ldg['karne_str']}</span></div>"
@@ -1406,7 +1422,9 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         st.markdown("### 🔴 LIVE AMBUSH & PRESSURE RADAR (CANLI SAHALAR)")
         for idx_l, m in enumerate(live_matches):
             p_disp = m["pick"] if is_unlocked else "🔒 VIP LOCKED TARGET"
+            lp_disp = m.get("live_pick", "") if is_unlocked else "🔒 VIP LOCKED LIVE AMBUSH"
             m4_d = m.get("m4") or {}
+            live_pick_bar = f"<div style='background:#0d2818;border-left:3px solid #3fb950;padding:5px 8px;border-radius:4px;margin-top:5px;font-size:12px;font-weight:700;color:#56d364;'>{lp_disp}</div>" if lp_disp else ""
             patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:#0d1117;border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{m4_d.get('patron_sim_ui','')}</div>" if (is_patron_mode and m4_d.get("patron_sim_ui")) else ""
             st.markdown(
                 f"<div class='dp-card' style='border-left:4px solid #f85149;'>"
@@ -1416,8 +1434,9 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
                 f"<div style='font-size:16px;font-weight:800;margin:5px 0;color:#fff;'>{m['h_name']} <span style='color:#ffd33d;'>{m['h_score']} - {m['a_score']}</span> {m['a_name']}</div>"
                 f"<div style='font-size:11.5px;color:#c9d1d9;'>🎯 <b>Şut(İsabet):</b> {m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']}) | 🚩 <b>Korner:</b> {m['h_cor']} - {m['a_cor']} (Top:{m['h_cor']+m['a_cor']}) | 🟨 <b>Kart:</b> {m['cards']} | ⚽ <b>Top:</b> %{m['h_poss']}</div>"
                 f"<div style='font-size:11px;color:#79c0ff;margin-top:4px;'>⚡ <b>Canlı Telemetri:</b> {m['odd']} {m['delta_str']} {m['sot_tag']}</div>"
+                f"{live_pick_bar}"
                 f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
-                f"<span>🎯 <b>Maç Önü Hedefi:</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div>"
+                f"<span>🎯 <b>Maç Önü Kilidi:</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div>"
                 f"{patron_line}</div>",
                 unsafe_allow_html=True
             )
@@ -1427,7 +1446,6 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
 
     st.markdown("### ⏳ PRE-MATCH WHALE & POISSON TELEMETRY")
 
-    # YENİ: SIRALAMA VE LİG FİLTRELEME KONTROL BARI
     c_sort, c_flt = st.columns([2.2, 1.2])
     with c_sort:
         sort_mode = st.radio(
@@ -1550,6 +1568,16 @@ if st.session_state.get("patron_unlocked"):
         users_db = MEM.setdefault("users_db", {})
         vip_cnt = sum(1 for u in users_db.values() if isinstance(u, dict) and u.get("tier") == "VIP")
         st.markdown(f"**👥 Gerçek Cihaz:** `{len(users_db)}` | **👑 Aktif VIP:** `{vip_cnt}` (Kurucu Kalan: `{max(0, 100 - vip_cnt)}/100`)")
+        with st.expander("📒 Kalıcı Karne & Arşiv Devir Ayarları (JSON Store)", expanded=False):
+            c_bw, c_bt, c_akw, c_akt = st.columns(4)
+            nw = c_bw.number_input("Devreden Kazanan", value=safe_int(MEM.get("base_w"), 0), min_value=0)
+            nt = c_bt.number_input("Devreden Toplam", value=safe_int(MEM.get("base_t"), 0), min_value=0)
+            nakw = c_akw.number_input("Ana Kasa Kazanan", value=safe_int(MEM.get("base_ak_w"), 0), min_value=0)
+            nakt = c_akt.number_input("Ana Kasa Toplam", value=safe_int(MEM.get("base_ak_t"), 0), min_value=0)
+            if st.button("💾 Kasa Devrini Kalıcı Dosyaya Kaydet", use_container_width=True):
+                MEM["base_w"], MEM["base_t"], MEM["base_ak_w"], MEM["base_ak_t"] = int(nw), int(nt), int(nakw), int(nakt)
+                save_persistent_store()
+                st.rerun()
     with t4:
         render_x_and_telegram_command_center()
 else:
