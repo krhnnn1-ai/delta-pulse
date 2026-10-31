@@ -408,9 +408,12 @@ def build_team_hist_metrics(h_base, cur_form, rot_cnt, starters, bench, t_mom, k
 
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr = task_tuple
-    cache_key = f"{ev_id}_{state}_v78_dc"
+    cache_key = f"{ev_id}_{state}_v79_live_xi"
     if cache_key in MEM["roster_cache"]:
-        return match_title, MEM["roster_cache"][cache_key]
+        cached_res = MEM["roster_cache"][cache_key]
+        # Maç önündeysek (pre) ve önbellekteki veri henüz resmi kadro değilse önbelleği 무시하고 ESPN'den tekrar kontrol et!
+        if cached_res.get("official") or state != "pre":
+            return match_title, cached_res
 
     res = {"official": False, "slug": slug, "weather": derive_match_weather(match_title, slug), "ref": extract_referee_profile({}, match_title, slug), "h": {}, "a": {}}
     data = {}
@@ -433,14 +436,17 @@ def fetch_and_analyze_roster(task_tuple):
             h_base = fetch_last_match_twin(slug, t_name, data, idx, t_mom, kademe)
             form_str = resolve_team_formation(t_name, r_obj.get("formation") or h_base.get("prev_tac"), t_mom, side_key == "h")
             starters, bench = [], []
-            for p_entry in (r_obj.get("roster") or []):
+            raw_roster = r_obj.get("roster") or []
+            has_explicit_starters = any(bool(pe.get("starter")) for pe in raw_roster if isinstance(pe, dict))
+
+            for idx_p, p_entry in enumerate(raw_roster):
                 if not isinstance(p_entry, dict):
                     continue
                 ath = p_entry.get("athlete") or {}
                 p_name = str(ath.get("shortName") or ath.get("displayName") or "Player")
                 jersey = str(p_entry.get("jersey") or ath.get("jersey") or "10")
                 pos_abbr = str(((p_entry.get("position") or ath.get("position")) or {}).get("abbreviation") or "M")
-                is_st = bool(p_entry.get("starter"))
+                is_st = bool(p_entry.get("starter")) if has_explicit_starters else (idx_p < 11 and len(raw_roster) >= 11)
                 p_rat = _calc_struct_player_rat(t_mom, kademe, pos_abbr, is_st, h_base.get("sh_avg", 11.0))
                 if is_st:
                     starters.append({"name": p_name, "num": jersey, "pos": pos_abbr, "rat": p_rat})
@@ -490,9 +496,11 @@ def fetch_and_analyze_roster(task_tuple):
                 "ovr": b_ovr, "sho": b_ovr + 2, "att": b_ovr + 2, "pas": b_ovr + 1, "dri": b_ovr, "def": b_ovr - 1
             }
 
-    if res["official"] or state == "in" or (len((res.get("h") or {}).get("starters") or []) >= 11 and "#" not in str(res["h"]["starters"][0].get("name", ""))):
+    # SADECE resmi kadro açıklandıysa (official=True) veya maç başladıysa (state != "pre") önbelleğe kilitle!
+    if res["official"] or state != "pre":
         MEM["roster_cache"][cache_key] = res
     return match_title, res
+
 # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU ====================
 LEAGUE_GOAL_AVG = {
     "ger.1": 3.05, "ned.1": 3.00, "eng.league_cup": 2.82, "sco.1": 2.75,
