@@ -102,6 +102,9 @@ def load_persistent_store():
                 MEM["used_txids"].update(d["used_txids"])
             if isinstance(d.get("patron_devs"), list):
                 MEM.setdefault("patron_devs", set()).update(d["patron_devs"])
+            for dict_k in ("locked_picks", "opening_odds", "pre_lineup_memory", "finished_cache", "history_scores", "live_signals"):
+                if isinstance(d.get(dict_k), dict):
+                    MEM.setdefault(dict_k, {}).update(d[dict_k])
             for k in ("base_w", "base_t", "base_ak_w", "base_ak_t"):
                 if k in d:
                     MEM[k] = safe_int(d[k], 0)
@@ -112,9 +115,15 @@ def save_persistent_store():
     try:
         with open(STORE_FILE, "w", encoding="utf-8") as f:
             json.dump({
-                "users_db": MEM["users_db"],
-                "used_txids": list(MEM["used_txids"]),
+                "users_db": MEM.get("users_db", {}),
+                "used_txids": list(MEM.get("used_txids", set())),
                 "patron_devs": list(MEM.get("patron_devs", set())),
+                "locked_picks": MEM.get("locked_picks", {}),
+                "opening_odds": MEM.get("opening_odds", {}),
+                "pre_lineup_memory": MEM.get("pre_lineup_memory", {}),
+                "finished_cache": MEM.get("finished_cache", {}),
+                "history_scores": MEM.get("history_scores", {}),
+                "live_signals": MEM.get("live_signals", {}),
                 "base_w": safe_int(MEM.get("base_w"), 0),
                 "base_t": safe_int(MEM.get("base_t"), 0),
                 "base_ak_w": safe_int(MEM.get("base_ak_w"), 0),
@@ -122,6 +131,8 @@ def save_persistent_store():
             }, f, ensure_ascii=False)
     except Exception:
         pass
+
+load_persistent_store()
 
 def get_smart_device_uid():
     try:
@@ -998,7 +1009,7 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "3.5 Gol Alt" in p or "3.5 Alt" in p:
         return tot <= 3
     return False
-    # ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ ====================
+   # ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ ====================
 _ACTIVE_LEAGUES = [
     ("tur.1", "TÜRKİYE SÜPER LİG", 1), ("esp.1", "İSPANYA LA LIGA", 1),
     ("ger.1", "ALMANYA BUNDESLIGA", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
@@ -1060,6 +1071,8 @@ def _fetch_single_league_sb(item):
         except Exception:
             pass
     return slug, lig_adi, kademe, list(merged_events.values())
+
+load_persistent_store()
 
 for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
@@ -1170,10 +1183,16 @@ for item in raw_matches:
     conf, pick, disp_odd, warn_flag, m4_str, m4 = evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi)
     conf, pick, disp_odd, evo_str, prop_str, evo_changed = compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name, h_abbr, a_abbr, h_tac, a_tac, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, conf, pick, lig_adi, r_data, m4)
 
+    # KALICI KİLİT: Maç önü (pre) aşamasında güncellenir; maç başladığı an (in/post) diskteki kilit okunur ve asla değişmez!
     if state == "pre" or match_title not in locked_picks:
-        locked_picks[match_title] = {"pick": pick, "conf": conf, "prop": prop_str, "ev_id": ev_id}
+        locked_picks[match_title] = {
+            "pick": pick, "conf": conf, "prop": prop_str,
+            "ev_id": ev_id, "locked_at": now_tr.strftime("%Y-%m-%d %H:%M")
+        }
     else:
-        pick, conf, prop_str = locked_picks[match_title]["pick"], locked_picks[match_title]["conf"], locked_picks[match_title]["prop"]
+        pick = locked_picks[match_title].get("pick", pick)
+        conf = safe_int(locked_picks[match_title].get("conf"), conf)
+        prop_str = locked_picks[match_title].get("prop", prop_str)
 
     h_score, a_score = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
     h_sh, a_sh = get_stat(h_c, ["totalShots", "shotsSummary"]), get_stat(a_c, ["totalShots", "shotsSummary"])
@@ -1234,18 +1253,21 @@ for item in raw_matches:
     else:
         upcoming_matches.append(base_obj)
 
+# Tüm kilitleri, açılış oranlarını ve biten maçları kalıcı JSON dosyasına kaydet
+save_persistent_store()
+
 live_matches.sort(key=lambda x: x.get("heat", 0), reverse=True)
 upcoming_matches.sort(key=lambda x: x.get("conf", 0), reverse=True)
 finished_matches = [x for x in list(fin_cache.values())[::-1] if isinstance(x, dict) and "h_name" in x and ((x.get("h_sh", 0) + x.get("a_sh", 0)) > 0 or (x.get("h_cor", 0) + x.get("a_cor", 0)) > 0)]
 
 hist_vals = [x for k, x in MEM.get("history_scores", {}).items() if isinstance(x, dict) and k in fin_cache]
-g_w = MEM.get("base_w", 144) + sum(1 for x in hist_vals if x.get("won"))
-g_t = MEM.get("base_t", 199) + len(hist_vals)
-g_r = int(round((g_w * 100.0) / max(1, g_t)))
+g_w = MEM.get("base_w", 0) + sum(1 for x in hist_vals if x.get("won"))
+g_t = MEM.get("base_t", 0) + len(hist_vals)
+g_r = int(round((g_w * 100.0) / max(1, g_t))) if g_t > 0 else 0
 
-ak_w = MEM.get("base_ak_w", 16) + sum(1 for x in hist_vals if x.get("ak") and x.get("won"))
-ak_t = MEM.get("base_ak_t", 19) + sum(1 for x in hist_vals if x.get("ak"))
-ak_r = int(round((ak_w * 100.0) / max(1, ak_t)))
+ak_w = MEM.get("base_ak_w", 0) + sum(1 for x in hist_vals if x.get("ak") and x.get("won"))
+ak_t = MEM.get("base_ak_t", 0) + sum(1 for x in hist_vals if x.get("ak"))
+ak_r = int(round((ak_w * 100.0) / max(1, ak_t))) if ak_t > 0 else 0
 
 lp_all = [x for x in MEM.get("live_signals", {}).values() if isinstance(x, dict)]
 lp_w = sum(1 for x in lp_all if x.get("status") == "WON")
