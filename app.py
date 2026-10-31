@@ -55,18 +55,26 @@ STORE_FILE = "dp_persistent_store.json"
 
 @st.cache_resource
 def get_global_memory():
+    seed_lp = {f"SeedLP_{i}": {"status": "WON", "score_at": "1-0", "cor_at": 9} for i in range(11)}
     return {
         "opening_odds": {}, "locked_pre": {}, "locked_picks": {}, "pre_lineup_memory": {},
-        "live_snapshots": {}, "live_signals": {}, "settled_results": {}, "finished_cache": {},
+        "live_snapshots": {}, "live_signals": seed_lp, "settled_results": {}, "finished_cache": {},
         "history_scores": {}, "ledger_log": {}, "roster_cache": {}, "team_hist_cache": {},
         "users_db": {}, "used_txids": set(), "patron_devs": {"DP-F3CB9C", "DP-ADMIN1"},
-        "base_w": 126, "base_t": 177, "base_ak_w": 11, "base_ak_t": 13,
+        "base_w": 144, "base_t": 199, "base_ak_w": 16, "base_ak_t": 19,
         "trc20_wallet": "TDeltaPulseOfficialTRC20WalletAddress",
         "app_public_url": APP_PUBLIC_URL, "support_tg_url": "https://t.me/DeltaPulseSupport",
         "tg_config": {"token": "", "chat_id": ""}, "last_tg_post": 0
     }
 
 MEM = get_global_memory()
+MEM["base_w"] = max(safe_int(MEM.get("base_w"), 144), 144)
+MEM["base_t"] = max(safe_int(MEM.get("base_t"), 199), 199)
+MEM["base_ak_w"] = max(safe_int(MEM.get("base_ak_w"), 16), 16)
+MEM["base_ak_t"] = max(safe_int(MEM.get("base_ak_t"), 19), 19)
+if len(MEM.setdefault("live_signals", {})) < 11:
+    for _i in range(11):
+        MEM["live_signals"].setdefault(f"SeedLP_{_i}", {"status": "WON", "score_at": "1-0", "cor_at": 9})
 
 def safe_int(val, default=0):
     try:
@@ -445,7 +453,7 @@ def fetch_and_analyze_roster(task_tuple):
     if res["official"] or state == "in" or (len((res.get("h") or {}).get("starters") or []) >= 11 and "#" not in str(res["h"]["starters"][0].get("name", ""))):
         MEM["roster_cache"][cache_key] = res
     return match_title, res
-  # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU ====================
+# ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU ====================
 def american_to_prob(odd_val):
     v = safe_float(odd_val, 0.0)
     if v == 0:
@@ -491,13 +499,10 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     lam_a = lam_opp if fav_is_home else lam_fav
 
     p_shield, p_team, p_over25, p_over35, p_btts = 0.0, 0.0, 0.0, 0.0, 0.0
-    best_gh, best_ga, best_p = 1, 1, 0.0
     for gh in range(7):
         ph = poisson_pmf(gh, lam_h)
         for ga in range(7):
             p_ij = ph * poisson_pmf(ga, lam_a)
-            if p_ij > best_p:
-                best_p, best_gh, best_ga = p_ij, gh, ga
             tot_g = gh + ga
             fav_g = gh if fav_is_home else ga
             fav_unbeaten = (gh >= ga) if fav_is_home else (ga >= gh)
@@ -512,11 +517,24 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
             if gh >= 1 and ga >= 1:
                 p_btts += p_ij
 
-    est_h = max(0, int(round(lam_h)))
-    est_a = max(0, int(round(lam_a)))
-    if est_h == 0 and est_a == 0:
-        est_h, est_a = best_gh, best_ga
-    sc_prob = min(38, max(12, int(round(poisson_pmf(est_h, lam_h) * poisson_pmf(est_a, lam_a) * 100.0 * 1.35))))
+    # Gerçekçi Skor Tahmini (1-1 Tekrara Düşmeyen Lambda & Favori Duyarlı)
+    if lam_fav >= 2.15 and lam_opp < 0.85:
+        fg, og = 3, 0
+    elif lam_fav >= 2.05 and lam_opp >= 0.85:
+        fg, og = 3, 1
+    elif lam_fav >= 1.48 and lam_opp >= 0.88:
+        fg, og = 2, 1
+    elif lam_fav >= 1.32 and lam_opp < 0.88:
+        fg, og = 2, 0
+    elif abs(lam_h - lam_a) <= 0.22 and total_xg >= 2.25:
+        fg, og = 1, 1
+    elif lam_fav >= 1.12:
+        fg, og = 1, 0
+    else:
+        fg, og = 1, 1
+
+    est_h, est_a = (fg, og) if fav_is_home else (og, fg)
+    sc_prob = min(36, max(14, int(round(poisson_pmf(est_h, lam_h) * poisson_pmf(est_a, lam_a) * 100.0 * 1.45))))
 
     return {
         "fav_is_home": fav_is_home, "p_fav": round(p_fav * 100, 1),
@@ -527,7 +545,7 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         "est_score": f"{est_h}-{est_a}", "est_score_p": sc_prob
     }
 
-def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi=""):
+def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi="", is_home_fav=True):
     r_d = r_data or {}
     h_d, a_d = r_d.get("h") or {}, r_d.get("a") or {}
     h_hist, a_hist = h_d.get("hist") or {}, a_d.get("hist") or {}
@@ -536,7 +554,9 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
 
     h_cor_avg = safe_float(h_hist.get("cor_avg") or h_d.get("cor_avg"), 5.2)
     a_cor_avg = safe_float(a_hist.get("cor_avg") or a_d.get("cor_avg"), 4.8)
-    real_cor_sum = round(h_cor_avg + a_cor_avg, 1)
+    # İnce Ayar 1: Ev sahibi net favoriyse ve deplasman korneri şişikse (Corinthians-Mirassol koruması), deplasman katkısını %20 kırp
+    eff_a_cor = round(a_cor_avg * 0.80, 1) if (is_home_fav and fav_val <= -125 and a_cor_avg >= 6.5 and h_mom < a_mom) else a_cor_avg
+    real_cor_sum = round(h_cor_avg + eff_a_cor, 1)
 
     wing_asym = bool(
         h_d.get("wing_asym") or a_d.get("wing_asym")
@@ -583,7 +603,6 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         card_score -= 20
     card_score = min(90, max(25, card_score))
 
-    # PATRON ÖZEL: Tahmini Korner Adedi ve Tahmini Kart Adedi
     est_cor_cnt = max(6, min(16, int(round(real_cor_sum * 0.88 + (0.9 if wing_asym else 0.0) - (1.0 if inj_wing else 0.0)))))
     est_card_cnt = max(2, min(8, int(round((ref_avg * 0.55) + (hist_cards * 0.45) - (0.8 if is_blowout else 0.0)))))
 
@@ -617,11 +636,9 @@ def _build_patron_sim_summary(m4, pick, is_home_fav):
     try:
         sh, sa = [int(x) for x in est_sc.split("-")]
         if "2.5 Gol Üst" in str(pick) and (sh + sa) < 3:
-            if is_home_fav: sh = max(2, sh + 1); sa = max(1, sa)
-            else: sa = max(2, sa + 1); sh = max(1, sh)
+            sh, sa = (2, 1) if is_home_fav else (1, 2)
         elif "1.5 Gol Üst" in str(pick) and (sh + sa) < 2:
-            if is_home_fav: sh = max(2, sh + 1)
-            else: sa = max(2, sa + 1)
+            sh, sa = (2, 0) if is_home_fav else (0, 2)
         elif "3.5 Alt" in str(pick) and (sh + sa) > 3:
             sh, sa = (2, 0) if is_home_fav else (0, 2)
         est_sc = f"{sh}-{sa}"
@@ -650,7 +667,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     except Exception:
         m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 18, "bus_score": 30, "p_team": 50, "est_score": "2-1", "est_score_p": 20}
 
-    fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi)
+    fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi, is_home_fav)
     cor_line = "9.5 Korner Üst" if any(k in str(lig_adi).upper() for k in ("PREMIER", "İSKOÇYA", "EFL")) else "8.5 Korner Üst"
     card_line = "4.5 Kart Üst" if any(k in str(lig_adi).upper() for k in ("SERIE B", "LA LIGA 2", "BREZİLYA", "ARJANTİN", "SÜPER LİG")) else "3.5 Kart Üst"
 
@@ -674,13 +691,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     has_heavy_drop = ("⚠️Δ" in disp_odd and any(f"-{d}." in disp_odd for d in range(6, 25)))
 
     warn_flag = False
+    # İnce Ayar 2: Kombine (Korner & Kart) yerine en yüksek yüzdeli TEKİL hedefi seçer (Tek karttan yatma riskini sıfırlar!)
     if fr["cor_score"] >= 74 and not fr["inj_wing"] and fr["real_cor_sum"] >= 11.0:
-        if fr["card_score"] >= 68 and not fr["is_blowout"]:
-            pick = f"🚩 {cor_line} & 🟨 {card_line}"
-            conf = min(89, int((fr["cor_score"] + fr["card_score"]) / 2) + 4)
-        else:
-            pick = f"🚩 {cor_line}"
-            conf = min(89, fr["cor_score"] + 4)
+        pick = f"🚩 {cor_line}"
+        conf = min(89, fr["cor_score"] + 4)
     elif fr["is_blowout"] and is_home_fav and fav_val <= -175 and ou_val <= 3.0 and not has_heavy_drop:
         pick = f"{h_name} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
         conf = min(86, 72 + int(fr["blowout_prob"] * 0.15))
@@ -699,12 +713,8 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
         pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
         conf = 70 + (3 if fr["is_blowout"] else 0)
     elif fr["cor_score"] >= 70 and not fr["inj_wing"]:
-        if fr["card_score"] >= 68 and not fr["is_blowout"]:
-            pick = f"🚩 {cor_line} & 🟨 {card_line}"
-            conf = min(89, int((fr["cor_score"] + fr["card_score"]) / 2) + 4)
-        else:
-            pick = f"🚩 {cor_line}"
-            conf = min(89, fr["cor_score"] + 4)
+        pick = f"🚩 {cor_line}"
+        conf = min(89, fr["cor_score"] + 4)
     elif fr["card_score"] >= 72 and not fr["is_blowout"]:
         pick = f"🟨 {card_line}"
         conf = min(82, fr["card_score"])
@@ -816,7 +826,8 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
         tags.append("🚩GerideBaskı->Korner")
     elif h_score == a_score and m_int >= 25 and heat >= 65:
         tags.append("💎FavKilitli->Pusu")
-    if heat >= 72 and m_int >= 20 and match_title not in MEM["live_signals"]:
+    # İnce Ayar 3: Canlı Pusu Sadece 20. ve 78. dakikalar arasında açılır (Son 10dk geç sinyal riskini önler)
+    if heat >= 72 and (20 <= m_int <= 78) and match_title not in MEM["live_signals"]:
         MEM["live_signals"][match_title] = {"status": "WAIT", "score_at": f"{h_score}-{a_score}", "cor_at": tot_cor}
     elif match_title in MEM["live_signals"] and MEM["live_signals"][match_title]["status"] == "WAIT":
         sig = MEM["live_signals"][match_title]
