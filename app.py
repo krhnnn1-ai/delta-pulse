@@ -445,7 +445,7 @@ def fetch_and_analyze_roster(task_tuple):
     if res["official"] or state == "in" or (len((res.get("h") or {}).get("starters") or []) >= 11 and "#" not in str(res["h"]["starters"][0].get("name", ""))):
         MEM["roster_cache"][cache_key] = res
     return match_title, res
-    # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU ====================
+  # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU ====================
 def american_to_prob(odd_val):
     v = safe_float(odd_val, 0.0)
     if v == 0:
@@ -491,10 +491,13 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     lam_a = lam_opp if fav_is_home else lam_fav
 
     p_shield, p_team, p_over25, p_over35, p_btts = 0.0, 0.0, 0.0, 0.0, 0.0
-    for gh in range(8):
+    best_gh, best_ga, best_p = 1, 1, 0.0
+    for gh in range(7):
         ph = poisson_pmf(gh, lam_h)
-        for ga in range(8):
+        for ga in range(7):
             p_ij = ph * poisson_pmf(ga, lam_a)
+            if p_ij > best_p:
+                best_p, best_gh, best_ga = p_ij, gh, ga
             tot_g = gh + ga
             fav_g = gh if fav_is_home else ga
             fav_unbeaten = (gh >= ga) if fav_is_home else (ga >= gh)
@@ -509,12 +512,19 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
             if gh >= 1 and ga >= 1:
                 p_btts += p_ij
 
+    est_h = max(0, int(round(lam_h)))
+    est_a = max(0, int(round(lam_a)))
+    if est_h == 0 and est_a == 0:
+        est_h, est_a = best_gh, best_ga
+    sc_prob = min(38, max(12, int(round(poisson_pmf(est_h, lam_h) * poisson_pmf(est_a, lam_a) * 100.0 * 1.35))))
+
     return {
         "fav_is_home": fav_is_home, "p_fav": round(p_fav * 100, 1),
         "d_weak": d_weak, "bus_score": bus_score,
         "p_shield": int(round(p_shield * 100)), "p_team": int(round(p_team * 100)),
         "p_over25": int(round(p_over25 * 100)), "p_over35": int(round(p_over35 * 100)),
-        "p_btts": int(round(p_btts * 100)), "lam_h": round(lam_h, 2), "lam_a": round(lam_a, 2)
+        "p_btts": int(round(p_btts * 100)), "lam_h": round(lam_h, 2), "lam_a": round(lam_a, 2),
+        "est_score": f"{est_h}-{est_a}", "est_score_p": sc_prob
     }
 
 def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi=""):
@@ -573,6 +583,10 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         card_score -= 20
     card_score = min(90, max(25, card_score))
 
+    # PATRON ÖZEL: Tahmini Korner Adedi ve Tahmini Kart Adedi
+    est_cor_cnt = max(6, min(16, int(round(real_cor_sum * 0.88 + (0.9 if wing_asym else 0.0) - (1.0 if inj_wing else 0.0)))))
+    est_card_cnt = max(2, min(8, int(round((ref_avg * 0.55) + (hist_cards * 0.45) - (0.8 if is_blowout else 0.0)))))
+
     tags = [f"📊Son2Kor:{real_cor_sum}"]
     if hungry_pts >= 75:
         tags.append(f"🔥AçYedek({hungry_pts}p)")
@@ -591,9 +605,36 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
 
     return {
         "cor_score": cor_score, "card_score": card_score, "cor_p": cor_score, "card_p": card_score,
-        "real_cor_sum": real_cor_sum, "wing_asym": wing_asym, "is_blowout": is_blowout,
+        "real_cor_sum": real_cor_sum, "est_cor_cnt": est_cor_cnt, "est_card_cnt": est_card_cnt,
+        "wing_asym": wing_asym, "is_blowout": is_blowout,
         "blowout_prob": blowout_prob, "hungry_pts": hungry_pts, "rot_pen": rot_pen,
         "inj_wing": inj_wing, "inj_def": inj_def, "tags_str": " ".join(tags)
+    }
+
+def _build_patron_sim_summary(m4, pick, is_home_fav):
+    est_sc = str(m4.get("est_score") or "2-1")
+    sc_p = safe_int(m4.get("est_score_p"), 21)
+    try:
+        sh, sa = [int(x) for x in est_sc.split("-")]
+        if "2.5 Gol Üst" in str(pick) and (sh + sa) < 3:
+            if is_home_fav: sh = max(2, sh + 1); sa = max(1, sa)
+            else: sa = max(2, sa + 1); sh = max(1, sh)
+        elif "1.5 Gol Üst" in str(pick) and (sh + sa) < 2:
+            if is_home_fav: sh = max(2, sh + 1)
+            else: sa = max(2, sa + 1)
+        elif "3.5 Alt" in str(pick) and (sh + sa) > 3:
+            sh, sa = (2, 0) if is_home_fav else (0, 2)
+        est_sc = f"{sh}-{sa}"
+    except Exception:
+        pass
+    fr = m4.get("friction") or {}
+    c_cnt = safe_int(fr.get("est_cor_cnt"), 10)
+    c_p = safe_int(m4.get("cor_p"), 68)
+    k_cnt = safe_int(fr.get("est_card_cnt"), 4)
+    k_p = safe_int(m4.get("card_p"), 62)
+    return {
+        "ui": f"👑 <b>Patron Özel Simülasyon:</b> ⚽ <b>Tahmini Skor:</b> <span style='color:#56d364;font-weight:800;'>{est_sc} (%{sc_p})</span> &nbsp;|&nbsp; 🚩 <b>Tahmini Korner:</b> <span style='color:#ffd33d;font-weight:800;'>{c_cnt} Korner (%{c_p})</span> &nbsp;|&nbsp; 🟨 <b>Tahmini Kart:</b> <span style='color:#ff7b72;font-weight:800;'>{k_cnt} Kart (%{k_p})</span>",
+        "mini": f"[👑Skor:{est_sc}(%{sc_p})|Kor:{c_cnt}(%{c_p})|Kart:{k_cnt}(%{k_p})]"
     }
 
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi=""):
@@ -607,7 +648,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     try:
         m4 = compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi)
     except Exception:
-        m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 18, "bus_score": 30, "p_team": 50}
+        m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 18, "bus_score": 30, "p_team": 50, "est_score": "2-1", "est_score_p": 20}
 
     fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi)
     cor_line = "9.5 Korner Üst" if any(k in str(lig_adi).upper() for k in ("PREMIER", "İSKOÇYA", "EFL")) else "8.5 Korner Üst"
@@ -673,6 +714,10 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     else:
         pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 20 else '3.5 Alt'}"
         conf = min(76, 63 + int(abs(h_mom - a_mom) * 0.25)) - (4 if has_heavy_drop else 0)
+
+    psim = _build_patron_sim_summary(m4, pick, is_home_fav)
+    m4["patron_sim_ui"] = psim["ui"]
+    m4["patron_sim_mini"] = psim["mini"]
 
     m4_str = f"P4+:%{p_o35}|Sh:%{p_shd}|Dw:{d_wk}"
     return conf, pick, disp_odd, warn_flag, m4_str, m4
@@ -747,6 +792,10 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
     elif "3.5 Alt" in pick and p_shd < 50 and (p_o35 >= 28 or d_wk >= 35):
         pick = f"{fav_team} Takım Golü 1.5 Üst" if p_tm >= 54 else "Maç 2.5 Gol Üst"
         conf = max(conf, 72)
+
+    psim = _build_patron_sim_summary(m4, pick, fav_is_home)
+    m4["patron_sim_ui"] = psim["ui"]
+    m4["patron_sim_mini"] = psim["mini"]
 
     evo_changed = (pick != old_pick)
     evo_str = f"🔄 {old_pick} ➔ ✅ {pick}" if evo_changed else "✅ Kadro Onaylı (Sabit)"
@@ -922,7 +971,6 @@ for slug, lig_adi, kademe, ev_list in sb_results:
             ou_val = safe_float(odds_arr[0].get("overUnder"), 2.5)
             has_live_api_odds = True
         if not odd_str:
-            # Ev sahibi saha avantajı (+12 Mom) ile sahte deplasman favoriliğini önler
             fav_abbr = h_abbr if (h_mom + 12) >= a_mom else a_abbr
             fav_val = -115 - int(abs((h_mom + 8) - a_mom) * 1.4)
         else:
@@ -1062,12 +1110,15 @@ MEM["DATA_LEDGER"] = {
 
 mini_lines = [MEM["DATA_LEDGER"]["mini_head"]]
 for m in live_matches:
-    mini_lines.append(f"CANLI|{m['clk']}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}|Yan:{m['prop']}")
+    m4_d = m.get("m4") or {}
+    ps_mini = f"|{m4_d.get('patron_sim_mini','')}" if m4_d.get("patron_sim_mini") else ""
+    mini_lines.append(f"CANLI|{m['clk']}|🔥%{m['heat']}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}|Kart:{m['cards']}|Top:%{m['h_poss']}{m['delta_str']}{m['sot_tag']}|Önü:{m['pick']}|Yan:{m['prop']}{ps_mini}")
 for m in upcoming_matches:
     k_tag = f"✅Kadro({m['h_tac']}v{m['a_tac']})" if m["is_off"] else "⏳KadroYok"
     e_tail = f" | {m['evo']} | Yan:{m['prop']}" if m["is_off"] else ""
     m4_d = m.get("m4") or {}
-    mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m4_d.get('p_over35',20)}|Sh:%{m4_d.get('p_shield',50)}|Dw:{m4_d.get('d_weak',15)}] -> {m['pick']}{e_tail}")
+    ps_mini = f" {m4_d.get('patron_sim_mini','')}" if m4_d.get("patron_sim_mini") else ""
+    mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m4_d.get('p_over35',20)}|Sh:%{m4_d.get('p_shield',50)}|Dw:{m4_d.get('d_weak',15)}] -> {m['pick']}{e_tail}{ps_mini}")
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
@@ -1210,6 +1261,8 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         st.markdown("### 🔴 LIVE AMBUSH & PRESSURE RADAR (CANLI SAHALAR)")
         for idx_l, m in enumerate(live_matches):
             p_disp = m["pick"] if is_unlocked else "🔒 VIP LOCKED TARGET"
+            m4_d = m.get("m4") or {}
+            patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:#0d1117;border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{m4_d.get('patron_sim_ui','')}</div>" if (is_patron_mode and m4_d.get("patron_sim_ui")) else ""
             st.markdown(
                 f"<div class='dp-card' style='border-left:4px solid #f85149;'>"
                 f"<div style='display:flex;justify-content:space-between;font-size:12px;color:#ffb4a2;'>"
@@ -1219,7 +1272,8 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
                 f"<div style='font-size:11.5px;color:#c9d1d9;'>🎯 <b>Şut(İsabet):</b> {m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']}) | 🚩 <b>Korner:</b> {m['h_cor']} - {m['a_cor']} (Top:{m['h_cor']+m['a_cor']}) | 🟨 <b>Kart:</b> {m['cards']} | ⚽ <b>Top:</b> %{m['h_poss']}</div>"
                 f"<div style='font-size:11px;color:#79c0ff;margin-top:4px;'>⚡ <b>Canlı Telemetri:</b> {m['odd']} {m['delta_str']} {m['sot_tag']}</div>"
                 f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
-                f"<span>🎯 <b>Maç Önü Hedefi:</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div></div>",
+                f"<span>🎯 <b>Maç Önü Hedefi:</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div>"
+                f"{patron_line}</div>",
                 unsafe_allow_html=True
             )
             with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Canlı Saha Dizilimi ({m['h_tac']} vs {m['a_tac']})", expanded=False):
@@ -1234,6 +1288,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         b_col = "#f0b90b" if m["conf"] >= 70 else "#2f81f7"
         k_badge = f"<span style='color:#56d364;font-weight:700;'>✅ Resmi 11 ({m['h_tac']}v{m['a_tac']})</span>" if m["is_off"] else f"<span style='color:#8b949e;'>⏳ Son Maç İkizi ({m['h_tac']}v{m['a_tac']})</span>"
         m4_d = m.get("m4") or {}
+        patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:#0d1117;border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{m4_d.get('patron_sim_ui','')}</div>" if (is_patron_mode and m4_d.get("patron_sim_ui")) else ""
         st.markdown(
             f"<div class='dp-card' style='border-left:4px solid {b_col};'>"
             f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8b949e;'>"
@@ -1243,7 +1298,8 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             f"<div style='font-size:11.5px;color:#c9d1d9;margin-bottom:4px;'>📈 <b>Form & Mom:</b> {format_form_badges(m['h_form'])} ({m['h_mom']}%) vs {format_form_badges(m['a_form'])} ({m['a_mom']}%)</div>"
             f"<div style='font-size:11px;color:#79c0ff;'>🐋 <b>Oran & Fizik:</b> {m['odd']} | TG: {m['ou']} | <code>P4+:%{m4_d.get('p_over35',20)} | Sh:%{m4_d.get('p_shield',50)} | Dw:{m4_d.get('d_weak',15)}</code></div>"
             f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
-            f"<span>🎯 <b>Ana Hedef:</b> <b style='color:#56d364;'>{p_disp}</b> ({m['evo']})</span><span style='color:#d2a8ff;'>{pr_disp}</span></div></div>",
+            f"<span>🎯 <b>Ana Hedef:</b> <b style='color:#56d364;'>{p_disp}</b> ({m['evo']})</span><span style='color:#d2a8ff;'>{pr_disp}</span></div>"
+            f"{patron_line}</div>",
             unsafe_allow_html=True
         )
         with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Tactical Pitch & 5D Power Radar", expanded=False):
