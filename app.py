@@ -524,7 +524,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     opp_info = a_info if fav_is_home else h_info
     opp_tac = a_tac if fav_is_home else h_tac
 
-    # Kaleci kaybı (1.5x) ve rotasyon ağırlıklı D_weak
     gk_drop = 1.35 if opp_info.get("rot_gk") else 0.0
     xi_churn = min(1.0, safe_float(opp_info.get("rot_cnt"), 0.0) / 5.0)
     z_weak = -0.35 + 0.14 * (60.0 - opp_def) + 0.95 * gk_drop + 0.75 * xi_churn + 0.06 * (fav_sho - 72.0)
@@ -535,7 +534,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     z_bus = -1.1 + 1.65 * five_back + 0.95 * low_line + 0.04 * (opp_def - 68.0)
     bus_score = int(round(100.0 / (1.0 + math.exp(-max(-6.0, min(6.0, z_bus))))))
 
-    # Lig bazlı gol ortalaması + Ev sahibi avantajı + Şut kalitesi (xG) + Dinlenme günü (Rest Days)
     lig_base_g = LEAGUE_GOAL_AVG.get(slug, 2.65)
     h_xg_hist = safe_float(h_hist.get("xg_avg"), 1.38)
     a_xg_hist = safe_float(a_hist.get("xg_avg"), 1.18)
@@ -557,11 +555,9 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     else:
         struct_a += (d_weak - 35) * 0.006 - (bus_score - 40) * 0.005
 
-    # Piyasa kalibrasyonu ±%18 bandında yapısal özelliklerle harmanlanır (Ensemble Lambda)
     lam_h = max(0.42, min(2.95, (mkt_h * 0.55) + (struct_h * 0.45)))
     lam_a = max(0.32, min(2.65, (mkt_a * 0.55) + (struct_a * 0.45)))
 
-    # Dixon-Coles Düzeltmeli 8x8 Olasılık Matrisi ve Argmax Skor
     mat = {}
     tot_norm = 0.0
     for gh in range(8):
@@ -649,7 +645,6 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
     is_blowout = (blowout_prob >= 58)
 
-    # Takım Bazlı Ayrı Korner Lambda (expected_corners) + Poisson CDF Olasılığı
     wx_mult = 1.08 if "Yağışlı" in wx_str else 1.0
     wing_mult = 1.08 if (wing_asym and not inj_wing) else (0.90 if inj_wing else 1.0)
     h_cor_lam = h_cor_avg * (1.06 if is_home_fav else 0.98) * wing_mult * wx_mult
@@ -661,7 +656,6 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     cor_cdf_p = int(round(poisson_prob_over(cor_line_num - 0.8, cor_lambda) * 100.0))
     cor_score = min(93, max(35, cor_cdf_p))
 
-    # Oyun Durumu Duyarlı Kart Lambda + Poisson CDF Olasılığı
     ref_avg = safe_float(ref_d.get("avg"), 4.0)
     hist_cards = safe_float(h_hist.get("card_avg"), 1.8) + safe_float(a_hist.get("card_avg"), 1.8)
     is_hot_lig = any(k in str(lig_adi).upper() for k in ("SERIE B", "LA LIGA 2", "BREZİLYA", "ARJANTİN", "SÜPER LİG"))
@@ -669,7 +663,7 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
 
     card_lambda = (ref_avg * 0.58) + (hist_cards * 0.48)
     if mom_gap <= 15 and abs_fav <= 155:
-        card_lambda *= 1.12  # Başa baş / tek farklı maç gerginliği
+        card_lambda *= 1.12
     if is_hot_lig:
         card_lambda *= 1.08
     if is_blowout:
@@ -709,9 +703,8 @@ def _build_patron_sim_summary(m4, pick, is_home_fav):
     est_sc = str(m4.get("est_score") or "2-1")
     sc_p = safe_int(m4.get("est_score_p"), 20)
 
-    # Bahis yönüyle (pick) tam tutarlı Argmax Skor Seçimi
     if mat:
-        best_ match_p = -1.0
+        best_match_p = -1.0
         for (gh, ga), raw_p in mat.items():
             tot_g = gh + ga
             cond_ok = True
@@ -897,7 +890,6 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
 
 def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data):
     tot_sh, tot_sot, tot_cor = h_sh + a_sh, h_sot + a_sot, h_cor + a_cor
-    # Kalan Süre xG Projeksiyonu (Remaining Expected Goals)
     rem_frac = max(0.05, (90.0 - min(90, m_int)) / 90.0) ** 0.85
     live_xg_h = h_sh * 0.05 + h_sot * 0.24 + h_cor * 0.025
     live_xg_a = a_sh * 0.05 + a_sot * 0.24 + a_cor * 0.025
