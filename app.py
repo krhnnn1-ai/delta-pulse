@@ -100,6 +100,8 @@ def load_persistent_store():
                 MEM["users_db"].update(d["users_db"])
             if isinstance(d.get("used_txids"), list):
                 MEM["used_txids"].update(d["used_txids"])
+            if isinstance(d.get("patron_devs"), list):
+                MEM.setdefault("patron_devs", set()).update(d["patron_devs"])
             for k in ("base_w", "base_t", "base_ak_w", "base_ak_t"):
                 if k in d:
                     MEM[k] = safe_int(d[k], 0)
@@ -112,6 +114,7 @@ def save_persistent_store():
             json.dump({
                 "users_db": MEM["users_db"],
                 "used_txids": list(MEM["used_txids"]),
+                "patron_devs": list(MEM.get("patron_devs", set())),
                 "base_w": safe_int(MEM.get("base_w"), 0),
                 "base_t": safe_int(MEM.get("base_t"), 0),
                 "base_ak_w": safe_int(MEM.get("base_ak_w"), 0),
@@ -1518,30 +1521,21 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
 if "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
 
-url_prog = str(st.query_params.get("prog") or "").strip().lower()
 url_ref = str(st.query_params.get("ref") or "").strip().upper()
 my_dev_id = get_smart_device_uid()
 mini_text = "\n".join(mini_lines)
 
-# URL'de ?prog=patron varsa veya daha önce açıldıysa doğrudan kilidi açar
-if url_prog == "patron":
-    st.session_state["patron_unlocked"] = True
-
 cur_user = auto_sync_device_user(my_dev_id, url_ref)
 user_tier = str(cur_user.get("tier", "NORMAL")) if isinstance(cur_user, dict) else "NORMAL"
 
-def _verify_patron_pin(raw_pin):
-    clean_p = str(raw_pin or "").strip().upper()
-    # Tire veya boşluk farklarını temizler (DP-F3CB9C, DPF3CB9C veya F3CB9C hepsini kabul eder)
-    alnum_p = "".join(c for c in clean_p if c.isalnum())
-    if alnum_p in ("DPF3CB9C", "F3CB9C", "ADMIN", "PATRON"):
-        return True
-    p_hash = hashlib.sha256(clean_p.encode("utf-8")).hexdigest()
-    return p_hash == "5901b9952716f713fb0e0c7f1972fb2125c79e0c7c93d18d42ef1c8815b49b0e"
+# OTOMATİK TELEFON/CİHAZ TANIMA: Daha önce şifre girilmiş cihazsa otomatik Patron modunu açar
+patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
+if my_dev_id in patron_devs:
+    st.session_state["patron_unlocked"] = True
 
 def render_x_and_telegram_command_center():
     st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama Merkezi")
-    ldg = MEM.get("DATA_LEDGER") or {"karne_str": "144/199 (%72)", "ak_str": "16/19 (%84)", "lp_str": "11/11 (%100)"}
+    ldg = MEM.get("DATA_LEDGER") or {"karne_str": "0/0", "ak_str": "0/0", "lp_str": "0/0"}
     t_global = f"⚡ DELTA-PULSE AI LIVE TELEMETRY!\n🏆 Verified Record: {ldg['karne_str']}\n💎 Main Safe: {ldg['ak_str']} | 🔥 Live Ambush: {ldg['lp_str']}\n📊 5D Pitch, Corner & Blowout Physics!\n👉 {APP_PUBLIC_URL}"
     t_live = _build_match_social_text(live_matches[0], mode="live") if live_matches else (_build_match_social_text(finished_matches[0], mode="post") if finished_matches else t_global)
     t_pre = _build_match_social_text(upcoming_matches[0], mode="pre") if upcoming_matches else t_global
@@ -1558,28 +1552,29 @@ def render_x_and_telegram_command_center():
         st.markdown(f"<a href='https://twitter.com/intent/tweet?text={urllib.parse.quote(t_pre)}' target='_blank' style='display:block;text-align:center;background:#f0b90b;color:#000;padding:7px;border-radius:6px;font-weight:800;text-decoration:none;'>🐦 Maç Önü X'te Paylaş</a>", unsafe_allow_html=True)
 
 if not st.session_state.get("patron_unlocked"):
-    with st.expander("🔐 Patron Girişi & DP-MİNİ", expanded=False):
-        with st.form("patron_login_form", clear_on_submit=False):
-            c_p1, c_p2 = st.columns([2, 1])
-            with c_p1:
-                pin_in = st.text_input("Patron Kodu:", value="", placeholder="DP-F3CB9C")
-            with c_p2:
-                st.write("")
-                sub_btn = st.form_submit_button("👑 Patron Kilidini Aç", use_container_width=True)
-            if sub_btn:
-                if _verify_patron_pin(pin_in):
+    # Normal kullanıcılar burada SADECE şifre kutusunu görür; DP-MİNİ kesinlikle gösterilmez!
+    with st.expander("🔐 Yönetici (Patron) Girişi", expanded=False):
+        c_p1, c_p2 = st.columns([2, 1])
+        with c_p1:
+            pin_in = st.text_input("Patron Kodu:", value="", type="password", placeholder="Patron Şifresi").strip().upper()
+        with c_p2:
+            st.write("")
+            if st.button("👑 Patron Kilidini Aç", use_container_width=True):
+                if hashlib.sha256(pin_in.encode("utf-8")).hexdigest() in ADMIN_HASHES:
                     st.session_state["patron_unlocked"] = True
+                    patron_devs.add(my_dev_id)
+                    save_persistent_store()
                     st.rerun()
                 else:
-                    st.error(f"❌ Hatalı Kod! (Girilen: '{pin_in}') — Lütfen DP-F3CB9C yazın.")
-        st.code(mini_text, language="text")
+                    st.error("❌ Hatalı Patron Kodu!")
 
 if st.session_state.get("patron_unlocked"):
-    st.markdown("## 👑 PATRON KOMUTA & PAZARLAMA MERKEZİ")
+    st.markdown(f"## 👑 PATRON KOMUTA & PAZARLAMA MERKEZİ *(Tanınan Cihaz: `{my_dev_id}`)*")
     t1, t2, t3, t4 = st.tabs(["📊 Canlı Bülten & Sahalar", "📋 DP-MİNİ & Data Günlüğü", "👑 TRC20 Kasa & Üye Radarı", "🐦 X & 📢 Telegram Paneli"])
     with t1:
         render_main_bulletin(tier="ADMIN", is_patron_mode=True)
     with t2:
+        st.markdown("##### 📋 Patron Özel DP-MİNİ Telemetri Çıktısı (Sadece Sana Görünür)")
         st.code(mini_text, language="text")
     with t3:
         users_db = MEM.setdefault("users_db", {})
