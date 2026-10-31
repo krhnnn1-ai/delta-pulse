@@ -1076,17 +1076,16 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
         return tot <= 3
     return tot >= 2
 
-
 # ==================== PARÇA 6/8 ====================
 import re
 
 _ACTIVE_LEAGUES = [
-    ("ita.1", "İTALYA SERIE A", 1), ("eng.league_cup", "İNGİLTERE EFL CUP", 1),
-    ("bra.1", "BREZİLYA SERIE A", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
-    ("esp.1", "İSPANYA LA LIGA", 1), ("ger.1", "ALMANYA BUNDESLIGA", 1),
-    ("fra.1", "FRANSA LIGUE 1", 1), ("tur.1", "TÜRKİYE SÜPER LİG", 1),
+    ("tur.1", "TÜRKİYE SÜPER LİG", 1), ("esp.1", "İSPANYA LA LIGA", 1),
+    ("ger.1", "ALMANYA BUNDESLIGA", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
+    ("ita.1", "İTALYA SERIE A", 1), ("fra.1", "FRANSA LIGUE 1", 1),
     ("ned.1", "HOLLANDA EREDIVISIE", 1), ("por.1", "PORTEKİZ LIGA", 1),
-    ("sco.1", "İSKOÇYA PREMIERSHIP", 1), ("arg.1", "ARJANTİN LIGA PRO", 1),
+    ("sco.1", "İSKOÇYA PREMIERSHIP", 1), ("eng.league_cup", "İNGİLTERE EFL CUP", 1),
+    ("bra.1", "BREZİLYA SERIE A", 1), ("arg.1", "ARJANTİN LIGA PRO", 1),
     ("mex.1", "MEKSİKA LIGA MX", 1), ("ita.2", "İTALYA SERIE B", 2),
     ("eng.2", "İNGİLTERE CHAMPIONSHIP", 2), ("esp.2", "İSPANYA LA LIGA 2", 2)
 ]
@@ -1125,14 +1124,22 @@ def _count_real_match_cards(comp, h_c, a_c, r_data=None):
 
 def _fetch_single_league_sb(item):
     slug, lig_adi, kademe = item
-    try:
-        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3.5)
-        if r.status_code == 200:
-            return slug, lig_adi, kademe, (r.json().get("events") or [])
-    except Exception:
-        pass
-    return slug, lig_adi, kademe, []
+    today_str = datetime.now(TR_TZ).strftime("%Y%m%d")
+    merged_events = {}
+    for url in (
+        f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={today_str}",
+        f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
+    ):
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=4.5)
+            if r.status_code == 200:
+                for ev in (r.json().get("events") or []):
+                    ev_id = str(ev.get("id") or "")
+                    if ev_id and ev_id not in merged_events:
+                        merged_events[ev_id] = ev
+        except Exception:
+            pass
+    return slug, lig_adi, kademe, list(merged_events.values())
 
 # Hayalet (0-0 İstatistikli / Dundee) Kayıtları Temizle
 for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
@@ -1168,7 +1175,7 @@ for slug, lig_adi, kademe, ev_list in sb_results:
             ev_date_str = (ev_date_str[:-1] + ":00+00:00") if (len(ev_date_str) == 17 and ev_date_str.endswith("Z")) else ev_date_str.replace("Z", "+00:00")
             dt_ev = datetime.fromisoformat(ev_date_str).astimezone(TR_TZ)
             hours_diff = (dt_ev - now_tr).total_seconds() / 3600.0
-            if state == "pre" and (hours_diff < -2.0 or hours_diff > 11.0):
+            if state == "pre" and (hours_diff < -2.0 or hours_diff > 15.0):
                 continue
             if state == "post" and abs(hours_diff) > 12.0:
                 continue
@@ -1344,6 +1351,7 @@ for m in upcoming_matches:
 for m in finished_matches[:6]:
     st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
     mini_lines.append(f"BİTTİ|FT|{st_ico}|{m['h_name']} {m['h_score']}-{m['a_score']} {m['a_name']}|Şut:{m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']})|Kor:{m['h_cor']}-{m['a_cor']}({m['h_cor']+m['a_cor']})|Kart:{m['cards']}|Hedef:{m['pick']}(%{m['conf']})")
+
 
 # ==================== PARÇA 7/8 ====================
 import urllib.parse
