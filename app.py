@@ -554,6 +554,49 @@ def _get_empirical_calibration_factor():
     c_cache["factor"] = fac
     return fac
 
+def _get_market_memory_adjustments():
+    # EMNİYET KİLİTLİ MARKET HAFIZASI: En az 25 bitmiş maç olmadan 0 sapma verir, maksimum +-4 puan esner
+    fin_map = MEM.get("finished_cache", {})
+    t_cache = MEM.setdefault("_mkt_trim_cache", {"count": -1, "adj": {}})
+    if len(fin_map) == t_cache.get("count") and t_cache.get("adj"):
+        return t_cache["adj"]
+
+    buckets = {"COR": [], "U35": [], "O25": [], "BTTS": [], "WIN": [], "DC_O15": [], "CARD": []}
+    for m in fin_map.values():
+        if not isinstance(m, dict) or "pick" not in m or "won" not in m:
+            continue
+        pk = str(m.get("pick") or "")
+        w = 1.0 if m.get("won") else 0.0
+        if "Korner" in pk:
+            buckets["COR"].append(w)
+        elif "Kart" in pk:
+            buckets["CARD"].append(w)
+        elif "Karşılıklı Gol" in pk:
+            buckets["BTTS"].append(w)
+        elif "Kazanır &" in pk:
+            buckets["WIN"].append(w)
+        elif "2.5 Gol Üst" in pk:
+            buckets["O25"].append(w)
+        elif "3.5 Alt" in pk:
+            buckets["U35"].append(w)
+        elif "1.5 Gol Üst" in pk:
+            buckets["DC_O15"].append(w)
+
+    adj = {"COR": 0, "U35": 0, "O25": 0, "BTTS": 0, "WIN": 0, "DC_O15": 0, "CARD": 0}
+    total_samples = sum(len(v) for v in buckets.values())
+    if total_samples >= 25:
+        for k, arr in buckets.items():
+            if len(arr) >= 10:
+                recent = arr[-30:]
+                rate = sum(recent) / len(recent)
+                # %70 referans noktasına göre en fazla -4 ile +3 puan arası dar koridor kalibrasyonu
+                delta = int(round((rate - 0.70) * 22.0))
+                adj[k] = max(-4, min(3, delta))
+
+    t_cache["count"] = len(fin_map)
+    t_cache["adj"] = adj
+    return adj
+
 def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi=""):
     r_d = r_data if isinstance(r_data, dict) else {}
     slug = str(r_d.get("slug") or "eng.1")
@@ -593,7 +636,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     base_tot += (d_weak - 35) * 0.007 - (bus_score - 42) * 0.006
     base_tot = max(1.68, min(3.45, base_tot))
 
-    # Denetim Düzeltmesi Madde 3: Favori gol payı (0.84 -> 0.94) gerçekçi seviyeye çıkarıldı
     fav_share = min(0.78, max(0.50, p_mkt_fav * 0.94 + ((h_mom - a_mom if fav_is_home else a_mom - h_mom) * 0.0015)))
     mkt_h = base_tot * (fav_share if fav_is_home else (1.0 - fav_share))
     mkt_a = base_tot * ((1.0 - fav_share) if fav_is_home else fav_share)
@@ -614,6 +656,7 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
             tot_norm += val
 
     p_shield, p_team, p_over25, p_over35, p_btts, p_struct_fav, p_struct_dc = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    p_fav_o15, p_fav_o25, p_dc_o15 = 0.0, 0.0, 0.0
     best_gh, best_ga, best_p = 1, 0, 0.0
     for (gh, ga), raw_p in mat.items():
         p_ij = raw_p / max(1e-6, tot_norm)
@@ -626,8 +669,14 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         fav_unbeaten = (gh >= ga) if fav_is_home else (ga >= gh)
         if fav_win:
             p_struct_fav += p_ij
+            if tot_g >= 2:
+                p_fav_o15 += p_ij
+            if tot_g >= 3:
+                p_fav_o25 += p_ij
         if fav_unbeaten:
             p_struct_dc += p_ij
+            if tot_g >= 2:
+                p_dc_o15 += p_ij
         if fav_unbeaten and tot_g <= 3:
             p_shield += p_ij
         if fav_g >= 2:
@@ -639,7 +688,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         if gh >= 1 and ga >= 1:
             p_btts += p_ij
 
-    # Denetim Düzeltmesi Madde 5: Momentumdan bağımsız Taktik/Kadro/Dinlenme ELO bileşeni
     tac_elo_diff = (((h_def + h_pas) - (a_def + a_pas)) * 8.5 + (h_rest - a_rest) * 12.0 + 50.0) if fav_is_home else (((a_def + a_pas) - (h_def + h_pas)) * 8.5 + (a_rest - h_rest) * 12.0 - 30.0)
     p_elo_fav = 1.0 / (1.0 + (10.0 ** (-tac_elo_diff / 400.0)))
     p_ens_fav = (0.75 * p_struct_fav) + (0.25 * p_elo_fav)
@@ -648,8 +696,11 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     return {
         "fav_is_home": fav_is_home, "p_fav": round(p_mkt_fav * 100, 1),
         "p_struct_fav": round(p_ens_fav * 100, 1), "p_struct_dc": round(p_struct_dc * 100, 1),
+        "p_fav_o15": int(round(p_fav_o15 * 100)), "p_fav_o25": int(round(p_fav_o25 * 100)),
+        "p_dc_o15": int(round(p_dc_o15 * 100)),
         "fav_val": fav_val, "mat": mat, "tot_norm": tot_norm,
         "d_weak": d_weak, "bus_score": bus_score, "h_rest": h_rest, "a_rest": a_rest,
+        "h_sho": h_sho, "a_sho": a_sho, "h_def": h_def, "a_def": a_def,
         "p_shield": int(round(p_shield * 100)), "p_team": int(round(p_team * 100)),
         "p_over25": int(round(p_over25 * 100)), "p_over35": int(round(p_over35 * 100)),
         "p_btts": int(round(p_btts * 100)), "lam_h": round(lam_h, 2), "lam_a": round(lam_a, 2),
@@ -689,7 +740,7 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     mom_gap = abs(safe_int(h_mom, 50) - safe_int(a_mom, 50))
     abs_fav = abs(safe_int(fav_val, -130))
     blowout_prob = 20
-    if (fav_val <= -210) or (mom_gap >= 24 and fav_val <= -145) or (ou_val >= 3.5 and fav_val <= -175):
+    if (fav_val <= -200) or (mom_gap >= 24 and fav_val <= -145) or (ou_val >= 3.5 and fav_val <= -170):
         blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
     is_blowout = (blowout_prob >= 58)
 
@@ -740,10 +791,11 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     }
 
 def _compute_pick_specific_value(pick, conf, m4, ou_val):
-    # Denetim Düzeltmesi Madde 4: Uydurma Kelly kaldırıldı, sadece Model vs Piyasa Farkı (Edge) gösterilir
     p_pick = min(0.92, max(0.35, conf / 100.0))
     if "2.5 Gol Üst" in str(pick):
         p_mkt = 0.56 if ou_val >= 3.0 else 0.48
+    elif "Karşılıklı Gol" in str(pick):
+        p_mkt = 0.54 if ou_val >= 2.5 else 0.48
     elif "Korner" in str(pick) or "Kart" in str(pick):
         p_mkt = 0.52
     elif "Çifte Şans" in str(pick):
@@ -767,7 +819,13 @@ def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
         for (gh, ga), raw_p in mat.items():
             tot_g = gh + ga
             cond_ok = True
-            if "2.5 Gol Üst" in str(pick):
+            if "Kazanır & 2.5 Gol Üst" in str(pick):
+                cond_ok = (tot_g >= 3 and ((gh > ga) if is_home_fav else (ga > gh)))
+            elif "Kazanır & 1.5 Gol Üst" in str(pick):
+                cond_ok = (tot_g >= 2 and ((gh > ga) if is_home_fav else (ga > gh)))
+            elif "Karşılıklı Gol Var" in str(pick):
+                cond_ok = (gh >= 1 and ga >= 1)
+            elif "2.5 Gol Üst" in str(pick):
                 cond_ok = (tot_g >= 3)
             elif "1.5 Gol Üst" in str(pick):
                 cond_ok = (tot_g >= 2 and ((gh >= ga) if is_home_fav else (ga >= gh)))
@@ -790,6 +848,101 @@ def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
         "mini": f"[👑Skor:{est_sc}(%{sc_p})|λ:{lam_h}-{lam_a}|Kor:{c_cnt}(%{c_p})|Kart:{k_cnt}(%{k_p})|{val_t}]"
     }
 
+def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag, h_mom, a_mom, disp_odd, fav_val, ou_val, m4, fr, cor_line, card_line):
+    # 7 ANA MARKETİ YARIŞTIRAN AKILLI KARAR MOTORU (xG, Kadro Reytingi, Balina Akışı ve Geçmiş Hafıza)
+    adj = _get_market_memory_adjustments()
+    lam_h = safe_float(m4.get("lam_h"), 1.35)
+    lam_a = safe_float(m4.get("lam_a"), 1.05)
+    lam_tot = lam_h + lam_a
+    p_o25 = safe_int(m4.get("p_over25"), 48)
+    p_o35 = safe_int(m4.get("p_over35"), 18)
+    p_btts = safe_int(m4.get("p_btts"), 50)
+    p_shd = safe_int(m4.get("p_shield"), 54)
+    d_wk = safe_int(m4.get("d_weak"), 18)
+    bus_sc = safe_int(m4.get("bus_score"), 30)
+    h_sho, a_sho = safe_int(m4.get("h_sho"), 71), safe_int(m4.get("a_sho"), 71)
+    h_def, a_def = safe_int(m4.get("h_def"), 68), safe_int(m4.get("a_def"), 68)
+
+    cor_sc = safe_int(fr.get("cor_score"), 60)
+    card_sc = safe_int(fr.get("card_score"), 58)
+    real_cor = safe_float(fr.get("real_cor_sum"), 9.2)
+    inj_wing = bool(fr.get("inj_wing", False))
+    is_blowout = bool(fr.get("is_blowout", False))
+    blow_p = safe_int(fr.get("blowout_prob"), 40)
+
+    whale_against_fav = ("⚠️Δ" in str(disp_odd))
+    whale_for_fav = ("🔥Δ" in str(disp_odd))
+    mom_gap = abs(h_mom - a_mom)
+
+    candidates = []
+
+    # 1. ADAY: KORNER ÜST (Özellikle kanat temposu yüksekse VEYA favoriye karşı ters balina satışı varsa güvenli kaçış!)
+    if not inj_wing and real_cor >= 8.8:
+        u_cor = cor_sc + adj["COR"]
+        if real_cor >= 11.2 and cor_sc >= 75:
+            u_cor += 8
+        elif real_cor >= 10.2 and cor_sc >= 71:
+            u_cor += 5
+        if whale_against_fav and real_cor >= 9.2:
+            # Favoriye karşı ters balina satışı varsa taraf bahsinden kaçıp kornere sığınma bonusu!
+            u_cor += 9
+        if bus_sc >= 58 and real_cor >= 9.8:
+            u_cor += 5
+        candidates.append((u_cor, f"🚩 {cor_line}", min(89, max(66, cor_sc + (4 if real_cor >= 11.0 else 2)))))
+
+    # 2. ADAY: AĞIR VE NET FAVORİ (KAZANIR & 1.5 / 2.5 GOL ÜST)
+    if fav_val <= -175 and (is_blowout or fav_val <= -220) and not whale_against_fav:
+        is_ultra = (fav_val <= -320 and ou_val >= 3.5)
+        win_pick = f"{fav_team} Kazanır & {'2.5' if is_ultra else '1.5'} Gol Üst (Handikap Adayı)"
+        u_win = 72 + int(blow_p * 0.16) + (3 if whale_for_fav else 0) + (2 if d_wk >= 45 else 0) + adj["WIN"]
+        if real_cor < 11.0 or inj_wing:
+            u_win += 4
+        candidates.append((u_win, win_pick, min(87, 72 + int(blow_p * 0.15))))
+
+    # 3. ADAY: KARŞILIKLI GOL VAR (İki takımın da xG ve hücum gücü yüksekse ve savunmalar gol yiyorsa 2.5 Üst'ten daha garanti!)
+    both_attack_strong = (lam_h >= 1.18 and lam_a >= 1.12 and h_sho >= 70 and a_sho >= 69)
+    both_def_vulnerable = (h_def <= 72 and a_def <= 72) or (d_wk >= 32)
+    if both_attack_strong and both_def_vulnerable and p_btts >= 56 and fav_val > -240:
+        u_btts = p_btts + 12 + adj["BTTS"]
+        # Eğer 1-1 ihtimali yüksekse (p_btts > p_o25) ve takımlar birbirine denkse KG Var öne fırlar!
+        if p_btts >= (p_o25 + 4) and abs(lam_h - lam_a) <= 0.38:
+            u_btts += 7
+        if whale_against_fav:
+            u_btts += 4
+        candidates.append((u_btts, "Karşılıklı Gol Var", min(84, max(68, p_btts + 10))))
+
+    # 4. ADAY: MAÇ 2.5 GOL ÜST (Toplam xG ve P4+ çok yüksekse)
+    if (p_o35 >= 31 and ou_val >= 3.0) or (lam_tot >= 2.75 and p_o25 >= 56):
+        u_o25 = 67 + int((p_o35 - 24) * 0.65) + adj["O25"]
+        if d_wk >= 35 and bus_sc < 45:
+            u_o25 += 4
+        if p_shd >= 50 and max(h_mom, a_mom) < 78:
+            u_o25 -= 6
+        candidates.append((u_o25, "Maç 2.5 Gol Üst", min(84, 68 + int((p_o35 - 25) * 0.6))))
+
+    # 5. ADAY: KART ÜST (Sert hakem/lig, başa baş maç, erken kopma yoksa)
+    if card_sc >= 73 and not is_blowout and mom_gap <= 20:
+        u_card = card_sc + (4 if whale_against_fav else 0) + adj["CARD"]
+        candidates.append((u_card, f"🟨 {card_line}", min(82, card_sc)))
+
+    # 6. ADAY: ÇİFTE ŞANS (1X / X2) & 1.5 GOL ÜST
+    u_dc_o15 = 65 + int(mom_gap * 0.22) + (3 if whale_for_fav else 0) - (8 if whale_against_fav else 0) + adj["DC_O15"]
+    if lam_tot >= 2.38 or ou_val >= 2.5 or p_o35 >= 23:
+        u_dc_o15 += 5
+    if fav_val <= -190 and not whale_against_fav:
+        u_dc_o15 -= 5  # Ağır favoride Çifte Şans yerine Kazanır tercih edilsin
+    candidates.append((u_dc_o15, f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst", min(80, 66 + int(mom_gap * 0.22))))
+
+    # 7. ADAY: ÇİFTE ŞANS (1X / X2) & 3.5 ALT (Sadece gerçek düşük tempolu, yüksek kalkanlı kısır maçlarda!)
+    if p_shd >= 54 and p_o35 <= 21 and lam_tot <= 2.40 and ou_val <= 2.5 and mom_gap < 18:
+        u_dc_u35 = 66 + int((p_shd - 52) * 0.6) + (3 if bus_sc >= 48 else 0) - (8 if whale_against_fav else 0) + adj["U35"]
+        candidates.append((u_dc_u35, f"{fav_team} Çifte Şans ({dc_tag}) & 3.5 Alt", min(76, 64 + int(mom_gap * 0.20))))
+
+    # En yüksek Utility (Fayda/Güven) puanını alan seçeneği seç!
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best_u, best_pick, best_conf = candidates[0]
+    return best_pick, best_conf
+
 def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, kademe, r_data, lig_adi=""):
     h_tac = str(((r_data or {}).get("h") or {}).get("tac") or "4-2-3-1")
     a_tac = str(((r_data or {}).get("a") or {}).get("tac") or "4-2-3-1")
@@ -801,7 +954,7 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     try:
         m4 = compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, fav_abbr, fav_val, ou_val, r_data, lig_adi)
     except Exception:
-        m4 = {"p_over35": 18, "p_shield": 54, "d_weak": 18, "bus_score": 30, "p_team": 50, "est_score": "2-1", "est_score_p": 20, "lam_h": 1.4, "lam_a": 1.0}
+        m4 = {"p_over35": 18, "p_over25": 48, "p_btts": 50, "p_shield": 54, "d_weak": 18, "bus_score": 30, "p_team": 50, "est_score": "2-1", "est_score_p": 20, "lam_h": 1.4, "lam_a": 1.0}
 
     fr = compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi, is_home_fav)
     cor_line = "9.5 Korner Üst" if any(k in str(lig_adi).upper() for k in ("PREMIER", "İSKOÇYA", "EFL")) else "8.5 Korner Üst"
@@ -823,42 +976,13 @@ def evaluate_pre_match(h_name, a_name, h_abbr, a_abbr, h_mom, a_mom, disp_odd, f
     p_o35 = safe_int(m4.get("p_over35"), 18)
     p_shd = safe_int(m4.get("p_shield"), 54)
     d_wk = safe_int(m4.get("d_weak"), 18)
-    veto_u35 = bool(m4.get("veto_under35")) or (p_o35 >= 28) or (ou_val >= 3.0)
-    has_heavy_drop = ("⚠️Δ" in disp_odd and any(f"-{d}." in disp_odd for d in range(6, 25)))
-
     warn_flag = False
-    if fr["cor_score"] >= 75 and not fr["inj_wing"] and fr["real_cor_sum"] >= 11.2:
-        pick = f"🚩 {cor_line}"
-        conf = min(89, fr["cor_score"] + 4)
-    elif fr["is_blowout"] and is_home_fav and fav_val <= -175 and ou_val <= 3.0 and not has_heavy_drop:
-        pick = f"{h_name} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
-        conf = min(86, 72 + int(fr["blowout_prob"] * 0.15))
-    elif (p_o35 >= 33 and ou_val >= 3.0) or (ou_val >= 3.5 and d_wk >= 22):
-        if p_shd >= 48 and max(h_mom, a_mom) < 80:
-            if fr["real_cor_sum"] >= 9.8 and not fr["inj_wing"]:
-                pick = f"🚩 {cor_line}"
-                conf = min(84, max(70, fr["cor_score"] + 3))
-            else:
-                pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
-                conf = min(80, 69 + int(abs(h_mom - a_mom) * 0.2))
-        else:
-            pick = "Maç 2.5 Gol Üst"
-            conf = min(84, 68 + int((p_o35 - 25) * 0.6))
-    elif veto_u35 and (ou_val >= 3.0 or p_o35 >= 28):
-        pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
-        conf = 70 + (3 if fr["is_blowout"] else 0)
-    elif fr["cor_score"] >= 71 and not fr["inj_wing"] and fr["real_cor_sum"] >= 10.2:
-        pick = f"🚩 {cor_line}"
-        conf = min(88, fr["cor_score"] + 3)
-    elif fr["card_score"] >= 73 and not fr["is_blowout"]:
-        pick = f"🟨 {card_line}"
-        conf = min(82, fr["card_score"])
-    elif has_heavy_drop and fr["real_cor_sum"] >= 8.5 and not fr["inj_wing"]:
-        pick = f"🚩 {cor_line}"
-        conf = max(66, fr["cor_score"])
-    else:
-        pick = f"{fav_team} Çifte Şans ({dc_tag}) & {'1.5 Gol Üst' if abs(h_mom - a_mom) >= 18 else '3.5 Alt'}"
-        conf = min(76, 63 + int(abs(h_mom - a_mom) * 0.25)) - (4 if has_heavy_drop else 0)
+
+    # 7 Market Arasından En Uygun ve En Yüksek Olasılıklı Seçeneği Belirle
+    pick, conf = _select_best_autonomous_market(
+        h_name, a_name, is_home_fav, fav_team, dc_tag, h_mom, a_mom,
+        disp_odd, fav_val, ou_val, m4, fr, cor_line, card_line
+    )
 
     calib_f = _get_empirical_calibration_factor()
     conf = min(92, max(52, int(round(conf * calib_f))))
@@ -885,9 +1009,9 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
     p_blowout = safe_int(m4.get("blowout_prob"), 45)
     p_shd = safe_int(m4.get("p_shield"), 54)
     p_o35 = safe_int(m4.get("p_over35"), 18)
+    p_btts = safe_int(m4.get("p_btts"), 50)
     d_wk = safe_int(m4.get("d_weak"), 18)
     bus_sc = safe_int(m4.get("bus_score"), 0)
-    p_tm = safe_int(m4.get("p_team"), 50)
     fr = m4.get("friction") or {}
     real_cor_sum = safe_float(fr.get("real_cor_sum"), 9.5)
     inj_wing = bool(fr.get("inj_wing", False))
@@ -921,25 +1045,31 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
         if "🧬HafifRotasyon(-4p)" not in disp_odd:
             disp_odd += " 🧬HafifRotasyon(-4p)"
 
-    if bus_sc >= 60 and p_cor >= 72 and "Ana Kasa" not in pick:
+    # Resmi kadro açıklandığında saha fiziğine göre en uygun markete evrim:
+    if "Korner" in pick and inj_wing:
+        # Kanat kaybı varsa kornerden en yüksek olasılıklı alternatif markete geç!
+        if fav_val <= -320 and ou_val >= 3.5:
+            pick = f"{fav_team} Kazanır & 2.5 Gol Üst (Handikap Adayı)"
+        elif fav_val <= -175 and p_blowout >= 58:
+            pick = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
+        elif p_btts >= 58 and abs(safe_float(m4.get("lam_h"), 1.3) - safe_float(m4.get("lam_a"), 1.2)) <= 0.38:
+            pick = "Karşılıklı Gol Var"
+        elif p_o35 >= 32 and p_shd < 46:
+            pick = "Maç 2.5 Gol Üst"
+        else:
+            pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
+    elif bus_sc >= 60 and p_cor >= 72 and not inj_wing and "Ana Kasa" not in pick:
         pick = f"🚩 {cor_label}"
         conf = max(conf, p_cor)
     elif d_wk >= 42 and real_cor_sum >= 10.2 and not inj_wing and "Korner" not in pick:
         pick = f"🚩 {cor_label}"
         conf = max(conf, min(86, p_cor + 4))
-    elif pick == "Maç 2.5 Gol Üst" and p_shd >= 48 and max(h_mom, a_mom) < 80:
-        if real_cor_sum >= 9.8 and not inj_wing:
-            pick = f"🚩 {cor_label}"
-            conf = max(70, min(84, p_cor + 3))
-        else:
-            pick = f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
-            conf = max(70, min(80, conf))
-    elif p_blowout >= 66 and fav_val <= -135 and ("3.5 Alt" in pick or "Kart" in pick):
-        pick = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)"
-        conf = max(conf, min(88, p_blowout + 5))
-    elif "3.5 Alt" in pick and p_shd < 46 and (p_o35 >= 30 or d_wk >= 55):
-        pick = f"{fav_team} Takım Golü 1.5 Üst" if p_tm >= 54 else "Maç 2.5 Gol Üst"
-        conf = max(conf, 72)
+    elif (p_blowout >= 62 or fav_val <= -175) and ("Çifte Şans" in pick or "3.5 Alt" in pick) and fav_val <= -175 and "⚠️Δ" not in disp_odd:
+        pick = f"{fav_team} Kazanır & {'2.5' if (fav_val <= -320 and ou_val >= 3.5) else '1.5'} Gol Üst (Handikap Adayı)"
+        conf = max(conf, min(86, p_blowout + 4))
+    elif "3.5 Alt" in pick and (p_shd < 52 or p_o35 >= 24 or d_wk >= 50):
+        pick = "Karşılıklı Gol Var" if (p_btts >= 58 and fav_val > -165) else f"{fav_team} Çifte Şans ({dc_tag}) & 1.5 Gol Üst"
+        conf = max(conf, 68)
 
     psim = _build_patron_sim_summary(m4, pick, fav_is_home, conf, ou_val)
     m4["patron_sim_ui"] = psim["ui"]
@@ -996,6 +1126,8 @@ def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_sco
 def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     p = str(pick or "")
     tot = h_score + a_score
+    if "Kazanır & 2.5 Gol Üst" in p:
+        return (h_score > a_score and tot >= 3) if h_name in p else (a_score > h_score and tot >= 3)
     if "Kazanır & 1.5 Gol Üst" in p:
         return (h_score > a_score and tot >= 2) if h_name in p else (a_score > h_score and tot >= 2)
     if "Handikap" in p:
