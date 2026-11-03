@@ -1323,6 +1323,10 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     return False
     # ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ ====================
 _ACTIVE_LEAGUES = [
+    ("uefa.champions", "🏆 UEFA ŞAMPİYONLAR LİGİ", 1),
+    ("uefa.europa", "🏆 UEFA AVRUPA LİGİ", 1),
+    ("uefa.europa.conf", "🏆 UEFA KONFERANS LİGİ", 1),
+    ("conmebol.libertadores", "🏆 COPA LIBERTADORES", 1),
     ("tur.1", "TÜRKİYE SÜPER LİG", 1), ("esp.1", "İSPANYA LA LIGA", 1),
     ("ger.1", "ALMANYA BUNDESLIGA", 1), ("eng.1", "İNGİLTERE PREMIER LİG", 1),
     ("ita.1", "İTALYA SERIE A", 1), ("fra.1", "FRANSA LIGUE 1", 1),
@@ -1332,6 +1336,16 @@ _ACTIVE_LEAGUES = [
     ("mex.1", "MEKSİKA LIGA MX", 1), ("ita.2", "İTALYA SERIE B", 2),
     ("eng.2", "İNGİLTERE CHAMPIONSHIP", 2), ("esp.2", "İSPANYA LA LIGA 2", 2)
 ]
+
+# Avrupa kupalarının gol ve Dixon-Coles rho ortalamalarını da çalışma anında otomatik tanıtıyoruz:
+LEAGUE_GOAL_AVG.update({
+    "uefa.champions": 2.96, "uefa.europa": 2.84,
+    "uefa.europa.conf": 2.78, "conmebol.libertadores": 2.35
+})
+LEAGUE_DC_RHO.update({
+    "uefa.champions": -0.07, "uefa.europa": -0.08,
+    "uefa.europa.conf": -0.08, "conmebol.libertadores": -0.13
+})
 
 def _odd_to_prob(val):
     v = safe_float(val, 0.0)
@@ -1390,7 +1404,6 @@ for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
 
-# DÜZELTME (P0): 'Dundee' isimli maçı özel olarak silen hile kaldırıldı; yalnızca istatistiği (0 şut ve 0 korner) eksik olan bozuk API kayıtları temizlenir.
 for _bad_k in list(MEM.setdefault("finished_cache", {}).keys()):
     _fm = MEM["finished_cache"].get(_bad_k)
     if not isinstance(_fm, dict) or ((_fm.get("h_sh", 0) + _fm.get("a_sh", 0)) == 0 and (_fm.get("h_cor", 0) + _fm.get("a_cor", 0)) == 0):
@@ -1420,9 +1433,9 @@ for slug, lig_adi, kademe, ev_list in sb_results:
             ev_date_str = (ev_date_str[:-1] + ":00+00:00") if (len(ev_date_str) == 17 and ev_date_str.endswith("Z")) else ev_date_str.replace("Z", "+00:00")
             dt_ev = datetime.fromisoformat(ev_date_str).astimezone(TR_TZ)
             hours_diff = (dt_ev - now_tr).total_seconds() / 3600.0
-            if state == "pre" and (hours_diff < -2.0 or hours_diff > 15.0):
+            if state == "pre" and (hours_diff < -2.0 or hours_diff > 24.0):
                 continue
-            if state == "post" and abs(hours_diff) > 12.0:
+            if state == "post" and abs(hours_diff) > 14.0:
                 continue
         except Exception:
             continue
@@ -1507,8 +1520,6 @@ for item in raw_matches:
     if m4.get("status") == "HESAPLANAMADI" or "HESAPLANAMADI" in str(pick):
         continue
 
-    # DÜZELTME (Denetim #5 & #6): Sürüm geçişinde eski sürümün (legacy_rec) tahminini yeni sürüm adına kopyalama hatası kaldırıldı!
-    # Her sürüm yalnızca kendi MODEL_VERSION anahtarıyla kilit açar.
     lock_id = f"{ev_id}_{MODEL_VERSION}" if ev_id else f"{match_title}_{MODEL_VERSION}"
     rec = locked_picks.get(lock_id) if isinstance(locked_picks.get(lock_id), dict) else {}
 
@@ -1583,8 +1594,6 @@ for item in raw_matches:
         if not completed or ((h_sh + a_sh) == 0 and (h_cor + a_cor) == 0):
             continue
         tot_cor_ft = h_cor + a_cor
-        # DÜZELTME (P0): 'Korner 0 ise 3 gol olduğunda korner bahsini kazandı say' hilesi tamamen kaldırıldı!
-        # Eğer hedef Korner ise ve API korner sayısını 0 döndürdüyse (veri eksikse), maç karneye dahil edilmez.
         if "Korner" in pick and tot_cor_ft == 0:
             continue
         if "9.5 Korner Üst" in pick:
