@@ -507,8 +507,6 @@ def fetch_and_analyze_roster(task_tuple):
     return match_title, res
 
 # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.2_DC_NEGBINOM_EMPIRICAL) ====================
-# DÜZELTME (Denetim #1): Akademik abartılı isimlendirme kaldırıldı; modelin gerçekte yaptığı işi
-# (Kapalı form Dixon-Coles Bivariate Poisson + Negatif Binom + Empirik Şut/İsabet/Korner Kalibrasyonu) yansıtan ad verildi.
 MODEL_VERSION = "M4.2_DC_NEGBINOM_EMPIRICAL"
 
 LEAGUE_GOAL_AVG = {
@@ -525,8 +523,6 @@ LEAGUE_DC_RHO = {
     "ger.1": -0.06, "ned.1": -0.06
 }
 
-# DÜZELTME (Denetim #2 & #3): Tüm liglerde TEK BİR 1-1 kilit eşiği ('lock_thresh') kaynağı kullanılır.
-# UI uyarısı da, Takım 1.5 Üst vetosu da, Kazanır & 1.5 Üst filtresi de yalnızca bu tek eşiği okur.
 LEAGUE_DNA_PROFILES = {
     "arg.1": {"cor_mult": 1.05, "disp_r": 8.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
     "bra.1": {"cor_mult": 1.03, "disp_r": 9.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
@@ -644,14 +640,6 @@ def _calibrate_decision_score_by_market_and_band(raw_prob_pct, mkt_type="WIN"):
     return int(round(min(91.0, max(45.0, adj_p * 100.0))))
 
 def _compute_empirical_shot_pressure_delta(h_hist, a_hist, h_mom, a_mom):
-    """
-    DÜZELTME (Denetim #2 & #4): Dairesel (momentum'dan türetilmiş sentetik sho/dri) hız farkı kaldırıldı.
-    Bunun yerine:
-    - Eğer ESPN son 4 maçtan gerçek şut/isabet/korner verisi çekebildiyse (emp_n > 0), doğrudan
-      gerçek saha üretim farkı (İsabetli Şut * 1.8 + İsabetsiz Şut * 0.4 + Korner * 0.5) hesaplanır ve
-      etiket '📊ΔÜretim' (Empirik) olarak raporlanır.
-    - Eğer alt lig/kupa maçında geçmiş boxscore yoksa, dürüstçe '📈ΔMom(Proxy)' olarak işaretlenir.
-    """
     emp_h = safe_int((h_hist or {}).get("emp_n"), 0)
     emp_a = safe_int((a_hist or {}).get("emp_n"), 0)
     h_sot = safe_float((h_hist or {}).get("sot_avg"), 3.6)
@@ -695,9 +683,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
     h_rest_mod = -0.07 if h_rest <= 3 else (-0.02 if h_rest == 4 else 0.0)
     a_rest_mod = -0.07 if a_rest <= 3 else (-0.02 if a_rest == 4 else 0.0)
 
-    # DÜZELTME (Denetim #2 & P0): Momentum ve Empirik Üretim çift sayımı (double-counting) önlendi.
-    # Eğer gerçek şut/isabet verisi varsa (is_emp_delta=True) ağırlık gerçek üretime verilir;
-    # ayrıca P0 'heavy_odd_boost' kaldırıldı (bahis oranı yapısal lambda'yı kirletmez!).
     mom_diff = (h_mom - a_mom) / 100.0
     if is_emp_delta:
         qual_diff_h = max(-0.28, min(0.28, (delta_h * 0.024) + (mom_diff * 0.15)))
@@ -839,7 +824,8 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         "mkt_tot_ref": mkt_tot_ref,
         "est_score": f"{best_gh}-{best_ga}", "est_score_p": sc_prob
     }
-    def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi="", is_home_fav=True):
+
+def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val, ou_val, kademe, r_data, lig_adi="", is_home_fav=True):
     r_d = r_data or {}
     slug = str(r_d.get("slug") or "eng.1")
     lig_dna = LEAGUE_DNA_PROFILES.get(slug, DEFAULT_LIG_DNA)
@@ -877,7 +863,6 @@ def compute_model4_poisson_and_scores(h_name, a_name, h_abbr, a_abbr, h_mom, a_m
         blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
     is_blowout = (blowout_prob >= 58)
 
-    # Bloklanan şut -> korner etkisi yalnızca gerçek korner toplamı >= 9.4 olan maçlarda devreye girer
     blocked_shot_cor_boost = 1.07 if (sh_sum >= 23.0 and abs(fav_delta) < 3.5 and real_cor_sum >= 9.4) else 1.0
     wx_mult = 1.05 if "Yağışlı" in wx_str else 1.0
     wing_mult = 1.06 if (wing_asym and not inj_wing) else (0.90 if inj_wing else 1.0)
@@ -1008,12 +993,6 @@ def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
     }
 
 def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag, h_mom, a_mom, disp_odd, fav_val, ou_val, m4, fr, cor_line, card_line):
-    """
-    DÜZELTME (Denetim #3 & P0):
-    1. Seçim girdisi olarak 'p_aug_fav' (oran karışımı) yerine yalnızca SAF YAPISAL olasılıklar (p_fav_o15, p_struct_fav, p_team) kullanılır.
-    2. Tüm 1-1 kilit kontrolleri TEK BİR 'lock_thresh' (lig_dna['lock_thresh']) değerine bağlanmıştır.
-    3. 1. Tercih ile 2. Tercihin aynı çıkmasını engelleyen yedek havuz (fallback_pool) eklendi.
-    """
     lam_h = safe_float(m4.get("lam_h_struct"), 1.35)
     lam_a = safe_float(m4.get("lam_a_struct"), 1.05)
     lam_tot = lam_h + lam_a
@@ -1053,7 +1032,6 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
     whale_for_fav = ("🔥Δ" in str(disp_odd))
     mom_gap = abs(h_mom - a_mom)
 
-    # TEKİL 1-1 KİLİT EŞİĞİ ('lock_thresh') İLE TAKIM GOLÜ VETOSU
     is_locked_match = (p_1_1_lock >= lock_thresh)
     team_o15_vetoed = bool(
         whale_against_fav
@@ -1064,7 +1042,6 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
     candidates = []
 
-    # 1. ADAY: NEGATİF BİNOM KORNER ÜST
     if (not inj_wing or real_cor >= 11.2) and real_cor >= 9.4:
         u_cor = cor_prob
         if real_cor >= 11.0:
@@ -1076,33 +1053,27 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         if cor_prob >= 63 or (team_o15_vetoed and cor_prob >= 58):
             candidates.append((u_cor, f"🚩 {cor_line}", max(cor_prob, min(88, u_cor))))
 
-    # 2. ADAY: FAVORİ KAZANIR & 1.5 GOL ÜST (Yalnızca yapısal olasılık p_fav_o15 & p_struct_fav baz alınır!)
     if not whale_against_fav and not is_locked_match and p_struct_fav >= 50.0:
         u_win = int(round(0.65 * p_fav_o15 + 0.35 * p_struct_fav)) + (4 if is_blowout else 0) + (3 if whale_for_fav else 0)
         win_label = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)" if is_blowout else f"{fav_team} Kazanır & 1.5 Gol Üst"
         candidates.append((u_win, win_label, min(85, max(64, u_win))))
 
-    # 3. ADAY: FAVORİ TAKIM GOLÜ 1.5 ÜST
     if not team_o15_vetoed and (fav_lam >= 1.58 or p_team >= 50) and fav_delta >= 2.5 and (fav_val <= -115 or opp_def_val <= 69):
         u_team = max(p_team + 9, int(round(fav_lam * 37.5))) + (4 if d_wk >= 45 else 0) + (3 if whale_for_fav else 0)
         candidates.append((u_team, f"{fav_team} Takım Golü 1.5 Üst", min(82, max(64, u_team))))
 
-    # 4. ADAY: KARŞILIKLI GOL VAR
     if lam_h >= 1.12 and lam_a >= 1.08 and abs(lam_h - lam_a) <= 0.36 and h_sho >= 68 and a_sho >= 68 and fav_val > -185 and p_btts >= 52:
         u_btts = p_btts + 8 + (4 if p_btts >= p_o25 + 2 else 0) + (5 if is_locked_match else 0) + (3 if (h_def <= 70 and a_def <= 70) or d_wk >= 38 else 0)
         candidates.append((u_btts, "Karşılıklı Gol Var", min(79, max(63, p_btts + 5))))
 
-    # 5. ADAY: MAÇ 2.5 GOL ÜST
     if (p_o35 >= 27 and ou_val >= 2.5) or (lam_tot >= 2.55 and p_o25 >= 52):
         u_o25 = p_o25 + 8 + (4 if ou_val >= 3.5 else 0) + (3 if d_wk >= 35 and bus_sc < 48 else 0)
         candidates.append((u_o25, "Maç 2.5 Gol Üst", min(80, max(65, p_o25 + 6))))
 
-    # 6. ADAY: NEGATİF BİNOM KART ÜST
     if card_prob >= 62 and not is_blowout and real_cor < 11.2:
         u_card = card_prob + (4 if is_locked_match else 0) + (3 if mom_gap <= 18 else 0)
         candidates.append((u_card, f"🟨 {card_line}", card_prob))
 
-    # 7. ADAY: MAÇ 1.5 GOL ÜST
     u_o15 = max(62, int(round(p_o15 * 0.90))) + (4 if lam_tot >= 2.30 else 0) + (4 if team_o15_vetoed and opp_lam >= 0.95 else 0) - (5 if fav_val <= -200 else 0)
     candidates.append((u_o15, "Maç 1.5 Gol Üst", min(79, max(63, u_o15))))
 
@@ -1266,12 +1237,6 @@ def compute_post_lineup_evolution_and_props(match_title, is_off, h_name, a_name,
     return conf, pick, disp_odd, evo_str, prop_str, evo_changed
 
 def analyze_live_pro(match_title, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data):
-    """
-    DÜZELTME (Denetim #5 & P0):
-    1. Yönsüz şişen yorgunluk çarpanı kaldırıldı; yalnızca gerçek canlı şut/isabet/korner hızı (pace) baz alınır.
-    2. Canlı Pusu WON/LOST doğrulaması YÖNLÜ hale getirildi: 'GOL' pususu açıldıysa yalnızca gol olduğunda WON olur;
-       'KORNER' pususu açıldıysa yalnızca en az 3 korner çıktığında WON olur!
-    """
     tot_sh, tot_sot, tot_cor = h_sh + a_sh, h_sot + a_sot, h_cor + a_cor
     rem_frac = max(0.05, (90.0 - min(90, m_int)) / 90.0) ** 0.85
 
