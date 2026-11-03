@@ -1679,7 +1679,7 @@ for item in raw_matches:
 
     lock_id = f"{match_key}_{MODEL_VERSION}"
     legacy_lock_id = f"{match_key}_M4.2_DC_NEGBINOM_EMPIRICAL"
-    rec = locked_picks.get(lock_id) or locked_picks.get(legacy_lock_id) or {}
+    rec = locked_picks.get(lock_id) if isinstance(locked_picks.get(lock_id), dict) else {}
     if not isinstance(rec, dict):
         rec = {}
 
