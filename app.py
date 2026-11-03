@@ -871,7 +871,7 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     is_blowout = (blowout_prob >= 58)
 
     # BLOKLANAN ŞUT -> KORNER PATLAMASI ÇARPANI (Şut yüksek ama hız farkı düşükse savunma kornere çeler!)
-    blocked_shot_cor_boost = 1.09 if (sh_sum >= 22.5 and fav_delta < 4.5) else 1.0
+    blocked_shot_cor_boost = 1.09 if (sh_sum >= 22.5 and fav_delta < 4.5 and real_cor_sum >= 9.2) else 1.0
     wx_mult = 1.05 if "Yağışlı" in wx_str else 1.0
     wing_mult = 1.06 if (wing_asym and not inj_wing) else (0.90 if inj_wing else 1.0)
     cor_mu = max(5.5, min(15.5, real_cor_sum * 0.96 * wing_mult * wx_mult * blocked_shot_cor_boost * safe_float(lig_dna.get("cor_mult"), 1.0)))
@@ -1069,9 +1069,10 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         win_label = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)" if is_blowout else f"{fav_team} Kazanır & 1.5 Gol Üst"
         candidates.append((u_win, win_label, min(86, max(64, u_win))))
 
-    # 3. ADAY: FAVORİ TAKIM GOLÜ 1.5 ÜST (Hantal Stoper Yakalandığında Onaylanır, Kilitlenmede Veto Edilir!)
-    if not team_o15_vetoed and (fav_lam >= 1.52 or p_team >= 48) and fav_delta >= 3.5:
-        u_team = max(p_team + 11, int(round(fav_lam * 38.5))) + (4 if d_wk >= 42 else 0) + (3 if whale_for_fav else 0) + (3 if fav_delta >= 6.0 else 0)
+    # 3. ADAY: FAVORİ TAKIM GOLÜ 1.5 ÜST (Sadece net favorilerde veya rakip savunma gerçekten zayıfsa onaylanır!)
+    opp_def_val = a_def if is_home_fav else h_def
+    if not team_o15_vetoed and (fav_lam >= 1.58 or p_team >= 50) and fav_delta >= 4.5 and (fav_val <= -115 or opp_def_val <= 69):
+        u_team = max(p_team + 9, int(round(fav_lam * 37.5))) + (4 if d_wk >= 45 else 0) + (3 if whale_for_fav else 0) + (2 if fav_delta >= 7.0 else 0)
         candidates.append((u_team, f"{fav_team} Takım Golü 1.5 Üst", min(82, max(64, u_team))))
 
     # 4. ADAY: KARŞILIKLI GOL VAR
@@ -1096,11 +1097,29 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
     candidates.sort(key=lambda x: x[0], reverse=True)
 
     best_u, best_pick, raw_prob = candidates[0]
-    sec_pick, sec_prob = "Maç 1.5 Gol Üst", 66
+    sec_pick, sec_prob = None, 64
+
+    # Önce mevcut adaylar içinden 1. tercihten farklı olan en güçlü 2. adayı ara
     for cand_u, cand_pk, cand_pr in candidates[1:]:
         if cand_pk != best_pick:
             sec_pick, sec_prob = cand_pk, cand_pr
             break
+
+    # Eğer adaylarda tek seçenek kaldıysa (Örn: Sadece Maç 1.5 Gol Üst barajı geçtiyse),
+    # 1. tercihle aynı olmaması için en güçlü alternatif yan marketi (Kart, Korner veya KG Var) seç:
+    if not sec_pick or sec_pick == best_pick:
+        fallback_pool = [
+            (cor_prob, f"🚩 {cor_line}"),
+            (card_prob, f"🟨 {card_line}"),
+            (p_btts + 4, "Karşılıklı Gol Var"),
+            (p_o25 + 4, "Maç 2.5 Gol Üst"),
+            (max(62, int(round(p_o15 * 0.90))), "Maç 1.5 Gol Üst")
+        ]
+        fallback_pool.sort(key=lambda x: x[0], reverse=True)
+        for fb_prob, fb_pk in fallback_pool:
+            if fb_pk != best_pick:
+                sec_pick, sec_prob = fb_pk, max(58, min(78, fb_prob))
+                break
 
     m4["top2_pick"] = sec_pick
     m4["top2_conf"] = _calibrate_decision_score_by_market_and_band(sec_prob, mkt_type=_classify_pick_market_type(sec_pick))
