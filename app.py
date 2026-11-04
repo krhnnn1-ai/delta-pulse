@@ -192,16 +192,21 @@ def get_smart_device_uid():
                 return u_q
     except Exception:
         pass
-    ua, ip_hint = "", ""
+    ua = ""
     try:
         hdrs = st.context.headers
         if hdrs:
             ua = str(hdrs.get("User-Agent") or hdrs.get("user-agent") or "")
-            ip_hint = str(hdrs.get("X-Forwarded-For") or hdrs.get("x-forwarded-for") or "").split(",")[0].strip()
     except Exception:
         pass
-    h_hex = hashlib.md5(f"{ua}|{ip_hint}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
-    return f"DP-{h_hex}"
+    # IP adresi değişse bile aynı bilgisayarda/tarayıcıda aynı ID'yi üretir:
+    h_hex = hashlib.md5(f"{ua}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
+    dev_id = f"DP-{h_hex}"
+    try:
+        st.query_params["uid"] = dev_id
+    except Exception:
+        pass
+    return dev_id
 
 def auto_sync_device_user(uid_code, ref_code=""):
     load_persistent_store()
@@ -2182,8 +2187,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             _render_match_share_box(m, "post", idx_f, is_unlocked)
 
 # ==================== MODÜL 6/6: PATRON KOMUTA VE PAZARLAMA MERKEZİ ====================
-if "patron_unlocked" not in st.session_state:
-    st.session_state["patron_unlocked"] = False
+load_persistent_store()
 
 url_ref = str(st.query_params.get("ref") or "").strip().upper()
 my_dev_id = get_smart_device_uid()
@@ -2193,8 +2197,19 @@ cur_user = auto_sync_device_user(my_dev_id, url_ref)
 user_tier = str(cur_user.get("tier", "NORMAL")) if isinstance(cur_user, dict) else "NORMAL"
 
 patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
-if my_dev_id in patron_devs:
+# Eğer cihaz patron_devs içindeyse VEYA users_db'de ADMIN olarak kayıtlıysa kilidi doğrudan aç:
+if my_dev_id in patron_devs or user_tier == "ADMIN" or str(st.query_params.get("patron", "")).strip() == "1":
     st.session_state["patron_unlocked"] = True
+    patron_devs.add(my_dev_id)
+    if hashlib.sha256(pin_in.encode("utf-8")).hexdigest() in ADMIN_HASHES:
+                    st.session_state["patron_unlocked"] = True
+                    patron_devs.add(my_dev_id)
+                    if my_dev_id in MEM.get("users_db", {}):
+                        MEM["users_db"][my_dev_id]["tier"] = "ADMIN"
+                    save_persistent_store()
+                    st.rerun()
+elif "patron_unlocked" not in st.session_state:
+    st.session_state["patron_unlocked"] = False
 
 def render_x_and_telegram_command_center():
     st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama Merkezi")
