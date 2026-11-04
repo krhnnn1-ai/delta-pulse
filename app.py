@@ -183,30 +183,52 @@ def save_persistent_store():
 
 load_persistent_store()
 
-def get_smart_device_uid():
+def get_all_possible_device_uids():
+    """Hem eski (IP dahil) hem yeni (sadece User-Agent) cihaz kodlarını üretir ki güncelleme sonrası Patron kilidi asla düşmesin."""
+    cands = []
     try:
         qp = dict(st.query_params)
         if qp.get("uid"):
             u_q = str(qp["uid"]).strip().upper()
             if u_q.startswith("DP-") and len(u_q) == 9:
-                return u_q
+                cands.append(u_q)
     except Exception:
         pass
-    ua = ""
+    ua, ip_hint = "", ""
     try:
         hdrs = st.context.headers
         if hdrs:
             ua = str(hdrs.get("User-Agent") or hdrs.get("user-agent") or "")
+            ip_hint = str(hdrs.get("X-Forwarded-For") or hdrs.get("x-forwarded-for") or "").split(",")[0].strip()
     except Exception:
         pass
-    # IP adresi değişse bile aynı bilgisayarda/tarayıcıda aynı ID'yi üretir:
-    h_hex = hashlib.md5(f"{ua}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
-    dev_id = f"DP-{h_hex}"
-    try:
-        st.query_params["uid"] = dev_id
-    except Exception:
-        pass
-    return dev_id
+    # 1. Eski formül (UA + IP)
+    h_old = hashlib.md5(f"{ua}|{ip_hint}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
+    cands.append(f"DP-{h_old}")
+    # 2. Yeni sabit formül (Sadece UA — IP değişse bile sabit kalır)
+    h_new = hashlib.md5(f"{ua}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
+    cands.append(f"DP-{h_new}")
+    # 3. Yedek boş IP formülü
+    h_emp = hashlib.md5(f"{ua}||DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
+    cands.append(f"DP-{h_emp}")
+    # Sırayı koruyarak tekilleştir
+    seen = set()
+    unique_cands = []
+    for c in cands:
+        if c not in seen:
+            seen.add(c)
+            unique_cands.append(c)
+    return unique_cands
+
+def get_smart_device_uid():
+    cands = get_all_possible_device_uids()
+    p_devs = MEM.get("patron_devs", set())
+    u_db = MEM.get("users_db", {})
+    # Eğer aday kodlardan biri zaten patron_devs içindeyse doğrudan onu kullan!
+    for c in cands:
+        if c in p_devs or (isinstance(u_db.get(c), dict) and u_db[c].get("tier") == "ADMIN"):
+            return c
+    return cands[0]
 
 def auto_sync_device_user(uid_code, ref_code=""):
     load_persistent_store()
@@ -2190,6 +2212,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
 load_persistent_store()
 
 url_ref = str(st.query_params.get("ref") or "").strip().upper()
+my_dev_candidates = get_all_possible_device_uids()
 my_dev_id = get_smart_device_uid()
 mini_text = "\n".join(mini_lines)
 
@@ -2197,17 +2220,37 @@ cur_user = auto_sync_device_user(my_dev_id, url_ref)
 user_tier = str(cur_user.get("tier", "NORMAL")) if isinstance(cur_user, dict) else "NORMAL"
 
 patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
-# Eğer cihaz patron_devs içindeyse VEYA users_db'de ADMIN olarak kayıtlıysa kilidi doğrudan aç:
-if my_dev_id in patron_devs or user_tier == "ADMIN" or str(st.query_params.get("patron", "")).strip() == "1":
+users_db_ref = MEM.setdefault("users_db", {})
+
+# OTOMATİK PATRON TANIMA KALKANI (3 Katmanlı):
+# 1) Aday kodlardan herhangi biri (eski IP'li veya yeni sabit kod) patron_devs içinde mi?
+# 2) users_db içinde ADMIN yetkisi var mı veya sistemdeki ilk kurucu cihaz mı (seq == 1)?
+is_recognized_patron = any(c in patron_devs for c in my_dev_candidates) or (user_tier == "ADMIN")
+if not is_recognized_patron:
+    for c in my_dev_candidates:
+        u_info = users_db_ref.get(c)
+        if isinstance(u_info, dict) and (u_info.get("tier") == "ADMIN" or safe_int(u_info.get("seq"), 99) == 1):
+            is_recognized_patron = True
+            break
+
+if is_recognized_patron:
     st.session_state["patron_unlocked"] = True
-    patron_devs.add(my_dev_id)
-    if hashlib.sha256(pin_in.encode("utf-8")).hexdigest() in ADMIN_HASHES:
-                    st.session_state["patron_unlocked"] = True
-                    patron_devs.add(my_dev_id)
-                    if my_dev_id in MEM.get("users_db", {}):
-                        MEM["users_db"][my_dev_id]["tier"] = "ADMIN"
-                    save_persistent_store()
-                    st.rerun()
+    # Hem eski hem yeni aday kodları patron_devs içine ve URL'ye mühürle ki bir daha asla sormasın:
+    dirty_store = False
+    for c in my_dev_candidates:
+        if c not in patron_devs:
+            patron_devs.add(c)
+            dirty_store = True
+        if c in users_db_ref and users_db_ref[c].get("tier") != "ADMIN":
+            users_db_ref[c]["tier"] = "ADMIN"
+            dirty_store = True
+    if dirty_store:
+        save_persistent_store()
+    try:
+        if st.query_params.get("uid") != my_dev_id:
+            st.query_params["uid"] = my_dev_id
+    except Exception:
+        pass
 elif "patron_unlocked" not in st.session_state:
     st.session_state["patron_unlocked"] = False
 
@@ -2249,7 +2292,14 @@ if not st.session_state.get("patron_unlocked"):
             if st.button("👑 Patron Kilidini Aç", use_container_width=True):
                 if hashlib.sha256(pin_in.encode("utf-8")).hexdigest() in ADMIN_HASHES:
                     st.session_state["patron_unlocked"] = True
-                    patron_devs.add(my_dev_id)
+                    for c in my_dev_candidates:
+                        patron_devs.add(c)
+                        if c in users_db_ref:
+                            users_db_ref[c]["tier"] = "ADMIN"
+                    try:
+                        st.query_params["uid"] = my_dev_id
+                    except Exception:
+                        pass
                     save_persistent_store()
                     st.rerun()
                 else:
