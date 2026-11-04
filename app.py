@@ -668,7 +668,7 @@ def fetch_and_analyze_roster(task_tuple):
 
     MEM["roster_cache"][cache_key] = res
     return match_title, res
-   # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.4_CLEAN_PROPS) ====================
+  # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.4_CLEAN_PROPS) ====================
 MODEL_VERSION = "M4.4_CLEAN_PROPS"
 
 LEAGUE_GOAL_AVG = {
