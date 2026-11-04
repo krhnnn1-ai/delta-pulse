@@ -668,8 +668,8 @@ def fetch_and_analyze_roster(task_tuple):
 
     MEM["roster_cache"][cache_key] = res
     return match_title, res
-    # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.4_AUTONOMOUS_FAST) ====================
-MODEL_VERSION = "M4.4_AUTONOMOUS_FAST"
+   # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.4_CLEAN_PROPS) ====================
+MODEL_VERSION = "M4.4_CLEAN_PROPS"
 
 LEAGUE_GOAL_AVG = {
     "ger.1": 3.05, "ned.1": 3.00, "eng.league_cup": 2.82, "sco.1": 2.75,
@@ -1254,7 +1254,6 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
     candidates = []
 
-    # 1. ADAY: NEGATİF BİNOM KORNER ÜST (İngiltere Championship 8-korner baraj disiplini dahil)
     is_champ = ("CHAMPIONSHIP" in str(lig_adi).upper())
     min_cor_req = 12.2 if is_champ else 9.4
     if (not inj_wing or real_cor >= 11.2) and real_cor >= min_cor_req:
@@ -1268,33 +1267,27 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         if cor_prob >= 64 or (team_o15_vetoed and cor_prob >= 60):
             candidates.append((u_cor, f"🚩 {cor_line}", cor_prob))
 
-    # 2. ADAY: FAVORİ KAZANIR & 1.5 GOL ÜST
     if not whale_against_fav and not is_locked_match and (p_struct_fav >= 48.0 or fav_val <= -200):
         u_win = int(round(0.60 * p_fav_o15 + 0.40 * p_struct_fav)) + (5 if is_blowout else 0) + (3 if whale_for_fav else 0) + _get_autonomous_market_learning_bonus("WIN", lig_adi)
         win_label = f"{fav_team} Kazanır & 1.5 Gol Üst (Handikap Adayı)" if is_blowout else f"{fav_team} Kazanır & 1.5 Gol Üst"
         candidates.append((u_win, win_label, max(64, p_fav_o15)))
 
-    # 3. ADAY: FAVORİ TAKIM GOLÜ 1.5 ÜST
     if not team_o15_vetoed and (fav_lam >= 1.55 or p_team >= 48) and (fav_delta >= 2.0 or fav_val <= -190) and (fav_val <= -115 or opp_def_val <= 69):
         u_team = max(p_team + 9, int(round(fav_lam * 37.5))) + (4 if d_wk >= 45 else 0) + (3 if whale_for_fav else 0) + _get_autonomous_market_learning_bonus("TEAM_O15", lig_adi)
         candidates.append((u_team, f"{fav_team} Takım Golü 1.5 Üst", max(62, p_team)))
 
-    # 4. ADAY: KARŞILIKLI GOL VAR
     if lam_h >= 1.12 and lam_a >= 1.08 and abs(lam_h - lam_a) <= 0.36 and h_sho >= 68 and a_sho >= 68 and fav_val > -185 and p_btts >= 52:
         u_btts = p_btts + 8 + (4 if p_btts >= p_o25 + 2 else 0) + (5 if is_locked_match else 0) + (3 if (h_def <= 70 and a_def <= 70) or d_wk >= 38 else 0) + _get_autonomous_market_learning_bonus("BTTS", lig_adi)
         candidates.append((u_btts, "Karşılıklı Gol Var", p_btts))
 
-    # 5. ADAY: MAÇ 2.5 GOL ÜST
     if (p_o35 >= 27 and ou_val >= 2.5) or (lam_tot >= 2.55 and p_o25 >= 52):
         u_o25 = p_o25 + 8 + (4 if ou_val >= 3.5 else 0) + (3 if d_wk >= 35 and bus_sc < 48 else 0) + _get_autonomous_market_learning_bonus("O25", lig_adi)
         candidates.append((u_o25, "Maç 2.5 Gol Üst", p_o25))
 
-    # 6. ADAY: NEGATİF BİNOM KART ÜST (Sadece korner ortalaması < 10.2 olan kısır/sert maçlarda 1. sıraya aday olur)
     if card_prob >= 64 and not is_blowout and real_cor < 10.2:
         u_card = card_prob + (4 if is_locked_match else 0) + (3 if mom_gap <= 18 else 0) + _get_autonomous_market_learning_bonus("CARD", lig_adi)
         candidates.append((u_card, f"🟨 {card_line}", card_prob))
 
-    # 7. ADAY: MAÇ 1.5 GOL ÜST
     u_o15 = max(62, int(round(p_o15 * 0.90))) + (4 if lam_tot >= 2.30 else 0) + (4 if team_o15_vetoed and opp_lam >= 0.95 else 0) - (5 if fav_val <= -200 else 0) + _get_autonomous_market_learning_bonus("O15", lig_adi)
     candidates.append((u_o15, "Maç 1.5 Gol Üst", p_o15))
 
@@ -1410,14 +1403,26 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
     top2_pk = str(m4.get("top2_pick") or "Maç 1.5 Gol Üst")
     top2_cf = safe_int(m4.get("top2_conf"), 66)
 
+    def _build_clean_prop_bar(main_pk, sec_pk, sec_cf):
+        if _same_market_family(sec_pk, main_pk):
+            sec_pk = "Maç 1.5 Gol Üst" if not _same_market_family("Maç 1.5 Gol Üst", main_pk) else f"🚩 {cor_label}"
+            sec_cf = _calibrate_decision_score_by_market_and_band(p_o15 if "1.5 Gol" in sec_pk else p_cor, _classify_pick_market_type(sec_pk))
+        parts = [f"🎯 2.Tercih: {sec_pk} (%{sec_cf})"]
+        # Eğer 2.Tercih zaten Korner ise yanına bir daha Korner yazma, yerine Maç 1.5 Gol Üst referansını koy:
+        if "Korner" not in str(sec_pk):
+            parts.append(f"🚩 {cor_label} (%{p_cor})")
+        elif "1.5 Gol Üst" not in str(main_pk):
+            parts.append(f"⚽ Maç 1.5 Gol Üst (%{p_o15})")
+        # Eğer 2.Tercih zaten Kart değilse Kart referansını ekle:
+        if "Kart" not in str(sec_pk):
+            parts.append(f"🟨 {card_label} (%{p_card})")
+        return " | ".join(parts)
+
     pre_mem = MEM.setdefault("pre_lineup_memory", {})
     if not is_off:
         if match_key not in pre_mem:
             pre_mem[match_key] = pick
-        if _same_market_family(top2_pk, pick):
-            top2_pk = "Maç 1.5 Gol Üst" if "1.5 Gol Üst" not in pick else f"🚩 {cor_label}"
-            top2_cf = _calibrate_decision_score_by_market_and_band(p_o15 if "1.5 Gol" in top2_pk else p_cor, _classify_pick_market_type(top2_pk))
-        prop_str = f"🎯 2.Tercih: {top2_pk} (%{top2_cf}) | 🚩 {cor_label} (%{p_cor}) | 🟨 {card_label} (%{p_card})"
+        prop_str = _build_clean_prop_bar(pick, top2_pk, top2_cf)
         return conf, pick, disp_odd, "⏳ Resmi Kadro Bekleniyor (5-Maç Çekirdek XI)", prop_str, False
 
     old_pick = pre_mem.get(match_key, pick)
@@ -1456,12 +1461,7 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
         pick = f"🚩 {cor_label}"
         conf = _calibrate_decision_score_by_market_and_band(p_cor, "COR")
 
-    # Resmi kadro sonrası 1. Tercih değiştiyse 2. Tercihin aynı kalmasını engelle!
-    if _same_market_family(top2_pk, pick):
-        top2_pk = "Maç 1.5 Gol Üst" if not _same_market_family("Maç 1.5 Gol Üst", pick) else f"🚩 {cor_label}"
-        top2_cf = _calibrate_decision_score_by_market_and_band(p_o15 if "1.5 Gol" in top2_pk else p_cor, _classify_pick_market_type(top2_pk))
-
-    prop_str = f"🎯 2.Tercih: {top2_pk} (%{top2_cf}) | 🚩 {cor_label} (%{p_cor}) | 🟨 {card_label} (%{p_card})"
+    prop_str = _build_clean_prop_bar(pick, top2_pk, top2_cf)
 
     psim = _build_patron_sim_summary(m4, pick, fav_is_home, conf, ou_val)
     m4["patron_sim_ui"] = psim["ui"]
