@@ -1454,12 +1454,7 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
         else:
             pick = top2_pk if "Korner" not in top2_pk else "Maç 1.5 Gol Üst"
             conf = top2_cf if "Korner" not in top2_pk else _calibrate_decision_score_by_market_and_band(p_o15, "O15")
-    elif bus_sc >= 60 and p_cor >= 68 and not inj_wing and "Ana Kasa" not in pick:
-        pick = f"🚩 {cor_label}"
-        conf = _calibrate_decision_score_by_market_and_band(p_cor, "COR")
-    elif d_wk >= 42 and real_cor_sum >= 10.4 and not inj_wing and "Korner" not in pick and p_cor >= 66 and "CHAMPIONSHIP" not in str(lig_adi).upper():
-        pick = f"🚩 {cor_label}"
-        conf = _calibrate_decision_score_by_market_and_band(p_cor, "COR")
+    
 
     prop_str = _build_clean_prop_bar(pick, top2_pk, top2_cf)
 
