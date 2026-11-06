@@ -1527,19 +1527,24 @@ def _is_home_picked_in_text(pick_str, h_name, a_name):
     p = str(pick_str or "").strip()
     h_n = str(h_name or "").strip()
     a_n = str(a_name or "").strip()
-    if p.startswith(h_n) and not p.startswith(a_n):
-        return True
-    if p.startswith(a_n) and not p.startswith(h_n):
-        return False
+    # Önce tam başlangıç eşleşmesine bak (En uzun isim öncelikli: örn. "Real Sociedad" vs "Real")
     if len(h_n) >= len(a_n):
-        if h_n in p:
+        if h_n and p.startswith(h_n):
             return True
-        if a_n in p:
+        if a_n and p.startswith(a_n):
+            return False
+        if h_n and h_n in p:
+            return True
+        if a_n and a_n in p:
             return False
     else:
-        if a_n in p:
+        if a_n and p.startswith(a_n):
             return False
-        if h_n in p:
+        if h_n and p.startswith(h_n):
+            return True
+        if a_n and a_n in p:
+            return False
+        if h_n and h_n in p:
             return True
     return True
 
@@ -1575,6 +1580,36 @@ def evaluate_ft_result(pick, h_name, a_name, h_score, a_score):
     if "3.5 Gol Alt" in p or "3.5 Alt" in p:
         return tot <= 3
     return False
+
+def run_ft_evaluator_self_test():
+    """Tablo-temelli birim testi (Unit Test): evaluate_ft_result fonksiyonunu 16 kritik sınır senaryosunda doğrular."""
+    test_table = [
+        ("Maç 1.5 Gol Üst", "Porto", "Napoli", 1, 1, True),
+        ("Maç 1.5 Gol Üst", "Porto", "Napoli", 1, 0, False),
+        ("Maç 2.5 Gol Üst", "Leipzig", "Man City", 2, 1, True),
+        ("Maç 2.5 Gol Üst", "Leipzig", "Man City", 1, 1, False),
+        ("Karşılıklı Gol Var", "Arsenal", "Chelsea", 1, 2, True),
+        ("Karşılıklı Gol Var", "Arsenal", "Chelsea", 3, 0, False),
+        ("Real Madrid Takım Golü 1.5 Üst", "AEK Athens", "Real Madrid", 1, 2, True),
+        ("Real Madrid Takım Golü 1.5 Üst", "AEK Athens", "Real Madrid", 2, 1, False),
+        ("Real Sociedad Takım Golü 1.5 Üst", "Real", "Real Sociedad", 2, 1, False),
+        ("Real Sociedad Takım Golü 1.5 Üst", "Real", "Real Sociedad", 1, 2, True),
+        ("Man City Kazanır & 1.5 Gol Üst", "Bristol City", "Man City", 1, 2, True),
+        ("Man City Kazanır & 1.5 Gol Üst", "Bristol City", "Man City", 2, 1, False),
+        ("Benfica Kazanır & 1.5 Gol Üst (Handikap Adayı)", "Benfica", "Lech", 2, 0, True),
+        ("Benfica Kazanır & 1.5 Gol Üst (Handikap Adayı)", "Benfica", "Lech", 1, 0, False),
+        ("1X & 1.5 Gol Üst", "Home", "Away", 1, 1, True),
+        ("X2 & 3.5 Alt", "Home", "Away", 1, 2, True),
+    ]
+    passed = 0
+    failed_cases = []
+    for pk, hn, an, hs, as_, expected in test_table:
+        actual = bool(evaluate_ft_result(pk, hn, an, hs, as_))
+        if actual == expected:
+            passed += 1
+        else:
+            failed_cases.append(f"{pk} ({hn} {hs}-{as_} {an})")
+    return passed, len(test_table), failed_cases
     # ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ (60s RAM KALKANI & HIZLI PARALEL TARAMA) ====================
 _ACTIVE_LEAGUES = [
     ("uefa.champions", "🏆 UEFA ŞAMPİYONLAR LİGİ", 1),
@@ -1886,19 +1921,34 @@ else:
                 won = (tot_cards >= 4)
             else:
                 won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-            is_ak = ("Ana Kasa" in pick or conf >= 78)
+          is_ak = ("Ana Kasa" in pick or conf >= 78)
             brier_val = round(((conf / 100.0) - (1.0 if won else 0.0)) ** 2, 3)
+
+            # 1) CLV (Closing Line Value) ve Piyasa (No-Vig / Proxy) Baz Olasılığı Hesabı:
+            op_info = MEM.get("opening_odds", {}).get(match_key) or {"fav_val": fav_val, "ou_val": ou_val}
+            op_fav_v = safe_int(op_info.get("fav_val"), fav_val)
+            op_ou_v = safe_float(op_info.get("ou_val"), ou_val)
+            mkt_t = _classify_pick_market_type(pick)
+            if mkt_t in ("O15", "O25", "BTTS"):
+                clv_delta = round((ou_val - op_ou_v) * 6.0, 2)
+                p_mkt_base = 0.72 if mkt_t == "O15" else (0.52 if mkt_t == "O25" else 0.51)
+            else:
+                clv_delta = round(_odd_to_prob(fav_val) - _odd_to_prob(op_fav_v), 2)
+                p_mkt_base = min(0.88, max(0.35, safe_float(m4.get("market_probability_proxy"), 55.0) / 100.0 * (0.84 if mkt_t in ("WIN", "TEAM_O15") else 0.95)))
+            mkt_brier = round((p_mkt_base - (1.0 if won else 0.0)) ** 2, 3)
 
             if match_key != match_title:
                 fin_cache.pop(match_title, None)
                 MEM.setdefault("history_scores", {}).pop(match_title, None)
 
             MEM.setdefault("history_scores", {})[match_key] = {
-                "won": won, "ak": is_ak, "brier": brier_val, "conf": conf,
-                "mkt": _classify_pick_market_type(pick), "ver": MODEL_VERSION
+                "won": won, "ak": is_ak, "brier": brier_val, "mkt_brier": mkt_brier,
+                "p_mkt": round(p_mkt_base, 3), "clv": clv_delta, "conf": conf,
+                "mkt": mkt_t, "ver": MODEL_VERSION
             }
-            base_obj.update({"won": won, "is_ak": is_ak, "brier": brier_val})
+            base_obj.update({"won": won, "is_ak": is_ak, "brier": brier_val, "mkt_brier": mkt_brier, "clv": clv_delta})
             fin_cache[match_key] = base_obj
+            ledger_log[match_key] = f"{now_tr.strftime('%H:%M')} | {match_title} ({h_score}-{a_score}, Kor:{tot_cor_ft}, Kart:{tot_cards}) -> {pick} [{'✅KAZANDI' if won else '❌KAYIP'} | Brier:{brier_val} vs Mkt:{mkt_brier} | CLV:{clv_delta:+.1f}%p]"
             ledger_log[match_key] = f"{now_tr.strftime('%H:%M')} | {match_title} ({h_score}-{a_score}, Kor:{tot_cor_ft}, Kart:{tot_cards}) -> {pick} [{'✅KAZANDI' if won else '❌KAYIP'} | Brier:{brier_val}]"
         else:
             upcoming_matches.append(base_obj)
@@ -2306,16 +2356,33 @@ if st.session_state.get("patron_unlocked"):
     with t1:
         render_main_bulletin(tier="ADMIN", is_patron_mode=True)
     with t2:
-        st.markdown("##### 📋 Patron Özel DP-MİNİ Telemetri Çıktısı (Sadece Sana Görünür)")
+        st.markdown("##### 📋 Patron Özel DP-MİNİ Telemetri & G1 Kalibrasyon Çıktısı (Sadece Sana Görünür)")
+        t_pass, t_tot, t_fails = run_ft_evaluator_self_test()
+        test_badge = f"✅ {t_pass}/{t_tot} GEÇTİ" if t_pass == t_tot else f"❌ HATA ({', '.join(t_fails)})"
         if hist_vals:
             avg_brier = round(sum(safe_float(x.get("brier"), 0.20) for x in hist_vals) / len(hist_vals), 4)
-            log_losses = []
+            avg_mkt_brier = round(sum(safe_float(x.get("mkt_brier"), 0.215) for x in hist_vals) / len(hist_vals), 4)
+            avg_clv = round(sum(safe_float(x.get("clv"), 0.0) for x in hist_vals) / len(hist_vals), 2)
+            log_losses, mkt_log_losses = [], []
             for x in hist_vals:
                 p_c = min(0.98, max(0.02, safe_float(x.get("conf"), 70.0) / 100.0))
+                p_m = min(0.98, max(0.02, safe_float(x.get("p_mkt"), 0.58)))
                 y_c = 1.0 if x.get("won") else 0.0
                 log_losses.append(-(y_c * math.log(p_c) + (1.0 - y_c) * math.log(1.0 - p_c)))
+                mkt_log_losses.append(-(y_c * math.log(p_m) + (1.0 - y_c) * math.log(1.0 - p_m)))
             avg_ll = round(sum(log_losses) / len(log_losses), 4)
-            st.info(f"📐 **Seçili Market İkili Kalibrasyon Metrikleri ({len(hist_vals)} Maç):** Ortalama Brier Skoru: `{avg_brier}` (Hedef < 0.22) | Binary Log-Loss: `{avg_ll}` | Aktif Sürüm: `{MODEL_VERSION}`")
+            avg_mkt_ll = round(sum(mkt_log_losses) / len(mkt_log_losses), 4)
+            brier_skill = round((1.0 - (avg_brier / max(1e-6, avg_mkt_brier))) * 100.0, 1)
+            g1_status = "✅ G1 GEÇTİ (Piyasa Üstü)" if avg_brier <= avg_mkt_brier else "⚠️ G1 İZLEMEDE"
+            st.info(
+                f"📐 **G1 Kalibrasyon & CLV Raporu ({len(hist_vals)} Maç):** "
+                f"Model Brier: `{avg_brier}` vs Piyasa Brier: `{avg_mkt_brier}` (**BSS: `{brier_skill:+.1f}%`**) | "
+                f"Model LL: `{avg_ll}` vs Piyasa LL: `{avg_mkt_ll}` | "
+                f"📈 **Ort. CLV:** `{avg_clv:+.2f}%p` | {g1_status} | "
+                f"🧪 **FT Hakem Öz-Testi:** `{test_badge}` | Sürüm: `{MODEL_VERSION}`"
+            )
+        else:
+            st.info(f"🧪 **FT Hakem Öz-Testi (Unit Test):** `{test_badge}` | Aktif Sürüm: `{MODEL_VERSION}`")
         st.code(mini_text, language="text")
     with t3:
         users_db = MEM.setdefault("users_db", {})
