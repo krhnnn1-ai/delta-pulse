@@ -1921,7 +1921,7 @@ else:
                 won = (tot_cards >= 4)
             else:
                 won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score)
-          is_ak = ("Ana Kasa" in pick or conf >= 78)
+            is_ak = ("Ana Kasa" in pick or conf >= 78)
             brier_val = round(((conf / 100.0) - (1.0 if won else 0.0)) ** 2, 3)
 
             # 1) CLV (Closing Line Value) ve Piyasa (No-Vig / Proxy) Baz Olasılığı Hesabı:
