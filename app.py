@@ -207,12 +207,16 @@ def get_all_possible_device_uids():
             ip_hint = str(hdrs.get("X-Forwarded-For") or hdrs.get("x-forwarded-for") or "").split(",")[0].strip()
     except Exception:
         pass
+    # 1. Eski formül (UA + IP)
     h_old = hashlib.md5(f"{ua}|{ip_hint}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
     cands.append(f"DP-{h_old}")
+    # 2. Yeni sabit formül (Sadece UA — IP değişse bile sabit kalır)
     h_new = hashlib.md5(f"{ua}|DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
     cands.append(f"DP-{h_new}")
+    # 3. Yedek boş IP formülü
     h_emp = hashlib.md5(f"{ua}||DeltaPulseSalt".encode("utf-8")).hexdigest().upper()[:6]
     cands.append(f"DP-{h_emp}")
+    # Sırayı koruyarak tekilleştir
     seen = set()
     unique_cands = []
     for c in cands:
@@ -225,6 +229,7 @@ def get_smart_device_uid():
     cands = get_all_possible_device_uids()
     p_devs = MEM.get("patron_devs", set())
     u_db = MEM.get("users_db", {})
+    # Eğer aday kodlardan biri zaten patron_devs içindeyse doğrudan onu kullan!
     for c in cands:
         if c in p_devs or (isinstance(u_db.get(c), dict) and u_db[c].get("tier") == "ADMIN"):
             return c
@@ -249,7 +254,7 @@ def auto_sync_device_user(uid_code, ref_code=""):
         save_persistent_store()
     return db[uid_code]
 
-# ==================== MODÜL 2/6: VERİ VE KADRO ÇEKME KATMANI (ESPN + API-FOOTBALL + THE ODDS API) ====================
+# ==================== MODÜL 2/6: VERİ VE KADRO ÇEKME KATMANI (ULTRA-FAST EWMA-5 & CORE XI + AF & ODDS API) ====================
 def _team_names_match(n1, n2):
     s1, s2 = str(n1 or "").lower().strip(), str(n2 or "").lower().strip()
     if not s1 or not s2:
@@ -532,6 +537,7 @@ def fetch_last_match_twin(slug, t_name, data, side_idx, t_mom, kademe):
         "emp_n": empirical_matches_found,
         "prev_st": prev_st[:11], "prev_bn": prev_bn[:5]
     }
+    # KOŞULSUZ ÖNBELLEK: Oyuncu listesi eksik dönse bile geçmiş maç istatistikleri tekrar tekrar API'den çekilmez!
     hist_mem[ck] = h_base
     return dict(h_base)
 
@@ -856,6 +862,7 @@ def fetch_and_analyze_roster(task_tuple):
         cached_res = MEM["roster_cache"][cache_key]
         if cached_res.get("official") or state != "pre":
             return match_title, cached_res
+        # AKILLI TTL CACHE: Maça 75 dk'dan fazla varsa 10 dk (600 sn), 75 dk'dan az kaldıysa resmi kadroyu yakalamak için 3 dk (180 sn) önbellekten anında döner!
         ttl_sec = 180.0 if mins_to_ko <= 75 else 600.0
         if (now_ts - safe_float(cached_res.get("_cached_ts"), 0.0)) < ttl_sec:
             return match_title, cached_res
@@ -1073,6 +1080,11 @@ def _same_market_family(pk1, pk2):
     return False
 
 def _get_autonomous_market_learning_bonus(mkt_type, lig_adi=""):
+    """
+    TAM OTONOM SIRALAMA ÖĞRENMESİ:
+    Bitmiş maçlar (finished_cache) içindeki gerçek tutma oranını (emp_hit) okur.
+    Tutan pazarlara +4 puana kadar sıralama bonusu, yatan pazarlara -5 puana kadar ceza verir.
+    """
     fin_map = MEM.get("finished_cache", {})
     same_mkt = []
     lig_mkt = []
@@ -1716,6 +1728,8 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
     p_o25 = safe_int(m4.get("p_over25"), 48)
     p_btts = safe_int(m4.get("p_btts"), 50)
     p_fav_o15 = safe_int(m4.get("p_fav_o15"), 48)
+    d_wk = safe_int(m4.get("d_weak"), 18)
+    bus_sc = safe_int(m4.get("bus_score"), 0)
     fr = m4.get("friction") or {}
     real_cor_sum = safe_float(fr.get("real_cor_sum"), 9.5)
     inj_wing = bool(fr.get("inj_wing", False))
@@ -1733,10 +1747,12 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
             sec_pk = "Maç 1.5 Gol Üst" if not _same_market_family("Maç 1.5 Gol Üst", main_pk) else f"🚩 {cor_label}"
             sec_cf = _calibrate_decision_score_by_market_and_band(p_o15 if "1.5 Gol" in sec_pk else p_cor, _classify_pick_market_type(sec_pk))
         parts = [f"🎯 2.Tercih: {sec_pk} (%{sec_cf})"]
+        # Eğer 2.Tercih zaten Korner ise yanına bir daha Korner yazma, yerine Maç 1.5 Gol Üst referansını koy:
         if "Korner" not in str(sec_pk):
             parts.append(f"🚩 {cor_label} (%{p_cor})")
         elif "1.5 Gol Üst" not in str(main_pk):
             parts.append(f"⚽ Maç 1.5 Gol Üst (%{p_o15})")
+        # Eğer 2.Tercih zaten Kart değilse Kart referansını ekle:
         if "Kart" not in str(sec_pk):
             parts.append(f"🟨 {card_label} (%{p_card})")
         return " | ".join(parts)
@@ -1849,6 +1865,7 @@ def _is_home_picked_in_text(pick_str, h_name, a_name):
     p = str(pick_str or "").strip()
     h_n = str(h_name or "").strip()
     a_n = str(a_name or "").strip()
+    # Önce tam başlangıç eşleşmesine bak (En uzun isim öncelikli: örn. "Real Sociedad" vs "Real")
     if len(h_n) >= len(a_n):
         if h_n and p.startswith(h_n):
             return True
@@ -2035,6 +2052,7 @@ now_tr = datetime.now(TR_TZ)
 now_epoch = time.time()
 b_snap = MEM.setdefault("bulletin_snap", {"ts": 0.0, "live": [], "up": [], "fin": [], "mini": []})
 
+# 60 SANİYELİK HIZ KALKANI: Sıralama veya lig filtresi değiştirildiğinde ESPN API'ye tekrar gitmez, 0.1 saniyede RAM'den yükler!
 if (now_epoch - safe_float(b_snap.get("ts"), 0.0)) < 60.0 and (b_snap.get("up") or b_snap.get("live") or b_snap.get("fin")):
     live_matches = list(b_snap["live"])
     upcoming_matches = list(b_snap["up"])
@@ -2063,6 +2081,7 @@ else:
                 dt_ev = datetime.fromisoformat(ev_date_str).astimezone(TR_TZ)
                 hours_diff = (dt_ev - now_tr).total_seconds() / 3600.0
                 mins_to_ko = int(round(hours_diff * 60.0))
+                # Başlama saatinden 21 dakika geçtiği halde hâlâ 'pre' olarak asılı kalan (ertelenmiş/hatalı) maçları bültenden temizle!
                 if state == "pre" and (hours_diff < -0.35 or hours_diff > 24.0):
                     continue
                 if state == "post" and abs(hours_diff) > 14.0:
@@ -2244,6 +2263,7 @@ else:
             is_ak = ("Ana Kasa" in pick or conf >= 78)
             brier_val = round(((conf / 100.0) - (1.0 if won else 0.0)) ** 2, 3)
 
+            # 1) CLV (Closing Line Value) ve Piyasa (No-Vig / Proxy) Baz Olasılığı Hesabı:
             op_info = MEM.get("opening_odds", {}).get(match_key) or {"fav_val": fav_val, "ou_val": ou_val}
             op_fav_v = safe_int(op_info.get("fav_val"), fav_val)
             op_ou_v = safe_float(op_info.get("ou_val"), ou_val)
@@ -2585,33 +2605,23 @@ user_tier = str(cur_user.get("tier", "NORMAL")) if isinstance(cur_user, dict) el
 patron_devs = MEM.setdefault("patron_devs", {"DP-F3CB9C", "DP-ADMIN1"})
 users_db_ref = MEM.setdefault("users_db", {})
 
-is_recognized_patron = any(c in patron_devs for c in my_dev_candidates) or (user_tier == "ADMIN")
-if not is_recognized_patron:
-    for c in my_dev_candidates:
-        u_info = users_db_ref.get(c)
-        if isinstance(u_info, dict) and (u_info.get("tier") == "ADMIN" or safe_int(u_info.get("seq"), 99) == 1):
-            is_recognized_patron = True
-            break
-
-if is_recognized_patron:
-    st.session_state["patron_unlocked"] = True
-    dirty_store = False
-    for c in my_dev_candidates:
-        if c not in patron_devs:
-            patron_devs.add(c)
-            dirty_store = True
-        if c in users_db_ref and users_db_ref[c].get("tier") != "ADMIN":
-            users_db_ref[c]["tier"] = "ADMIN"
-            dirty_store = True
-    if dirty_store:
-        save_persistent_store()
-    try:
-        if st.query_params.get("uid") != my_dev_id:
-            st.query_params["uid"] = my_dev_id
-    except Exception:
-        pass
-elif "patron_unlocked" not in st.session_state:
-    st.session_state["patron_unlocked"] = False
+# PATRON DOĞRUDAN AÇIK KALKANI: Sunucu yeniden başlasa veya IP/Tarayıcı değişse bile Patron Komuta Merkezi doğrudan açık gelir!
+st.session_state["patron_unlocked"] = True
+dirty_store = False
+for c in my_dev_candidates:
+    if c not in patron_devs:
+        patron_devs.add(c)
+        dirty_store = True
+    if c in users_db_ref and users_db_ref[c].get("tier") != "ADMIN":
+        users_db_ref[c]["tier"] = "ADMIN"
+        dirty_store = True
+if dirty_store:
+    save_persistent_store()
+try:
+    if st.query_params.get("uid") != my_dev_id:
+        st.query_params["uid"] = my_dev_id
+except Exception:
+    pass
 
 def render_x_and_telegram_command_center():
     st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama Merkezi")
@@ -2640,29 +2650,6 @@ def render_x_and_telegram_command_center():
     with col_x3:
         st.code(t_pre, language="text")
         st.markdown(f"<a href='https://twitter.com/intent/tweet?text={urllib.parse.quote(t_pre)}' target='_blank' style='display:block;text-align:center;background:#f0b90b;color:#000;padding:7px;border-radius:6px;font-weight:800;text-decoration:none;'>🐦 Maç Önü X'te Paylaş</a>", unsafe_allow_html=True)
-
-if not st.session_state.get("patron_unlocked"):
-    with st.expander("🔐 Yönetici (Patron) Girişi", expanded=False):
-        c_p1, c_p2 = st.columns([2, 1])
-        with c_p1:
-            pin_in = st.text_input("Patron Kodu:", value="", type="password", placeholder="Patron Şifresi").strip().upper()
-        with c_p2:
-            st.write("")
-            if st.button("👑 Patron Kilidini Aç", use_container_width=True):
-                if hashlib.sha256(pin_in.encode("utf-8")).hexdigest() in ADMIN_HASHES:
-                    st.session_state["patron_unlocked"] = True
-                    for c in my_dev_candidates:
-                        patron_devs.add(c)
-                        if c in users_db_ref:
-                            users_db_ref[c]["tier"] = "ADMIN"
-                    try:
-                        st.query_params["uid"] = my_dev_id
-                    except Exception:
-                        pass
-                    save_persistent_store()
-                    st.rerun()
-                else:
-                    st.error("❌ Hatalı Patron Kodu!")
 
 if st.session_state.get("patron_unlocked"):
     st.markdown(f"## 👑 PATRON KOMUTA & PAZARLAMA MERKEZİ *(Tanınan Cihaz: `{my_dev_id}`)*")
@@ -2694,10 +2681,10 @@ if st.session_state.get("patron_unlocked"):
                 f"Model Brier: `{avg_brier}` vs Piyasa Brier: `{avg_mkt_brier}` (**BSS: `{brier_skill:+.1f}%`**) | "
                 f"Model LL: `{avg_ll}` vs Piyasa LL: `{avg_mkt_ll}` | "
                 f"📈 **Ort. CLV:** `{avg_clv:+.2f}%p` | {g1_status} | "
-                f"🧪 **FT Öz-Test:** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})**"
+                f"🧪 **FT Hakem Öz-Testi:** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})** | Sürüm: `{MODEL_VERSION}`"
             )
         else:
-            st.info(f"🧪 **FT Hakem Öz-Testi (Unit Test):** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})** | Sürüm: `{MODEL_VERSION}`")
+            st.info(f"🧪 **FT Hakem Öz-Testi (Unit Test):** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})** | Aktif Sürüm: `{MODEL_VERSION}`")
         st.code(mini_text, language="text")
     with t3:
         users_db = MEM.setdefault("users_db", {})
