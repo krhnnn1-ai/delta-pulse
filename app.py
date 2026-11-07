@@ -856,18 +856,17 @@ def _enrich_roster_with_the_odds_api(res, slug, h_name, a_name, state):
 
 def fetch_and_analyze_roster(task_tuple):
     slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr, mins_to_ko = task_tuple
-    cache_key = f"{ev_id}_{state}_v85_fast"
+    cache_key = f"{ev_id}_{state}_v86_fast"
     now_ts = time.time()
     if cache_key in MEM["roster_cache"]:
         cached_res = MEM["roster_cache"][cache_key]
         if cached_res.get("official") or state != "pre":
             return match_title, cached_res
-        # AKILLI TTL CACHE: Maça 75 dk'dan fazla varsa 10 dk (600 sn), 75 dk'dan az kaldıysa resmi kadroyu yakalamak için 3 dk (180 sn) önbellekten anında döner!
         ttl_sec = 180.0 if mins_to_ko <= 75 else 600.0
         if (now_ts - safe_float(cached_res.get("_cached_ts"), 0.0)) < ttl_sec:
             return match_title, cached_res
 
-    res = {"official": False, "slug": slug, "_cached_ts": now_ts, "weather": derive_match_weather(match_title, slug), "ref": extract_referee_profile({}, match_title, slug), "h": {}, "a": {}}
+    res = {"official": False, "slug": slug, "_cached_ts": now_ts, "weather": derive_match_weather(match_title, slug), "ref": extract_referee_profile({}, match_title, slug), "h": {}, "a": {}, "box_stats": {}}
     data = {}
     try:
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={ev_id}"
@@ -879,6 +878,19 @@ def fetch_and_analyze_roster(task_tuple):
         res["ref"] = extract_referee_profile(g_info, match_title, slug)
         if (g_info.get("venue") or {}).get("fullName"):
             res["venue"] = str(g_info["venue"]["fullName"])
+
+        # YENİ: Scoreboard'da şut/korner 0 döndüğünde biten maçların silinmemesi için Boxscore yedek istatistikleri:
+        bs_Stats = {"h_sh": 0, "a_sh": 0, "h_sot": 0, "a_sot": 0, "h_cor": 0, "a_cor": 0, "cards": 0}
+        for idx_b, bt in enumerate(((data.get("boxscore") or {}).get("teams") or [])[:2]):
+            t_obj = bt.get("team") or {}
+            bt_nm = str(t_obj.get("shortDisplayName") or t_obj.get("displayName") or t_obj.get("name") or "")
+            is_h_bt = _team_names_match(h_name, bt_nm) if bt_nm else (idx_b == 0)
+            pfx = "h" if is_h_bt else "a"
+            bs_Stats[f"{pfx}_sh"] = get_stat(bt, ["totalShots", "shotsSummary"])
+            bs_Stats[f"{pfx}_sot"] = get_stat(bt, ["shotsOnTarget", "onGoal"])
+            bs_Stats[f"{pfx}_cor"] = get_stat(bt, ["wonCorners", "corners"])
+            bs_Stats["cards"] += (get_stat(bt, ["yellowCards", "yellowCard"]) + get_stat(bt, ["redCards", "redCard"]))
+        res["box_stats"] = bs_Stats
 
         rosters = data.get("rosters") or []
         for idx, r_obj in enumerate(rosters[:2]):
@@ -954,7 +966,6 @@ def fetch_and_analyze_roster(task_tuple):
     _enrich_roster_with_the_odds_api(res, slug, h_name, a_name, state)
     MEM["roster_cache"][cache_key] = res
     return match_title, res
-
 # ==================== MODÜL 3/6: HESAPLAMA VE TAHMİN MOTORU (M4.4_CLEAN_PROPS) ====================
 MODEL_VERSION = "M4.4_CLEAN_PROPS"
 
@@ -1949,7 +1960,7 @@ def run_ft_evaluator_self_test():
             failed_cases.append(f"{pk} ({hn} {hs}-{as_} {an})")
     return passed, len(test_table), failed_cases
 
-# ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ (60s RAM KALKANI & HIZLI PARALEL TARAMA) ====================
+# ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ (60s RAM KALKANI & SIFIR KAYIP FT MOTORU) ====================
 _ACTIVE_LEAGUES = [
     ("uefa.champions", "🏆 UEFA ŞAMPİYONLAR LİGİ", 1),
     ("uefa.europa", "🏆 UEFA AVRUPA LİGİ", 1),
@@ -2004,22 +2015,30 @@ def _count_real_match_cards(comp, h_c, a_c, r_data=None):
         if d_item.get("yellowCard") or d_item.get("redCard") or ("card" in t_txt):
             det_cards += 1
     r_cards = safe_int((r_data or {}).get("live_cards"), 0)
-    return max(stat_cards, det_cards, r_cards)
+    bs_cards = safe_int(((r_data or {}).get("box_stats") or {}).get("cards"), 0)
+    return max(stat_cards, det_cards, r_cards, bs_cards)
 
 def _fetch_single_league_sb(item):
     slug, lig_adi, kademe = item
-    today_str = datetime.now(TR_TZ).strftime("%Y%m%d")
+    now_d = datetime.now(TR_TZ)
+    today_str = now_d.strftime("%Y%m%d")
+    yest_str = (now_d - timedelta(days=1)).strftime("%Y%m%d")
     merged_events = {}
-    url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={today_str}"
-    try:
-        r = HTTP_SESSION.get(url, timeout=3.0)
-        if r.status_code == 200:
-            for ev in (r.json().get("events") or []):
-                ev_id = str(ev.get("id") or "")
-                if ev_id:
-                    merged_events[ev_id] = ev
-    except Exception:
-        pass
+    # Hem dünün (gece biten maçların karneye ve otonom öğrenmeye işlenmesi için) hem bugünün bültenini çek!
+    for q_dates in (f"{yest_str}-{today_str}", today_str, yest_str):
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={q_dates}"
+        try:
+            r = HTTP_SESSION.get(url, timeout=3.2)
+            if r.status_code == 200:
+                evs = r.json().get("events") or []
+                for ev in evs:
+                    ev_id = str(ev.get("id") or "")
+                    if ev_id and ev_id not in merged_events:
+                        merged_events[ev_id] = ev
+                if q_dates == f"{yest_str}-{today_str}" and merged_events:
+                    break
+        except Exception:
+            pass
     if not merged_events:
         try:
             r2 = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard", timeout=2.5)
@@ -2038,9 +2057,10 @@ for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
 
+# DÜZELTME: Eskiden şut/korner 0 dönen bitmiş maçları silen döngü kaldırıldı! Sadece bozuk/boş kayıtlar temizlenir:
 for _bad_k in list(MEM.setdefault("finished_cache", {}).keys()):
     _fm = MEM["finished_cache"].get(_bad_k)
-    if not isinstance(_fm, dict) or ((_fm.get("h_sh", 0) + _fm.get("a_sh", 0)) == 0 and (_fm.get("h_cor", 0) + _fm.get("a_cor", 0)) == 0):
+    if not isinstance(_fm, dict) or "h_name" not in _fm or "pick" not in _fm:
         MEM["finished_cache"].pop(_bad_k, None)
         MEM.setdefault("history_scores", {}).pop(_bad_k, None)
 
@@ -2081,10 +2101,10 @@ else:
                 dt_ev = datetime.fromisoformat(ev_date_str).astimezone(TR_TZ)
                 hours_diff = (dt_ev - now_tr).total_seconds() / 3600.0
                 mins_to_ko = int(round(hours_diff * 60.0))
-                # Başlama saatinden 21 dakika geçtiği halde hâlâ 'pre' olarak asılı kalan (ertelenmiş/hatalı) maçları bültenden temizle!
                 if state == "pre" and (hours_diff < -0.35 or hours_diff > 24.0):
                     continue
-                if state == "post" and abs(hours_diff) > 14.0:
+                # Gece biten maçların sabah ve öğlen açılışta eksiksiz yakalanması için 36 saatlik pencere:
+                if state == "post" and abs(hours_diff) > 36.0:
                     continue
             except Exception:
                 continue
@@ -2178,6 +2198,15 @@ else:
         legacy_rec = locked_picks.get(f"{match_key}_M4.3_DC_NEGBINOM_EWMA5") or locked_picks.get(match_title) or {}
         rec = locked_picks.get(lock_id) if isinstance(locked_picks.get(lock_id), dict) else (dict(legacy_rec) if state != "pre" and isinstance(legacy_rec, dict) else {})
 
+        # ÖNEMLİ KORUMA: Eğer maç dün değil de bugün ilk kez 'post' (bitmiş) olarak çekildiyse ama daha önce 'PRE_LINEUP' kilidi yoksa, geçmişte tahmin edilmemiş maçları sonradan karneye ekleme; SADECE kilitlenmiş veya pre_lineup_memory'de olan maçları karneye yaz!
+        was_previously_tracked = bool(
+            (lock_id in locked_picks)
+            or (match_key in MEM.get("pre_lineup_memory", {}))
+            or (match_key in MEM.get("opening_odds", {}))
+            or (match_title in MEM.get("opening_odds", {}))
+            or (match_key in fin_cache)
+        )
+
         rec.setdefault("ev_id", ev_id)
         rec.setdefault("kickoff_utc", kickoff_utc)
         rec.setdefault("model_version", MODEL_VERSION)
@@ -2199,19 +2228,27 @@ else:
             conf = safe_int(active_stage.get("conf"), conf)
             prop_str = active_stage.get("prop", prop_str)
             rec.update({"pick": pick, "conf": conf, "prop": prop_str, "stage": "CONFIRMED_XI" if is_off else "PRE_LINEUP"})
+            locked_picks[lock_id] = rec
         else:
             active_stage = rec.get("CONFIRMED_XI") or rec.get("PRE_LINEUP") or rec
-            pick = active_stage.get("pick", pick)
-            conf = safe_int(active_stage.get("conf"), conf)
-            prop_str = active_stage.get("prop", prop_str)
+            if active_stage.get("pick"):
+                pick = active_stage.get("pick", pick)
+                conf = safe_int(active_stage.get("conf"), conf)
+                prop_str = active_stage.get("prop", prop_str)
+            elif match_key in MEM.get("pre_lineup_memory", {}):
+                pick = MEM["pre_lineup_memory"][match_key]
             rec.update({"pick": pick, "conf": conf, "prop": prop_str, "stage": "LIVE" if state == "in" else "POST_MATCH"})
+            if was_previously_tracked or state == "in":
+                locked_picks[lock_id] = rec
 
-        locked_picks[lock_id] = rec
-
+        bs_fallback = r_data.get("box_stats") or {}
         h_score, a_score = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
-        h_sh, a_sh = get_stat(h_c, ["totalShots", "shotsSummary"]), get_stat(a_c, ["totalShots", "shotsSummary"])
-        h_sot, a_sot = get_stat(h_c, ["shotsOnTarget", "onGoal"]), get_stat(a_c, ["shotsOnTarget", "onGoal"])
-        h_cor, a_cor = get_stat(h_c, ["wonCorners", "corners"]), get_stat(a_c, ["wonCorners", "corners"])
+        h_sh = get_stat(h_c, ["totalShots", "shotsSummary"]) or safe_int(bs_fallback.get("h_sh"), 0)
+        a_sh = get_stat(a_c, ["totalShots", "shotsSummary"]) or safe_int(bs_fallback.get("a_sh"), 0)
+        h_sot = get_stat(h_c, ["shotsOnTarget", "onGoal"]) or safe_int(bs_fallback.get("h_sot"), 0)
+        a_sot = get_stat(a_c, ["shotsOnTarget", "onGoal"]) or safe_int(bs_fallback.get("a_sot"), 0)
+        h_cor = get_stat(h_c, ["wonCorners", "corners"]) or safe_int(bs_fallback.get("h_cor"), 0)
+        a_cor = get_stat(a_c, ["wonCorners", "corners"]) or safe_int(bs_fallback.get("a_cor"), 0)
         h_poss = get_stat(h_c, ["possessionPct", "possession"]) or 50
         tot_cards = _count_real_match_cards(comp, h_c, a_c, r_data)
 
@@ -2245,11 +2282,15 @@ else:
             base_obj.update({"heat": heat, "sot_tag": sot_tag, "live_pick": live_pick, "delta_str": d_str})
             live_matches.append(base_obj)
         elif state == "post":
-            if not completed or ((h_sh + a_sh) == 0 and (h_cor + a_cor) == 0):
+            if not completed or not was_previously_tracked:
                 continue
             tot_cor_ft = h_cor + a_cor
+            # Sadece tercih 'Korner' ise ve hem scoreboard hem boxscore korneri 0 döndürdüyse değerlendirme yapılamaz:
             if "Korner" in pick and tot_cor_ft == 0:
                 continue
+            if "Kart" in pick and tot_cards == 0 and (h_sh + a_sh) == 0:
+                continue
+
             if "9.5 Korner Üst" in pick:
                 won = (tot_cor_ft >= 10)
             elif "8.5 Korner Üst" in pick:
@@ -2295,7 +2336,7 @@ else:
 
     live_matches.sort(key=lambda x: x.get("heat", 0), reverse=True)
     upcoming_matches.sort(key=lambda x: x.get("conf", 0), reverse=True)
-    finished_matches = [x for x in list(fin_cache.values())[::-1] if isinstance(x, dict) and "h_name" in x and ((x.get("h_sh", 0) + x.get("a_sh", 0)) > 0 or (x.get("h_cor", 0) + x.get("a_cor", 0)) > 0)]
+    finished_matches = [x for x in list(fin_cache.values())[::-1] if isinstance(x, dict) and "h_name" in x and "pick" in x]
 
     hist_vals = [x for k, x in MEM.get("history_scores", {}).items() if isinstance(x, dict) and k in fin_cache]
     g_w = MEM.get("base_w", 0) + sum(1 for x in hist_vals if x.get("won"))
@@ -2330,7 +2371,7 @@ else:
         m4_d = m.get("m4") or {}
         ps_mini = f" {m4_d.get('patron_sim_mini','')}" if m4_d.get("patron_sim_mini") else ""
         mini_lines.append(f"ÖNÜ|{m['saat']}|{m['lig']}|{m['mac']}|%{m['conf']}|{k_tag}|Mom:{m['h_mom']}-{m['a_mom']}|{m['odd']}|TG:{m['ou']} [P4+:%{m4_d.get('p_over35',20)}|Sh:%{m4_d.get('p_shield',50)}|Dw:{m4_d.get('d_weak',15)}] -> {m['pick']}{e_tail}{ps_mini}")
-    for m in finished_matches[:6]:
+    for m in finished_matches[:22]:
         st_ico = "✅KAZANDI" if m.get("won") else "❌KAYIP"
         m4_ft = m.get("m4") or {}
         lig_dna_ft = m4_ft.get("lig_dna") or DEFAULT_LIG_DNA
@@ -2342,7 +2383,6 @@ else:
         "ts": now_epoch if not live_matches else (now_epoch - 40.0),
         "live": live_matches, "up": upcoming_matches, "fin": finished_matches, "mini": mini_lines
     }
-
 # ==================== MODÜL 5/6: GÖRSEL SAHA VE ARAYÜZ (UI) ====================
 def format_form_badges(form_str):
     out = []
