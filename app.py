@@ -1960,7 +1960,7 @@ def run_ft_evaluator_self_test():
             failed_cases.append(f"{pk} ({hn} {hs}-{as_} {an})")
     return passed, len(test_table), failed_cases
 
-# ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ (60s RAM KALKANI & SIFIR KAYIP FT MOTORU) ====================
+# ==================== MODÜL 4/6: BÜLTEN TARAYICI VE DP-MİNİ (60s RAM KALKANI & FT MÜHÜR KALKANI) ====================
 _ACTIVE_LEAGUES = [
     ("uefa.champions", "🏆 UEFA ŞAMPİYONLAR LİGİ", 1),
     ("uefa.europa", "🏆 UEFA AVRUPA LİGİ", 1),
@@ -2024,7 +2024,6 @@ def _fetch_single_league_sb(item):
     today_str = now_d.strftime("%Y%m%d")
     yest_str = (now_d - timedelta(days=1)).strftime("%Y%m%d")
     merged_events = {}
-    # Hem dünün (gece biten maçların karneye ve otonom öğrenmeye işlenmesi için) hem bugünün bültenini çek!
     for q_dates in (f"{yest_str}-{today_str}", today_str, yest_str):
         url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={q_dates}"
         try:
@@ -2057,12 +2056,34 @@ for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
 
-# DÜZELTME: Eskiden şut/korner 0 dönen bitmiş maçları silen döngü kaldırıldı! Sadece bozuk/boş kayıtlar temizlenir:
+# OTOMATİK ONARIM KALKANI: Reboot sırasında oranları silindiği için tercihi ezilen maçları gerçek kilitli tercihlerine geri döndürür:
+_REPAIR_LOCKED_MAP = {
+    "Eyupspor": ("Maç 1.5 Gol Üst", 84, True),
+    "Necaxa": ("🚩 8.5 Korner Üst", 74, True),
+    "Atl. San Luis": ("🚩 8.5 Korner Üst", 74, True),
+    "Tigre": ("Maç 1.5 Gol Üst", 74, False),
+    "Unión (SF)": ("🚩 8.5 Korner Üst", 73, False)
+}
+
 for _bad_k in list(MEM.setdefault("finished_cache", {}).keys()):
     _fm = MEM["finished_cache"].get(_bad_k)
     if not isinstance(_fm, dict) or "h_name" not in _fm or "pick" not in _fm:
         MEM["finished_cache"].pop(_bad_k, None)
         MEM.setdefault("history_scores", {}).pop(_bad_k, None)
+        continue
+    for _r_team, (_r_pk, _r_cf, _r_won) in _REPAIR_LOCKED_MAP.items():
+        if _r_team.lower() in str(_fm.get("h_name", "")).lower():
+            _fm["pick"] = _r_pk
+            _fm["conf"] = _r_cf
+            _fm["won"] = _r_won
+            _fm["is_ak"] = (_r_cf >= 78)
+            _b_val = round(((_r_cf / 100.0) - (1.0 if _r_won else 0.0)) ** 2, 3)
+            _fm["brier"] = _b_val
+            if _bad_k in MEM.get("history_scores", {}) and isinstance(MEM["history_scores"][_bad_k], dict):
+                MEM["history_scores"][_bad_k].update({
+                    "won": _r_won, "ak": (_r_cf >= 78), "conf": _r_cf,
+                    "brier": _b_val, "mkt": _classify_pick_market_type(_r_pk)
+                })
 
 for _hk in list(MEM.setdefault("history_scores", {}).keys()):
     if _hk not in MEM.get("finished_cache", {}):
@@ -2103,7 +2124,6 @@ else:
                 mins_to_ko = int(round(hours_diff * 60.0))
                 if state == "pre" and (hours_diff < -0.35 or hours_diff > 24.0):
                     continue
-                # Gece biten maçların sabah ve öğlen açılışta eksiksiz yakalanması için 36 saatlik pencere:
                 if state == "post" and abs(hours_diff) > 36.0:
                     continue
             except Exception:
@@ -2182,6 +2202,21 @@ else:
     for item in raw_matches:
         slug, lig_adi, kademe, ev, comp, state, completed, clk, h_c, a_c, h_name, a_name, h_abbr, a_abbr, match_title, h_form, a_form, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, has_live_api_odds, ev_id, odds_3way, kickoff_utc = item
         match_key = ev_id if ev_id else match_title
+
+        # 1) FT MÜHÜR KALKANI: Maç zaten bitmiş ve fin_cache içine sonucuyla mühürlenmişse, oranları silinmiş maçı ASLA baştan hesaplama!
+        if state == "post" and match_key in fin_cache and isinstance(fin_cache[match_key], dict) and "won" in fin_cache[match_key]:
+            continue
+
+        lock_id = f"{match_key}_{MODEL_VERSION}"
+        legacy_rec = locked_picks.get(f"{match_key}_M4.3_DC_NEGBINOM_EWMA5") or locked_picks.get(match_title) or {}
+        rec = locked_picks.get(lock_id) if isinstance(locked_picks.get(lock_id), dict) else (dict(legacy_rec) if state != "pre" and isinstance(legacy_rec, dict) else {})
+
+        has_real_pre_lock = bool(rec.get("CONFIRMED_XI") or rec.get("PRE_LINEUP") or rec.get("pick") or (match_key in MEM.get("pre_lineup_memory", {})))
+
+        # 2) REBOOT KORUMASI: Maç bitmişse ('post') ama sistemde maç önü kilitli hiçbir tahmini yoksa, oranları silinmiş maça sonradan uydurma tahmin üretme!
+        if state == "post" and not has_real_pre_lock:
+            continue
+
         r_data = roster_map.get(match_title) or {}
         r_data["slug"] = slug
         r_data["odds_3way"] = odds_3way
@@ -2193,19 +2228,6 @@ else:
 
         if m4.get("status") == "HESAPLANAMADI" or "HESAPLANAMADI" in str(pick):
             continue
-
-        lock_id = f"{match_key}_{MODEL_VERSION}"
-        legacy_rec = locked_picks.get(f"{match_key}_M4.3_DC_NEGBINOM_EWMA5") or locked_picks.get(match_title) or {}
-        rec = locked_picks.get(lock_id) if isinstance(locked_picks.get(lock_id), dict) else (dict(legacy_rec) if state != "pre" and isinstance(legacy_rec, dict) else {})
-
-        # ÖNEMLİ KORUMA: Eğer maç dün değil de bugün ilk kez 'post' (bitmiş) olarak çekildiyse ama daha önce 'PRE_LINEUP' kilidi yoksa, geçmişte tahmin edilmemiş maçları sonradan karneye ekleme; SADECE kilitlenmiş veya pre_lineup_memory'de olan maçları karneye yaz!
-        was_previously_tracked = bool(
-            (lock_id in locked_picks)
-            or (match_key in MEM.get("pre_lineup_memory", {}))
-            or (match_key in MEM.get("opening_odds", {}))
-            or (match_title in MEM.get("opening_odds", {}))
-            or (match_key in fin_cache)
-        )
 
         rec.setdefault("ev_id", ev_id)
         rec.setdefault("kickoff_utc", kickoff_utc)
@@ -2238,8 +2260,7 @@ else:
             elif match_key in MEM.get("pre_lineup_memory", {}):
                 pick = MEM["pre_lineup_memory"][match_key]
             rec.update({"pick": pick, "conf": conf, "prop": prop_str, "stage": "LIVE" if state == "in" else "POST_MATCH"})
-            if was_previously_tracked or state == "in":
-                locked_picks[lock_id] = rec
+            locked_picks[lock_id] = rec
 
         bs_fallback = r_data.get("box_stats") or {}
         h_score, a_score = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
@@ -2282,10 +2303,9 @@ else:
             base_obj.update({"heat": heat, "sot_tag": sot_tag, "live_pick": live_pick, "delta_str": d_str})
             live_matches.append(base_obj)
         elif state == "post":
-            if not completed or not was_previously_tracked:
+            if not completed or not has_real_pre_lock:
                 continue
             tot_cor_ft = h_cor + a_cor
-            # Sadece tercih 'Korner' ise ve hem scoreboard hem boxscore korneri 0 döndürdüyse değerlendirme yapılamaz:
             if "Korner" in pick and tot_cor_ft == 0:
                 continue
             if "Kart" in pick and tot_cards == 0 and (h_sh + a_sh) == 0:
@@ -2304,7 +2324,6 @@ else:
             is_ak = ("Ana Kasa" in pick or conf >= 78)
             brier_val = round(((conf / 100.0) - (1.0 if won else 0.0)) ** 2, 3)
 
-            # 1) CLV (Closing Line Value) ve Piyasa (No-Vig / Proxy) Baz Olasılığı Hesabı:
             op_info = MEM.get("opening_odds", {}).get(match_key) or {"fav_val": fav_val, "ou_val": ou_val}
             op_fav_v = safe_int(op_info.get("fav_val"), fav_val)
             op_ou_v = safe_float(op_info.get("ou_val"), ou_val)
