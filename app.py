@@ -2697,7 +2697,7 @@ if st.session_state.get("patron_unlocked"):
     with t1:
         render_main_bulletin(tier="ADMIN", is_patron_mode=True)
     with t2:
-        st.markdown("##### 📋 Patron Özel DP-MİNİ Telemetri & G1 Kalibrasyon Çıktısı (Sadece Sana Görünür)")
+        st.markdown("##### 📋 Patron Özel DP-MİNİ Telemetri & G1 Kalibrasyon Çıktısı")
         t_pass, t_tot, t_fails = run_ft_evaluator_self_test()
         test_badge = f"✅ {t_pass}/{t_tot} GEÇTİ" if t_pass == t_tot else f"❌ HATA ({', '.join(t_fails)})"
         oa_quota = MEM.get("odds_api_cache", {}).get("remaining_quota", "Aktif")
@@ -2725,7 +2725,72 @@ if st.session_state.get("patron_unlocked"):
             )
         else:
             st.info(f"🧪 **FT Hakem Öz-Testi (Unit Test):** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})** | Aktif Sürüm: `{MODEL_VERSION}`")
-        st.code(mini_text, language="text")
+
+        def _compact_mini_line(ln):
+            reps = [
+                ("📊Son5Kor(EWMA):", "K5:"), ("📊ΔÜretim(EWMA5):", "ΔÜ:"),
+                ("⏳5MaçÇekirdekXI", "⏳ÇekXI"), ("🧱BlokŞut->Korner", "🧱BlokK"),
+                ("📐KanatKorner", "📐KanatK"), ("🛡️SakatKapanma", "🛡️SakatK"),
+                ("⚠️PinnacleTers", "⚠️PinTers"), ("🐋PinnacleSharp", "🐋PinSharp"),
+                ("💥ErkenKopar", "💥Kopar"), ("🧬RotasyonUyum", "🧬Rot"),
+                ("✅ÇekirdekKadro", "✅ÇekKadro"), ("✅ Kadro Onaylı (Sabit)", "✅Sabit"),
+                ("🎯 2.Tercih:", "2.T:"), ("Karşılıklı Gol Var", "KG Var"),
+                ("Takım Golü 1.5 Üst", "TG 1.5Ü"), ("Kazanır & 1.5 Gol Üst", "Kaz&1.5Ü"),
+                ("Maç 1.5 Gol Üst", "1.5Ü"), ("Maç 2.5 Gol Üst", "2.5Ü"),
+                ("Korner Üst", "KorÜ"), ("Kart Üst", "KartÜ"),
+                ("TÜRKİYE SÜPER LİG", "TR1"), ("İNGİLTERE PREMIER LİG", "ENG1"),
+                ("İNGİLTERE CHAMPIONSHIP", "ENG2"), ("İSPANYA LA LIGA 2", "ESP2"),
+                ("İSPANYA LA LIGA", "ESP1"), ("ALMANYA BUNDESLIGA", "GER1"),
+                ("İTALYA SERIE A", "ITA1"), ("İTALYA SERIE B", "ITA2"),
+                ("FRANSA LIGUE 1", "FRA1"), ("HOLLANDA EREDIVISIE", "NED1"),
+                ("PORTEKİZ LIGA", "POR1"), ("İSKOÇYA PREMIERSHIP", "SCO1"),
+                ("ARJANTİN LIGA PRO", "ARG1"), ("BREZİLYA SERIE A", "BRA1"),
+                ("MEKSİKA LIGA MX", "MEX1")
+            ]
+            out = str(ln)
+            for old_s, new_s in reps:
+                out = out.replace(old_s, new_s)
+            return out
+
+        mini_mode = st.radio(
+            "📲 Mobil Kopyalama Modu (Telefon Sınırına Takılmaz):",
+            ["🔥 Akıllı Özet (Canlı + Yakın Seans + %75+ & Value + FT)", "📦 2 Parçalı Tam Bülten (Bölünmüş Kutu)", "📜 Tam Liste (Kompakt)"],
+            horizontal=True,
+            key="dp_mini_copy_mode"
+        )
+
+        comp_lines = [_compact_mini_line(x) for x in mini_lines]
+        head_line = comp_lines[0] if comp_lines else "⚡ DP-MİNİ"
+        live_lns = [x for x in comp_lines[1:] if x.startswith("CANLI|")]
+        up_lns = [x for x in comp_lines[1:] if x.startswith("ÖNÜ|")]
+        ft_lns = [x for x in comp_lines[1:] if x.startswith("BİTTİ|")]
+
+        if "Akıllı Özet" in mini_mode:
+            now_hm = now_tr.hour * 60 + now_tr.minute
+            smart_up = []
+            for ln in up_lns:
+                pts = ln.split("|")
+                m_hm = _time_sort_minutes(pts[1]) if len(pts) > 1 else 1200
+                conf_v = safe_int(pts[4].replace("%", ""), 0) if len(pts) > 4 else 0
+                is_soon = (0 <= (m_hm - now_hm) <= 270) or ("✅Kadro" in ln)
+                is_high_or_val = (conf_v >= 75) or ("💎VALUE" in ln) or ("TR1" in ln)
+                if is_soon or is_high_or_val:
+                    smart_up.append(ln)
+            final_txt = "\n".join([head_line] + live_lns + smart_up[:28] + ft_lns[:12])
+            st.caption(f"📏 Toplam Boyut: `{len(final_txt)}` karakter (Tek seferde kesilmeden kopyalanır • Süper Lig ve Yakın Maçlar Dahil)")
+            st.code(final_txt, language="text")
+        elif "2 Parçalı" in mini_mode:
+            half_idx = max(1, len(up_lns) // 2)
+            p1_txt = "\n".join([head_line + " [PAKET 1/2]"] + live_lns + up_lns[:half_idx])
+            p2_txt = "\n".join([head_line + " [PAKET 2/2]"] + up_lns[half_idx:] + ft_lns)
+            st.markdown("**📦 Paket 1 (Canlı + Üst Bülten):**")
+            st.code(p1_txt, language="text")
+            st.markdown("**📦 Paket 2 (Alt Bülten + Biten Maçlar FT):**")
+            st.code(p2_txt, language="text")
+        else:
+            full_comp = "\n".join(comp_lines)
+            st.caption(f"📏 Kompakt Tam Boyut: `{len(full_comp)}` karakter")
+            st.code(full_comp, language="text")
     with t3:
         users_db = MEM.setdefault("users_db", {})
         vip_cnt = sum(1 for u in users_db.values() if isinstance(u, dict) and u.get("tier") == "VIP")
