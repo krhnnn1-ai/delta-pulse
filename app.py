@@ -2557,19 +2557,21 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             p_disp = m["pick"] if is_unlocked else "🔒 VIP LOCKED TARGET"
             lp_disp = m.get("live_pick", "") if is_unlocked else "🔒 VIP LOCKED LIVE AMBUSH"
             m4_d = m.get("m4") or {}
+            dec_u = safe_int(m4_d.get("decision_score"), m["conf"])
             live_pick_bar = f"<div style='background:#0d2818;border-left:3px solid #3fb950;padding:5px 8px;border-radius:4px;margin-top:5px;font-size:12px;font-weight:700;color:#56d364;'>{lp_disp}</div>" if lp_disp else ""
             patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:#0d1117;border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{m4_d.get('patron_sim_ui','')}</div>" if (is_patron_mode and m4_d.get("patron_sim_ui")) else ""
             st.markdown(
                 f"<div class='dp-card' style='border-left:4px solid #f85149;'>"
-                f"<div style='display:flex;justify-content:space-between;font-size:12px;color:#ffb4a2;'>"
+                f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#ffb4a2;'>"
                 f"<span>🔴 <b>{m['clk']}</b> • {m['lig']} ({m['h_tac']} vs {m['a_tac']})</span>"
-                f"<span style='background:#da3633;color:#fff;padding:1px 7px;border-radius:5px;font-weight:800;'>🔥 Pressure: %{m['heat']}</span></div>"
+                f"<span><span style='background:#21262d;color:#ffd33d;padding:2px 7px;border-radius:5px;font-weight:800;margin-right:4px;'>🎯 Güven: %{m['conf']} ({dec_u}p)</span>"
+                f"<span style='background:#da3633;color:#fff;padding:2px 7px;border-radius:5px;font-weight:800;'>🔥 Pressure: %{m['heat']}</span></span></div>"
                 f"<div style='font-size:16px;font-weight:800;margin:5px 0;color:#fff;'>{m['h_name']} <span style='color:#ffd33d;'>{m['h_score']} - {m['a_score']}</span> {m['a_name']}</div>"
                 f"<div style='font-size:11.5px;color:#c9d1d9;'>🎯 <b>Şut(İsabet):</b> {m['h_sh']}({m['h_sot']}) - {m['a_sh']}({m['a_sot']}) | 🚩 <b>Korner:</b> {m['h_cor']} - {m['a_cor']} (Top:{m['h_cor']+m['a_cor']}) | 🟨 <b>Kart:</b> {m['cards']} | ⚽ <b>Top:</b> %{m['h_poss']}</div>"
                 f"<div style='font-size:11px;color:#79c0ff;margin-top:4px;'>⚡ <b>Canlı Telemetri:</b> {m['odd']} {m['delta_str']} {m['sot_tag']}</div>"
                 f"{live_pick_bar}"
                 f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
-                f"<span>🎯 <b>1. Tercih (Ana):</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div>"
+                f"<span>🎯 <b>1. Tercih (Ana • %{m['conf']}):</b> <b style='color:#56d364;'>{p_disp}</b></span><span style='color:#d2a8ff;'>{m['prop']}</span></div>"
                 f"{patron_line}</div>",
                 unsafe_allow_html=True
             )
