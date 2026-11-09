@@ -1716,7 +1716,7 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         candidates.append((u_o25, "Maç 2.5 Gol Üst", p_o25))
 
     # 8) WALD ZIRHI 1, 2 & 3: KALKAN ({1X/X2} & 3.5 Alt) VE MAÇ 3.5 GOL ALT (Düşen uçakları kurtaran ana çelik zırh!):
-    if p_o35 <= 26 and ou_val <= 2.5 and (not is_blowout or is_one_sided_bus):
+    if p_o35 <= 26 and ou_val <= 2.5 and d_wk < 55 and (not is_blowout or is_one_sided_bus):
         if not whale_against_fav and p_shield >= 60 and (fav_val <= -120 or p_struct_fav >= 50.0):
             u_shd = p_shield + 10 + (6 if is_one_sided_bus else 0) + (5 if is_karavana else 0) + (4 if bus_sc >= 45 else 0) + _get_autonomous_market_learning_bonus("U35", lig_adi)
             candidates.append((u_shd, f"{dc_tag} & 3.5 Alt", p_shield))
