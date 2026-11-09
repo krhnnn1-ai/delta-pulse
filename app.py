@@ -2827,8 +2827,8 @@ except Exception:
 def run_130_match_consensus_backtest(fin_list):
     """
     131 maçlık gerçek veri üzerinde:
-    1) Kusursuzlaştırılmış Mutabakat (106/131 • %81) sonuçlarını hesaplar,
-    2) Geriye kalan ~25 kayıp maçın TAMAMININ röntgenini 5 kök nedene ayırarak listeler.
+    1) Kusursuzlaştırılmış Mutabakat sonuçlarını hesaplar,
+    2) Geriye kalan kayıp maçların TAMAMININ röntgenini 5 kök nedene ayırarak listeler.
     """
     if not fin_list:
         return None
@@ -2925,7 +2925,6 @@ def run_130_match_consensus_backtest(fin_list):
             market_hit_stats["Maç 3.5 Gol Alt"][1] += 1
             if u35_real: market_hit_stats["Maç 3.5 Gol Alt"][0] += 1
 
-        # KUSURSUZLAŞTIRILMIŞ PİYASA ∩ MODEL MUTABAKAT KURALI (Bozulan 5 maçı korur, 11 maçı kurtarır):
         is_asymmetric_under = (
             ou_val <= 2.5
             and d_wk < 52
@@ -2973,7 +2972,6 @@ def run_130_match_consensus_backtest(fin_list):
                 f"⚠️ **{h_n} {hs}-{as_} {a_n}** (Kor:{tot_cor}) ➔ Eski: `{old_pick}` ✅ ➔ Yeni: `{new_pick}` ❌"
             )
 
-        # GERİYE KALAN ~25 KAYIP MAÇIN OTOPSİSİ:
         if not new_won:
             what_won = []
             if tot_g <= 3: what_won.append("3.5 Alt")
@@ -3078,7 +3076,6 @@ if st.session_state.get("patron_unlocked"):
         else:
             st.info(f"🧪 **FT Hakem Öz-Testi (Unit Test):** `{test_badge}` | 🔌 **AF + OddsAPI (Kalan:{oa_quota})** | Aktif Sürüm: `{MODEL_VERSION}`")
 
-        # ================= 131 MAÇLIK GERÇEK VERİ BACKTEST & MUTABAKAT LABORATUVARI =================
         bt_res = run_130_match_consensus_backtest(finished_matches)
         if bt_res:
             with st.expander(
@@ -3108,7 +3105,7 @@ if st.session_state.get("patron_unlocked"):
                     st.markdown(f"**⚠️ Mutabakat Kuralının Yanıldığı Maçlar ({len(bt_res['broken'])} Maç):**")
                     for b_ln in bt_res["broken"]:
                         st.markdown(b_ln)
-                        if bt_res.get("rem_losses"):
+                if bt_res.get("rem_losses"):
                     st.markdown("---")
                     st.markdown(f"### 🔍 Geriye Kalan Kayıp Maçların ({len(bt_res['rem_losses'])} Maç) Kök Neden Dağılımı ve Tek Tek Röntgeni:")
                     for c_k, c_v in bt_res.get("loss_clusters", {}).items():
