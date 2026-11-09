@@ -566,18 +566,31 @@ def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
     if not tac or tac == "None":
         tac = ["4-2-3-1", "4-3-3", "4-4-2", "3-5-2", "3-4-2-1", "5-3-2"][rng.randint(0, 5)]
 
-    starters, bench, gk_starter = [], [], True
+    starters, bench, starter_names, gk_starter = [], [], [], True
     pos_sho, pos_pas, pos_dri, pos_def = [], [], [], []
     roster_list = (roster_obj or {}).get("roster") or []
     for idx, p in enumerate(roster_list):
         ath = p.get("athlete") or {}
         p_name = str(ath.get("displayName") or ath.get("shortName") or f"Oyuncu {idx+1}")
+        p_short = str(ath.get("shortName") or p_name).split()[-1][:10]
+        p_num = str(p.get("jersey") or ath.get("jersey") or (idx + 1))
         pos_obj = p.get("position") or ath.get("position") or {}
         pos_abbr = str(pos_obj.get("abbreviation") or "M").upper()
         p_rng = _DeterministicRng(f"plr_{team_name}_{p_name}")
         p_rat = max(62, min(91, base + p_rng.randint(-3, 6)))
+        p_dict = {
+            "num": p_num,
+            "name": p_short,
+            "full_name": p_name,
+            "rat": p_rat,
+            "pos": pos_abbr,
+            "subbed": bool(p.get("subbedOut") or p.get("subbedIn")),
+            "yellow": bool(p.get("yellowCard")),
+            "red": bool(p.get("redCard"))
+        }
         if p.get("starter") or (not starters and idx < 11):
-            starters.append(f"{p_name} ({p_rat})")
+            starters.append(p_dict)
+            starter_names.append(p_name)
             if pos_abbr in ("G", "GK") and p_rat < 66:
                 gk_starter = False
             if pos_abbr in ("F", "FW", "ST", "CF", "LW", "RW"):
@@ -589,7 +602,18 @@ def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
             elif pos_abbr in ("D", "DF", "CB", "LB", "RB", "WB", "G", "GK"):
                 pos_def.append(min(92, p_rat + 2))
         else:
-            bench.append(f"{p_name} ({p_rat})")
+            bench.append(p_dict)
+
+    if not starters:
+        for i in range(11):
+            starters.append({
+                "num": str(i + 1),
+                "name": f"XI-{i+1}",
+                "full_name": f"Oyuncu {i+1}",
+                "rat": base,
+                "pos": "GK" if i == 0 else ("DF" if i <= 4 else ("MF" if i <= 8 else "FW")),
+                "subbed": False, "yellow": False, "red": False
+            })
 
     if pos_sho:
         sho_r = int(round(sum(pos_sho) / len(pos_sho)))
@@ -601,13 +625,13 @@ def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
         def_r = int(round(sum(pos_def) / len(pos_def)))
 
     team_id = str(((roster_obj or {}).get("team") or {}).get("id") or "")
-    hist = fetch_last_match_twin(slug, team_id, current_ev_id, [s.split(" (")[0] for s in starters], tac, team_name)
+    hist = fetch_last_match_twin(slug, team_id, current_ev_id, starter_names, tac, team_name)
     cor_val = round(safe_float(hist.get("cor_avg"), 4.6), 1)
     return {
         "def": def_r, "pas": pas_r, "dri": dri_r, "sho": sho_r, "tac": tac,
         "rot_gk": (not gk_starter) or (hist.get("rot_cnt", 0) >= 5),
         "rot_cnt": hist.get("rot_cnt", 0), "cor_avg": cor_val, "hist": hist,
-        "starters": starters[:11], "bench": bench[:7], "has_real_xi": len(starters) >= 7
+        "starters": starters[:11], "bench": bench[:7], "has_real_xi": len(starter_names) >= 7
     }
 
 def fetch_and_analyze_roster(args):
@@ -632,7 +656,8 @@ def fetch_and_analyze_roster(args):
 
     if ev_id in MEM["roster_cache"]:
         cached = MEM["roster_cache"][ev_id]
-        if isinstance(cached, dict) and "h" in cached and "a" in cached:
+        st_check = ((cached.get("h") or {}).get("starters") or [None])[0]
+        if isinstance(cached, dict) and isinstance(st_check, dict):
             cached["odds_api"] = oa_match
             cached["af_odds"] = af_odds
             if (state in ("in", "post") or mins_to_ko <= 65) and not cached.get("official"):
@@ -718,6 +743,7 @@ def fetch_and_analyze_roster(args):
     if ev_id and state == "pre":
         MEM["roster_cache"][ev_id] = res
     return match_title, res
+
  # ==================== MODÜL 3A/6: VERİ KALİTESİ (A/B/C/D) VE PİYASA ORAN MOTORU ====================
 MODEL_VERSION = "M4.8_MODULAR_QUALITY_PRO"
 
