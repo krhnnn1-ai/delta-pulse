@@ -344,7 +344,7 @@ def _match_in_odds_api(h_name, a_name, oa_map):
     if f"{hk}_{ak}" in oa_map:
         return oa_map[f"{hk}_{ak}"]
     for k, v in oa_map.items():
-         pts = k.split("_")
+        pts = k.split("_")
         if len(pts) == 2 and len(hk) >= 3 and len(ak) >= 3:
             if (hk in pts[0] or pts[0] in hk) and (ak in pts[1] or pts[1] in ak):
                 return v
@@ -683,7 +683,7 @@ def fetch_and_analyze_roster(args):
                 live_cards_cnt = max(live_cards_cnt, box_stats["cards"])
 
                 g_info = data.get("gameInfo") or {}
-                 officials = g_info.get("officials") or []
+                officials = g_info.get("officials") or []
                 if officials and isinstance(officials[0], dict):
                     ref_name = str(officials[0].get("displayName") or officials[0].get("fullName") or ref_name)
                 wx = g_info.get("weather") or {}
