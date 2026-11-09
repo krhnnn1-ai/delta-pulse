@@ -249,6 +249,9 @@ def auto_sync_device_user(uid_code, ref_code=""):
     return db[uid_code]
 
 # ==================== MODÜL 2A/6: DIŞ ORAN VE FİKSTÜR SERVİSLERİ (API-FOOTBALL & ODDS API) ====================
+API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY", "c3efbb323f32f28fb2c2ac5d6e09fc2a")
+ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "a04b44a064785b70e73f0f58ff472d95")
+
 class _DeterministicRng:
     def __init__(self, seed_str):
         self.state = int(hashlib.md5(str(seed_str).encode("utf-8")).hexdigest()[:8], 16) or 123456789
