@@ -3078,41 +3078,20 @@ if st.session_state.get("patron_unlocked"):
 
         bt_res = run_130_match_consensus_backtest(finished_matches)
         if bt_res:
-            with st.expander(
-                f"🔬 131 Maçlık Gerçek Veri Backtest Raporu: Mevcut ({bt_res['old_w']}/{bt_res['tot']} • %{bt_res['old_r']}) ➔ "
-                f"Piyasa∩Model Mutabakat & Eleme ({bt_res['new_w']}/{bt_res['tot']} • %{bt_res['new_r']}) | "
-                f"Ana Kasa: %{bt_res['old_ak_r']} ➔ %{bt_res['new_ak_r']}",
-                expanded=True
-            ):
-                st.markdown(
-                    f"**📊 Net Fark Analizi:** Mevcut Sistem: `{bt_res['old_w']}/{bt_res['tot']} (%{bt_res['old_r']})` | "
-                    f"**Mutabakat & Eleme Motoru:** `{bt_res['new_w']}/{bt_res['tot']} (%{bt_res['new_r']})` "
-                    f"(**Net Kurtarılan Maç: `+{bt_res['new_w'] - bt_res['old_w']}`**)\n\n"
-                    f"**💎 Ana Kasa (AK) Etkisi:** Mevcut AK: `{bt_res['old_ak_w']}/{bt_res['old_ak_t']} (%{bt_res['old_ak_r']})` ➔ "
-                    f"**Mutabakat AK:** `{bt_res['new_ak_w']}/{bt_res['new_ak_t']} (%{bt_res['new_ak_r']})`"
-                )
-                mkt_lines = []
-                for m_lbl, (w_c, t_c) in bt_res["mkt_stats"].items():
-                    if t_c > 0:
-                        mkt_lines.append(f"• **{m_lbl}:** `{w_c}/{t_c} (%{int(round(w_c*100.0/t_c))})`")
-                st.markdown("**📈 131 Maçta Pazar Bazlı Gerçek Tutma Oranları:**\n" + " | ".join(mkt_lines))
-
-                if bt_res["rescued"]:
-                    st.markdown(f"**🛡️ Kaybedilen Maçlardan Eleme & Mutabakat İle Kurtarılanlar ({len(bt_res['rescued'])} Maç):**")
-                    for r_ln in bt_res["rescued"]:
-                        st.markdown(r_ln)
-                if bt_res["broken"]:
-                    st.markdown(f"**⚠️ Mutabakat Kuralının Yanıldığı Maçlar ({len(bt_res['broken'])} Maç):**")
-                    for b_ln in bt_res["broken"]:
-                        st.markdown(b_ln)
-                if bt_res.get("rem_losses"):
-                    st.markdown("---")
-                    st.markdown(f"### 🔍 Geriye Kalan Kayıp Maçların ({len(bt_res['rem_losses'])} Maç) Kök Neden Dağılımı ve Tek Tek Röntgeni:")
-                    for c_k, c_v in bt_res.get("loss_clusters", {}).items():
-                        if c_v > 0:
-                            st.markdown(f"- **{c_k}:** `{c_v} Maç`")
-                    for l_ln in bt_res["rem_losses"]:
-                        st.markdown(l_ln)
+            rep_lines = [
+                f"🔬 BACKTEST ÖZETİ: Mevcut: {bt_res['old_w']}/{bt_res['tot']} (%{bt_res['old_r']}) -> Mutabakat: {bt_res['new_w']}/{bt_res['tot']} (%{bt_res['new_r']}) | Net: +{bt_res['new_w'] - bt_res['old_w']}",
+                f"💎 ANA KASA (AK): Mevcut: {bt_res['old_ak_w']}/{bt_res['old_ak_t']} (%{bt_res['old_ak_r']}) -> Mutabakat: {bt_res['new_ak_w']}/{bt_res['new_ak_t']} (%{bt_res['new_ak_r']})",
+                "📈 PAZAR TUTMA: " + " | ".join(f"{k}: {v[0]}/{v[1]}(%{int(round(v[0]*100.0/v[1]))})" for k, v in bt_res["mkt_stats"].items() if v[1] > 0),
+                "--- KÜME DAĞILIMI ---"
+            ]
+            for ck, cv in bt_res.get("loss_clusters", {}).items():
+                if cv > 0:
+                    rep_lines.append(f"• {ck}: {cv} Maç")
+            rep_lines.append(f"--- KALAN KAYIPLAR ({len(bt_res.get('rem_losses', []))} MAÇ) ---")
+            for l_ln in bt_res.get("rem_losses", []):
+                clean_ln = l_ln.replace("**", "").replace("`", "").replace("*", "")
+                rep_lines.append(clean_ln)
+            st.code("\n".join(rep_lines), language="text")
 
         def _compact_mini_line(ln):
             reps = [
