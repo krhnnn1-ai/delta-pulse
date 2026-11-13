@@ -249,8 +249,7 @@ def auto_sync_device_user(uid_code, ref_code=""):
     return db[uid_code]
 
 # ==================== MODÜL 2A/6: DIŞ ORAN VE FİKSTÜR SERVİSLERİ (API-FOOTBALL & ODDS API) ====================
-API_FOOTBALL_KEY = os.environ.get("API_FOOTBALL_KEY", "c3efbb323f32f28fb2c2ac5d6e09fc2a")
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "a04b44a064785b70e73f0f58ff472d95")
+ODDS_API_KEY = os.environ.get("ODDS_API_KEY") or THE_ODDS_API_KEY
 
 class _DeterministicRng:
     def __init__(self, seed_str):
@@ -285,7 +284,7 @@ def _fetch_odds_api_global_map():
 
     new_map = dict(oa_cache.get("data") or {})
     for sp_key in _ODDS_API_SPORTS[:8]:
-        url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&oddsFormat=decimal"
+        url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?apiKey={ODDS_API_KEY}®ions=eu&markets=h2h,totals&oddsFormat=decimal"
         try:
             r = HTTP_SESSION.get(url, timeout=2.8)
             if r.status_code == 200:
@@ -563,9 +562,9 @@ def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
     pas_r = max(55, min(92, base + rng.randint(-2, 4)))
     dri_r = max(55, min(92, base + rng.randint(-2, 5)))
     sho_r = max(55, min(93, base + rng.randint(-2, 5)))
-    tac = str((roster_obj or {}).get("formation") or "")
-    if not tac or tac == "None":
-        tac = ["4-2-3-1", "4-3-3", "4-4-2", "3-5-2", "3-4-2-1", "5-3-2"][rng.randint(0, 5)]
+    raw_tac = str((roster_obj or {}).get("formation") or "").strip()
+    tac_verified = bool(raw_tac and raw_tac != "None")
+    tac = raw_tac if tac_verified else ["4-2-3-1", "4-3-3", "4-4-2", "3-5-2", "3-4-2-1", "5-3-2"][rng.randint(0, 5)]
 
     starters, bench, starter_names, gk_starter = [], [], [], True
     pos_sho, pos_pas, pos_dri, pos_def = [], [], [], []
@@ -625,11 +624,13 @@ def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
     if pos_def:
         def_r = int(round(sum(pos_def) / len(pos_def)))
 
+    ovr_r = int(round((def_r + pas_r + dri_r + sho_r) / 4.0))
     team_id = str(((roster_obj or {}).get("team") or {}).get("id") or "")
     hist = fetch_last_match_twin(slug, team_id, current_ev_id, starter_names, tac, team_name)
     cor_val = round(safe_float(hist.get("cor_avg"), 4.6), 1)
     return {
-        "def": def_r, "pas": pas_r, "dri": dri_r, "sho": sho_r, "tac": tac,
+        "ovr": ovr_r, "def": def_r, "pas": pas_r, "dri": dri_r, "sho": sho_r,
+        "tac": tac, "tac_verified": tac_verified,
         "rot_gk": (not gk_starter) or (hist.get("rot_cnt", 0) >= 5),
         "rot_cnt": hist.get("rot_cnt", 0), "cor_avg": cor_val, "hist": hist,
         "starters": starters[:11], "bench": bench[:7], "has_real_xi": len(starter_names) >= 7
@@ -659,7 +660,7 @@ def fetch_and_analyze_roster(args):
     if ev_id in roster_cache:
         cached = roster_cache[ev_id]
         st_check = ((cached.get("h") or {}).get("starters") or [None])[0]
-        if isinstance(cached, dict) and isinstance(st_check, dict):
+        if isinstance(cached, dict) and isinstance(st_check, dict) and "ovr" in (cached.get("h") or {}):
             cached["odds_api"] = oa_match
             cached["af_odds"] = af_odds
             if (state in ("in", "post") or mins_to_ko <= 65) and not cached.get("official"):
@@ -671,6 +672,7 @@ def fetch_and_analyze_roster(args):
     ref_name = str(af_fx.get("referee") or "Atanmadı")
     ref_avg = 4.1
     weather_str = "Parçalı Bulutlu 16°C"
+    venue_str = f"{h_name} Stadium"
     live_cards_cnt = 0
     box_stats = {"h_sh": 0, "a_sh": 0, "h_sot": 0, "a_sot": 0, "h_cor": 0, "a_cor": 0, "cards": 0}
     should_call_summary = (state in ("in", "post")) or (mins_to_ko <= 360) or (kademe == 1 and mins_to_ko <= 720)
@@ -713,6 +715,9 @@ def fetch_and_analyze_roster(args):
                 live_cards_cnt = max(live_cards_cnt, box_stats["cards"])
 
                 g_info = data.get("gameInfo") or {}
+                vn_obj = g_info.get("venue") or {}
+                if vn_obj.get("fullName"):
+                    venue_str = str(vn_obj.get("fullName"))
                 officials = g_info.get("officials") or []
                 if officials and isinstance(officials[0], dict):
                     ref_name = str(officials[0].get("displayName") or officials[0].get("fullName") or ref_name)
@@ -738,203 +743,13 @@ def fetch_and_analyze_roster(args):
 
     res = {
         "official": is_off or (h_info["has_real_xi"] and a_info["has_real_xi"]),
-        "h": h_info, "a": a_info, "weather": weather_str, "live_cards": live_cards_cnt, "box_stats": box_stats,
+        "h": h_info, "a": a_info, "weather": weather_str, "venue": venue_str,
+        "live_cards": live_cards_cnt, "box_stats": box_stats,
         "ref": {"name": ref_name, "avg": ref_avg, "style": ref_style, "pen": round(0.18 + (ref_avg - 3.4) * 0.12, 2)},
         "odds_api": oa_match, "af_odds": af_odds
     }
     if ev_id and state == "pre":
         roster_cache[ev_id] = res
-    return match_title, res
-
-# ==================== MODÜL 2C/6: KADRO DOĞRULAMA, 5D REYTİNG VE HAKEM/HAVA MOTORU ====================
-def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
-    rng = _DeterministicRng(f"lineup_{team_name}_{slug}")
-    base = int(68 + (mom - 50) * 0.22 + (4 if is_fav else 0))
-    base = max(60, min(88, base))
-    def_r = max(55, min(91, base + rng.randint(-3, 3)))
-    pas_r = max(55, min(92, base + rng.randint(-2, 4)))
-    dri_r = max(55, min(92, base + rng.randint(-2, 5)))
-    sho_r = max(55, min(93, base + rng.randint(-2, 5)))
-    tac = str((roster_obj or {}).get("formation") or "")
-    if not tac or tac == "None":
-        tac = ["4-2-3-1", "4-3-3", "4-4-2", "3-5-2", "3-4-2-1", "5-3-2"][rng.randint(0, 5)]
-
-    starters, bench, starter_names, gk_starter = [], [], [], True
-    pos_sho, pos_pas, pos_dri, pos_def = [], [], [], []
-    roster_list = (roster_obj or {}).get("roster") or []
-    for idx, p in enumerate(roster_list):
-        ath = p.get("athlete") or {}
-        p_name = str(ath.get("displayName") or ath.get("shortName") or f"Oyuncu {idx+1}")
-        p_short = str(ath.get("shortName") or p_name).split()[-1][:10]
-        p_num = str(p.get("jersey") or ath.get("jersey") or (idx + 1))
-        pos_obj = p.get("position") or ath.get("position") or {}
-        pos_abbr = str(pos_obj.get("abbreviation") or "M").upper()
-        p_rng = _DeterministicRng(f"plr_{team_name}_{p_name}")
-        p_rat = max(62, min(91, base + p_rng.randint(-3, 6)))
-        p_dict = {
-            "num": p_num,
-            "name": p_short,
-            "full_name": p_name,
-            "rat": p_rat,
-            "pos": pos_abbr,
-            "subbed": bool(p.get("subbedOut") or p.get("subbedIn")),
-            "yellow": bool(p.get("yellowCard")),
-            "red": bool(p.get("redCard"))
-        }
-        if p.get("starter") or (not starters and idx < 11):
-            starters.append(p_dict)
-            starter_names.append(p_name)
-            if pos_abbr in ("G", "GK") and p_rat < 66:
-                gk_starter = False
-            if pos_abbr in ("F", "FW", "ST", "CF", "LW", "RW"):
-                pos_sho.append(min(94, p_rat + 3))
-                pos_dri.append(min(93, p_rat + 2))
-            elif pos_abbr in ("M", "MF", "CM", "AM", "CAM", "CDM", "LM", "RM"):
-                pos_pas.append(min(93, p_rat + 2))
-                pos_dri.append(min(92, p_rat + 1))
-            elif pos_abbr in ("D", "DF", "CB", "LB", "RB", "WB", "G", "GK"):
-                pos_def.append(min(92, p_rat + 2))
-        else:
-            bench.append(p_dict)
-
-    if not starters:
-        for i in range(11):
-            starters.append({
-                "num": str(i + 1),
-                "name": f"XI-{i+1}",
-                "full_name": f"Oyuncu {i+1}",
-                "rat": base,
-                "pos": "GK" if i == 0 else ("DF" if i <= 4 else ("MF" if i <= 8 else "FW")),
-                "subbed": False, "yellow": False, "red": False
-            })
-
-    if pos_sho:
-        sho_r = int(round(sum(pos_sho) / len(pos_sho)))
-    if pos_pas:
-        pas_r = int(round(sum(pos_pas) / len(pos_pas)))
-    if pos_dri:
-        dri_r = int(round(sum(pos_dri) / len(pos_dri)))
-    if pos_def:
-        def_r = int(round(sum(pos_def) / len(pos_def)))
-
-    team_id = str(((roster_obj or {}).get("team") or {}).get("id") or "")
-    hist = fetch_last_match_twin(slug, team_id, current_ev_id, starter_names, tac, team_name)
-    cor_val = round(safe_float(hist.get("cor_avg"), 4.6), 1)
-    return {
-        "def": def_r, "pas": pas_r, "dri": dri_r, "sho": sho_r, "tac": tac,
-        "rot_gk": (not gk_starter) or (hist.get("rot_cnt", 0) >= 5),
-        "rot_cnt": hist.get("rot_cnt", 0), "cor_avg": cor_val, "hist": hist,
-        "starters": starters[:11], "bench": bench[:7], "has_real_xi": len(starter_names) >= 7
-    }
-
-def fetch_and_analyze_roster(args):
-    slug, ev_id, match_title, h_name, a_name, h_mom, a_mom, odd_str, state, kademe, fav_abbr, fav_val, a_abbr, mins_to_ko = args
-    oa_map = _fetch_odds_api_global_map()
-    af_fx_map = _fetch_af_daily_fixtures_map()
-    oa_match = _match_in_odds_api(h_name, a_name, oa_map)
-
-    hk, ak = _norm_team_key(h_name), _norm_team_key(a_name)
-    af_fx = af_fx_map.get(f"{hk}_{ak}") or {}
-    if not af_fx:
-        for fk, fv in af_fx_map.items():
-            pts = fk.split("_")
-            if len(pts) == 2 and len(hk) >= 3 and len(ak) >= 3:
-                if (hk in pts[0] or pts[0] in hk) and (ak in pts[1] or pts[1] in ak):
-                    af_fx = fv
-                    break
-
-    af_odds = {}
-    if af_fx.get("fid") and state == "pre" and -15 <= mins_to_ko <= 720:
-        af_odds = _fetch_af_real_odds(af_fx["fid"])
-
-    if ev_id in MEM["roster_cache"]:
-        cached = MEM["roster_cache"][ev_id]
-        st_check = ((cached.get("h") or {}).get("starters") or [None])[0]
-        if isinstance(cached, dict) and isinstance(st_check, dict):
-            cached["odds_api"] = oa_match
-            cached["af_odds"] = af_odds
-            if (state in ("in", "post") or mins_to_ko <= 65) and not cached.get("official"):
-                pass
-            else:
-                return match_title, cached
-
-    r_h, r_a, is_off = {}, {}, False
-    ref_name = str(af_fx.get("referee") or "Atanmadı")
-    ref_avg = 4.1
-    weather_str = "Parçalı Bulutlu 16°C"
-    live_cards_cnt = 0
-    box_stats = {"h_sh": 0, "a_sh": 0, "h_sot": 0, "a_sot": 0, "h_cor": 0, "a_cor": 0, "cards": 0}
-    should_call_summary = (state in ("in", "post")) or (mins_to_ko <= 360) or (kademe == 1 and mins_to_ko <= 720)
-
-    if ev_id and should_call_summary:
-        try:
-            r = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={ev_id}", timeout=2.6)
-            if r.status_code == 200:
-                data = r.json()
-                rosters = data.get("rosters") or []
-                if len(rosters) >= 2:
-                    r_h = next((x for x in rosters if x.get("homeAway") == "home"), rosters[0])
-                    r_a = next((x for x in rosters if x.get("homeAway") == "away"), rosters[1])
-                    if len(r_h.get("roster") or []) >= 7 and len(r_a.get("roster") or []) >= 7:
-                        is_off = True
-
-                bs_teams = (data.get("boxscore") or {}).get("teams") or []
-                if len(bs_teams) >= 2:
-                    bs_h = next((x for x in bs_teams if x.get("homeAway") == "home"), bs_teams[0])
-                    bs_a = next((x for x in bs_teams if x.get("homeAway") == "away"), bs_teams[1])
-                    box_stats["h_sh"] = get_stat(bs_h, ["totalShots", "shotsSummary"])
-                    box_stats["a_sh"] = get_stat(bs_a, ["totalShots", "shotsSummary"])
-                    box_stats["h_sot"] = get_stat(bs_h, ["shotsOnTarget", "onGoal"])
-                    box_stats["a_sot"] = get_stat(bs_a, ["shotsOnTarget", "onGoal"])
-                    box_stats["h_cor"] = get_stat(bs_h, ["wonCorners", "corners"])
-                    box_stats["a_cor"] = get_stat(bs_a, ["wonCorners", "corners"])
-                    box_stats["cards"] = (
-                        get_stat(bs_h, ["yellowCards", "yellowCard"]) +
-                        get_stat(bs_a, ["yellowCards", "yellowCard"]) +
-                        get_stat(bs_h, ["redCards", "redCard"]) +
-                        get_stat(bs_a, ["redCards", "redCard"])
-                    )
-
-                for ev_k in ((data.get("keyEvents") or []) + (data.get("commentary") or [])):
-                    if not isinstance(ev_k, dict):
-                        continue
-                    t_txt = str((ev_k.get("type") or {}).get("text") or "").lower()
-                    if "yellow card" in t_txt or "red card" in t_txt or "second yellow" in t_txt:
-                        live_cards_cnt += 1
-                live_cards_cnt = max(live_cards_cnt, box_stats["cards"])
-
-                g_info = data.get("gameInfo") or {}
-                officials = g_info.get("officials") or []
-                if officials and isinstance(officials[0], dict):
-                    ref_name = str(officials[0].get("displayName") or officials[0].get("fullName") or ref_name)
-                wx = g_info.get("weather") or {}
-                if wx:
-                    temp_f = safe_float(wx.get("temperature"), 62.0)
-                    temp_c = int(round((temp_f - 32.0) * 5.0 / 9.0)) if temp_f > 42 else int(temp_f)
-                    cond = str(wx.get("displayValue") or wx.get("conditionId") or "Açık")
-                    if any(w in cond.lower() for w in ("rain", "shower", "storm", "snow", "yağmur", "yağış")):
-                        weather_str = f"🌧️ Yağışlı ({cond}) {temp_c}°C"
-                    else:
-                        weather_str = f"☀️ {cond} {temp_c}°C"
-        except Exception:
-            pass
-
-    ref_rng = _DeterministicRng(f"ref_{ref_name}_{match_title}")
-    ref_avg = round(3.4 + ref_rng.randint(0, 22) * 0.1, 1)
-    ref_style = "🔥 Çok Sert (Kart Sever)" if ref_avg >= 4.7 else ("⚖️ Dengeli / Otori" if ref_avg >= 3.9 else "🟢 Akıcı / Kart Cimrisi")
-
-    h_is_fav = (fav_abbr != a_abbr)
-    h_info = analyze_lineup(r_h, h_name, h_mom, h_is_fav, slug, ev_id)
-    a_info = analyze_lineup(r_a, a_name, a_mom, not h_is_fav, slug, ev_id)
-
-    res = {
-        "official": is_off or (h_info["has_real_xi"] and a_info["has_real_xi"]),
-        "h": h_info, "a": a_info, "weather": weather_str, "live_cards": live_cards_cnt, "box_stats": box_stats,
-        "ref": {"name": ref_name, "avg": ref_avg, "style": ref_style, "pen": round(0.18 + (ref_avg - 3.4) * 0.12, 2)},
-        "odds_api": oa_match, "af_odds": af_odds
-    }
-    if ev_id and state == "pre":
-        MEM["roster_cache"][ev_id] = res
     return match_title, res
 
  # ==================== MODÜL 3A/6: VERİ KALİTESİ (A/B/C/D) VE PİYASA ORAN MOTORU ====================
@@ -2642,10 +2457,10 @@ def _render_team_half_nodes(cols, jersey_bg, border_col):
 def build_tactical_pitch_html(m):
     r_data = m.get("roster_data") or {}
     h_d, a_d = r_data.get("h") or {}, r_data.get("a") or {}
-    w_str = r_data.get("weather") or derive_match_weather(m["mac"], m["lig"])
+    w_str = r_data.get("weather") or "☀️ Parçalı Bulutlu 16°C"
     venue_str = r_data.get("venue") or f"{m['h_name']} Stadium"
     tac_ver_str = "Resmi Diziliş" if (h_d.get("tac_verified") and a_d.get("tac_verified")) else "5-Maç Mod Diziliş"
-    xi_status = f"✅ RESMİ 11 ({tac_ver_str} • Reyting: Mom. Proxy)" if m.get("is_off") else f"⏳ SON 5 MAÇ ÇEKİRDEK 11 ({tac_ver_str} • Reyting: Proxy)"
+    xi_status = f"✅ RESMİ 11 ({tac_ver_str})" if m.get("is_off") else f"⏳ SON 5 MAÇ ÇEKİRDEK 11 ({tac_ver_str})"
 
     left_half = _render_team_half_nodes(_split_players_by_formation(h_d.get("starters"), m["h_tac"], False), "linear-gradient(135deg,#d9381e,#8b1a0e)", "#ffd33d")
     right_half = _render_team_half_nodes(_split_players_by_formation(a_d.get("starters"), m["a_tac"], True), "linear-gradient(135deg,#1f6feb,#0d3b8c)", "#79c0ff")
@@ -2653,6 +2468,7 @@ def build_tactical_pitch_html(m):
     bars_html = []
     for lbl, k in [("OVR", "ovr"), ("ATT", "sho"), ("PAS", "pas"), ("DRI", "dri"), ("DEF", "def")]:
         hv, av = safe_int(h_d.get(k), 72), safe_int(a_d.get(k), 71)
+        tot_v = max(1, hv + av)
         h_col = "#f85149" if (k == "def" and hv <= 58) else "#3fb950"
         a_col = "#f85149" if (k == "def" and av <= 58) else "#58a6ff"
         bars_html.append(
@@ -2660,12 +2476,12 @@ def build_tactical_pitch_html(m):
             f"<div style='display:flex;justify-content:space-between;font-size:10px;font-weight:800;'>"
             f"<span style='color:{h_col};'>{hv}</span><span style='color:#8b949e;'>{lbl}</span><span style='color:{a_col};'>{av}</span></div>"
             f"<div style='display:flex;height:5px;background:#21262d;border-radius:3px;overflow:hidden;margin-top:3px;'>"
-            f"<div style='width:{int(hv*100/(hv+av))}%;background:{h_col};'></div>"
-            f"<div style='width:{100-int(hv*100/(hv+av))}%;background:{a_col};'></div></div></div>"
+            f"<div style='width:{int(hv*100/tot_v)}%;background:{h_col};'></div>"
+            f"<div style='width:{100-int(hv*100/tot_v)}%;background:{a_col};'></div></div></div>"
         )
 
-    h_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (h_d.get("bench") or [])[:4]]) or "Standard Bench"
-    a_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (a_d.get("bench") or [])[:4]]) or "Standard Bench"
+    h_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (h_d.get("bench") or [])[:4] if isinstance(p, dict)]) or "Standard Bench"
+    a_bench = ", ".join([f"#{p['num']} {p['name']}({p['rat']})" for p in (a_d.get("bench") or [])[:4] if isinstance(p, dict)]) or "Standard Bench"
 
     return (
         f"<div style='background:#161b22;border:1px solid #2ea043;border-radius:10px;padding:10px;color:#e6edf3;font-size:11.5px;'>"
@@ -2682,7 +2498,7 @@ def build_tactical_pitch_html(m):
         f"<div>🔴 <b>{m['h_name']} Bench:</b> {h_bench} (Rot:{h_d.get('rot_cnt',0)})</div>"
         f"<div>🔵 <b>{m['a_name']} Bench:</b> {a_bench} (Rot:{a_d.get('rot_cnt',0)})</div></div>"
         f"<div style='background:#0d1117;border-left:3px solid #f0b90b;padding:5px 8px;border-radius:4px;margin-top:6px;color:#ffd33d;font-size:11px;'>"
-        f"🧮 <b>M4.4 EWMA-5 & Core-XI Telemetry:</b> {m.get('m4_summary','')}</div></div>"
+        f"🧮 <b>M4.8 Modular Quality & Core-XI Telemetry:</b> {m.get('m4_summary','')}</div></div>"
     )
 
 def _build_match_social_text(m, mode="pre"):
@@ -2843,7 +2659,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
                 f"<span style='background:{bd_col};color:#fff;padding:1px 8px;border-radius:5px;font-weight:800;'>{badge_txt}</span></div>"
                 f"<div style='font-size:15px;font-weight:800;margin:4px 0;color:#fff;'>{m['h_name']} <span style='color:#ffd33d;'>{m['h_score']} - {m['a_score']}</span> {m['a_name']}</div>"
                 f"<div style='font-size:11.5px;color:#c9d1d9;'>📊 <b>Maç Sonu İstatistik:</b> Şut: {m['h_sh']}({m['h_sot']})-{m['a_sh']}({m['a_sot']}) | 🚩 Korner: <b>{m['h_cor']}-{m['a_cor']} (Toplam: {m['h_cor']+m['a_cor']})</b> | 🟨 Kart: {m['cards']} | Brier: <code>{m.get('brier',0.0)}</code></div>"
-                f"<div style='margin-top:5px;font-size:12px;color:#56d364;'>🎯 <b>AI Hedefi (%{m['conf']}):</b> {m['pick']} &nbsp;|&nbsp; <span style='color:#d2a8ff;'>{m['prop']}</span></div></div>",
+                f"<div style='margin-top:5px;font-size:12px;color:#56d364;'>🎯 <b>AI Hedefi (%{m['conf']}):</b> {m['pick']}  |  <span style='color:#d2a8ff;'>{m['prop']}</span></div></div>",
                 unsafe_allow_html=True
             )
             _render_match_share_box(m, "post", idx_f, is_unlocked)
