@@ -284,7 +284,7 @@ def _fetch_odds_api_global_map():
 
     new_map = dict(oa_cache.get("data") or {})
     for sp_key in _ODDS_API_SPORTS[:8]:
-        url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?apiKey={ODDS_API_KEY}®ions=eu&markets=h2h,totals&oddsFormat=decimal"
+        url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?regions=eu&markets=h2h,totals&oddsFormat=decimal&apiKey={ODDS_API_KEY}"
         try:
             r = HTTP_SESSION.get(url, timeout=2.8)
             if r.status_code == 200:
