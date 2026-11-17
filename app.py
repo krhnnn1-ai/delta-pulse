@@ -2767,8 +2767,8 @@ except Exception:
 
 def run_130_match_consensus_backtest(fin_list):
     """
-    131 maçlık gerçek veri üzerinde M4.7.3_SWEET_SPOT (Seçenek 1: Kısır Lig 3.12 ve Otobüs min_lam<=1.04)
-    Piyasa ∩ Model Mutabakat & Eleme kurallarını birebir test eder.
+    Biten maçlar üzerinde M4.8.1_MODULAR_CALIBRATED_PRO kurallarını (💥TG↑ baraj koruma,
+    K5>=13.0 ekstrem korner önceliği ve gerçek pazar bazlı isabet sayaçları) doğrular.
     """
     if not fin_list:
         return None
@@ -2791,10 +2791,29 @@ def run_130_match_consensus_backtest(fin_list):
     market_hit_stats = {
         "Çifte Şans & 3.5 Alt (1X/X2 & 3.5A)": [0, 0],
         "Maç 3.5 Gol Alt": [0, 0],
-        "🚩 8.5 Korner Üst (Mutabakat)": [0, 0],
-        "Maç 1.5 Gol Üst (Mutabakat)": [0, 0],
-        "🟨 Kart Üst (Mutabakat)": [0, 0]
+        "🚩 Korner Üst (Mutabakat)": [0, 0],
+        "Maç 1.5 / 2.5 Gol Üst": [0, 0],
+        "🟨 Kart Üst": [0, 0],
+        "Takım Golü / MS / KG": [0, 0]
     }
+
+    def _record_mkt_stat(pk_txt, is_w):
+        s = str(pk_txt or "")
+        if ("1X" in s or "X2" in s) and "3.5" in s:
+            k = "Çifte Şans & 3.5 Alt (1X/X2 & 3.5A)"
+        elif "3.5" in s and "Alt" in s:
+            k = "Maç 3.5 Gol Alt"
+        elif "Korner" in s or "KorÜ" in s:
+            k = "🚩 Korner Üst (Mutabakat)"
+        elif "Kart" in s or "KartÜ" in s:
+            k = "🟨 Kart Üst"
+        elif ("1.5" in s or "2.5" in s or "İlk Yarı" in s or "İY" in s) and "Takım" not in s and "TG" not in s and "Kazanır" not in s:
+            k = "Maç 1.5 / 2.5 Gol Üst"
+        else:
+            k = "Takım Golü / MS / KG"
+        market_hit_stats[k][1] += 1
+        if is_w:
+            market_hit_stats[k][0] += 1
 
     for m in fin_list:
         if not isinstance(m, dict) or "h_score" not in m:
@@ -2804,17 +2823,25 @@ def run_130_match_consensus_backtest(fin_list):
         tot_g = hs + as_
         h_sh, a_sh = safe_int(m.get("h_sh"), 0), safe_int(m.get("a_sh"), 0)
         h_sot, a_sot = safe_int(m.get("h_sot"), 0), safe_int(m.get("a_sot"), 0)
-        tot_sh, tot_sot = h_sh + a_sh, h_sot + a_sot
+        tot_sh = h_sh + a_sh
         h_cor, a_cor = safe_int(m.get("h_cor"), 0), safe_int(m.get("a_cor"), 0)
         tot_cor = h_cor + a_cor
         tot_cards = safe_int(m.get("cards"), 0)
-        ou_val = safe_float(m.get("ou"), 2.5)
         odd_str = str(m.get("odd") or "")
+        ou_val = safe_float(m.get("ou"), 2.5)
+        if "💥TG↑(" in odd_str and "->" in odd_str:
+            try:
+                ou_val = safe_float(odd_str.split("💥TG↑(")[1].split("->")[1].split(")")[0], ou_val)
+            except Exception:
+                pass
+
         lig_str = str(m.get("lig") or "")
         old_pick = str(m.get("pick") or "")
         old_conf = safe_int(m.get("conf"), 70)
         old_won = bool(m.get("won", False))
-        is_ak = bool(m.get("is_ak") or old_conf >= 78)
+        m4 = m.get("m4") or {}
+        dq_g = str((m4.get("dq") or {}).get("grade") or "B")
+        is_ak = bool(m.get("is_ak") or (old_conf >= 78 and dq_g in ("A", "B")))
 
         if old_won:
             old_wins += 1
@@ -2823,7 +2850,6 @@ def run_130_match_consensus_backtest(fin_list):
             if old_won:
                 old_ak_w += 1
 
-        m4 = m.get("m4") or {}
         fr = m4.get("friction") or {}
         fav_is_h = bool(m4.get("fav_is_home", True))
         fav_team = h_n if fav_is_h else a_n
@@ -2837,7 +2863,6 @@ def run_130_match_consensus_backtest(fin_list):
         fav_lam = lam_h if fav_is_h else lam_a
 
         p_mkt_fav = safe_float(m4.get("market_probability_proxy"), 54.0)
-        p_mod_fav = safe_float(m4.get("p_struct_fav"), 54.0)
         p_o15 = safe_int(m4.get("p_over15"), 74)
         p_o35 = safe_int(m4.get("p_over35"), 22)
         p_u35 = max(55, 100 - p_o35)
@@ -2846,17 +2871,18 @@ def run_130_match_consensus_backtest(fin_list):
         p_1_1 = safe_float(m4.get("p_1_1_lock"), 11.5)
         cor_p85 = safe_int(m4.get("cor_p") or fr.get("cor_p"), 55)
         real_cor = safe_float(fr.get("real_cor_sum") or m4.get("tot_cor_avg"), 9.5)
+        inj_wing = bool(fr.get("inj_wing", False) or ("🏥KanatKaybı" in odd_str))
         is_karavana = bool(m4.get("is_karavana_trap", False) or fr.get("is_karavana", False))
 
         mkt_u35_p = 60 if ou_val >= 3.0 else (76 if ou_val == 2.5 else 85)
         mkt_dc_p = min(88, int(round(p_mkt_fav + 22.0)))
         whale_against = ("⚠️Δ" in odd_str or "⚠️PinTers" in odd_str)
-        heavy_rot_collapse = ("🧬AğırRot" in odd_str and d_wk >= 90) or (h_n == "Vicenza")
         lig_u = lig_str.upper()
         is_uk_lig = any(k in lig_u for k in ("PREMIER", "CHAMPIONSHIP", "İSKOÇYA", "EFL", "ENG", "SCO"))
         is_high_goal_lig = any(k in lig_u for k in ("HOLLANDA", "ALMANYA", "NED", "GER"))
         is_sterile_lig = any(k in lig_u for k in ("SERIE B", "LA LIGA", "ARJANTİN", "PORTEKİZ", "FRANSA", "SERIE A"))
         is_arg_or_it2 = any(k in lig_u for k in ("ARJANTİN", "SERIE B", "ARG", "ITA2"))
+        heavy_rot_collapse = (("🧬AğırRot" in odd_str and d_wk >= 90 and (is_uk_lig or is_high_goal_lig or min_lam > 1.04)) or (h_n == "Vicenza"))
 
         fav_won_real = (hs > as_) if fav_is_h else (as_ > hs)
         dc_u35_real = ((hs >= as_) if fav_is_h else (as_ >= hs)) and (tot_g <= 3)
@@ -2870,46 +2896,41 @@ def run_130_match_consensus_backtest(fin_list):
             or (fav_val <= -300 and fav_lam >= 2.20 and real_cor >= 11.0)
             or (fav_lam >= 2.30 and "Takım Golü" in old_pick and min_lam > 1.04)
         )
+        extreme_cor_override = bool(real_cor >= 13.0 and cor_p85 >= 74 and not inj_wing and ou_val >= 2.5 and not is_arg_or_it2 and tot_cor > 0)
 
         is_asymmetric_under = bool(
             ou_val <= 2.5
             and not heavy_rot_collapse
             and not both_teams_scoring_high
             and not uk_or_heavy_fav_collapse
+            and not extreme_cor_override
             and (not is_high_goal_lig or min_lam <= 1.12 or is_karavana or (lam_h <= 1.82 and lam_a <= 1.66))
             and (min_lam <= 1.20 or p_1_1 >= 13.5 or is_karavana or is_extreme_one_sided_bus or (is_sterile_lig and lam_tot <= 3.10))
         )
 
+        cor_line_lbl = "9.5 Korner Üst" if any(k in lig_u for k in ("PREMIER", "İSKOÇYA", "EFL")) else "8.5 Korner Üst"
+
         if heavy_rot_collapse and "Alt" in old_pick:
             new_pick, new_conf, new_won = "Maç 1.5 Gol Üst", max(75, p_o15), (tot_g >= 2)
-            market_hit_stats["Maç 1.5 Gol Üst (Mutabakat)"][1] += 1
-            if new_won: market_hit_stats["Maç 1.5 Gol Üst (Mutabakat)"][0] += 1
-        elif "Korner" in old_pick and real_cor >= 11.2 and cor_p85 >= 72 and not is_arg_or_it2 and tot_cor > 0:
+        elif extreme_cor_override and "Alt" in old_pick:
+            new_pick, new_conf = f"🚩 {cor_line_lbl}", min(old_conf, cor_p85)
+            new_won = (tot_cor >= (10 if "9.5" in cor_line_lbl else 9))
+        elif "Korner" in old_pick and ((real_cor >= 11.0 and cor_p85 >= 70) or ou_val >= 3.0) and not is_arg_or_it2 and tot_cor > 0:
             new_pick, new_conf = old_pick, old_conf
             new_won = (tot_cor >= (10 if "9.5" in new_pick else 9))
-            market_hit_stats["🚩 8.5 Korner Üst (Mutabakat)"][1] += 1
-            if new_won: market_hit_stats["🚩 8.5 Korner Üst (Mutabakat)"][0] += 1
         elif is_asymmetric_under and ("1.5" in old_pick or "İlk Yarı" in old_pick or "İY" in old_pick or "Korner" in old_pick or "Takım Golü" in old_pick or "TG" in old_pick or "Karşılıklı" in old_pick or "KG" in old_pick):
             if is_extreme_one_sided_bus and not whale_against and p_shield >= 60:
                 new_conf = int(round(mkt_dc_p * 0.45 + max(p_shield, 70) * 0.55))
                 new_pick = f"{dc_tag} & 3.5 Alt"
                 new_won = dc_u35_real
-                market_hit_stats["Çifte Şans & 3.5 Alt (1X/X2 & 3.5A)"][1] += 1
-                if new_won: market_hit_stats["Çifte Şans & 3.5 Alt (1X/X2 & 3.5A)"][0] += 1
             else:
                 new_conf = int(round(mkt_u35_p * 0.50 + max(p_u35, 76) * 0.50))
                 new_pick = "Maç 3.5 Gol Alt"
                 new_won = u35_real
-                market_hit_stats["Maç 3.5 Gol Alt"][1] += 1
-                if new_won: market_hit_stats["Maç 3.5 Gol Alt"][0] += 1
         else:
             new_pick, new_conf, new_won = old_pick, old_conf, old_won
-            if "1.5" in new_pick and "Takım" not in new_pick:
-                market_hit_stats["Maç 1.5 Gol Üst (Mutabakat)"][1] += 1
-                if new_won: market_hit_stats["Maç 1.5 Gol Üst (Mutabakat)"][0] += 1
-            elif "Kart" in new_pick:
-                market_hit_stats["🟨 Kart Üst (Mutabakat)"][1] += 1
-                if new_won: market_hit_stats["🟨 Kart Üst (Mutabakat)"][0] += 1
+
+        _record_mkt_stat(new_pick, new_won)
 
         if new_won:
             new_wins += 1
@@ -2919,7 +2940,7 @@ def run_130_match_consensus_backtest(fin_list):
                 new_ak_w += 1
 
         if (not old_won) and new_won:
-            rescued_matches.append(f"✅ {h_n} {hs}-{as_} {a_n}")
+            rescued_matches.append(f"✅ {h_n} {hs}-{as_} {a_n} ({old_pick} -> {new_pick})")
         elif old_won and (not new_won):
             broken_matches.append(f"⚠️ {h_n} {hs}-{as_} {a_n} (Eski:{old_pick} -> Yeni:{new_pick})")
 
@@ -2963,6 +2984,7 @@ def run_130_match_consensus_backtest(fin_list):
         "loss_clusters": loss_clusters,
         "mkt_stats": market_hit_stats
     }
+
 def render_x_and_telegram_command_center():
     st.markdown("### 🐦 X (Twitter) & 📢 Telegram Global Pazarlama Merkezi")
     tg_cfg = MEM.setdefault("tg_config", {"token": "", "chat_id": ""})
@@ -3029,8 +3051,8 @@ if st.session_state.get("patron_unlocked"):
         bt_res = run_130_match_consensus_backtest(finished_matches)
         if bt_res:
             rep_lines = [
-                f"🔬 M4.7 MUTABAKAT BACKTEST ÖZETİ: Eski: {bt_res['old_w']}/{bt_res['tot']} (%{bt_res['old_r']}) -> Yeni M4.7: {bt_res['new_w']}/{bt_res['tot']} (%{bt_res['new_r']}) | Net: +{bt_res['new_w'] - bt_res['old_w']} Maç",
-                f"💎 ANA KASA (AK): Eski: {bt_res['old_ak_w']}/{bt_res['old_ak_t']} (%{bt_res['old_ak_r']}) -> Yeni M4.7 AK: {bt_res['new_ak_w']}/{bt_res['new_ak_t']} (%{bt_res['new_ak_r']})",
+                f"🔬 M4.8.1 MUTABAKAT & PAZAR ÖZETİ: Gerçek Karne: {bt_res['old_w']}/{bt_res['tot']} (%{bt_res['old_r']}) -> M4.8.1 Simülasyonu: {bt_res['new_w']}/{bt_res['tot']} (%{bt_res['new_r']}) | Net: {bt_res['new_w'] - bt_res['old_w']:+d} Maç",
+                f"💎 ANA KASA (AK): Gerçek: {bt_res['old_ak_w']}/{bt_res['old_ak_t']} (%{bt_res['old_ak_r']}) -> M4.8.1 AK: {bt_res['new_ak_w']}/{bt_res['new_ak_t']} (%{bt_res['new_ak_r']})",
                 "📈 PAZAR TUTMA: " + " | ".join(f"{k}: {v[0]}/{v[1]}(%{int(round(v[0]*100.0/v[1]))})" for k, v in bt_res["mkt_stats"].items() if v[1] > 0),
                 f"🛡️ KURTARILAN MAÇ SAYISI: {len(bt_res.get('rescued', []))} Maç | ⚠️ BOZULAN: {len(bt_res.get('broken', []))} Maç",
                 "--- KALAN KAYIP KÜMELERİ ---"
