@@ -439,7 +439,6 @@ def _fetch_af_real_odds(fid):
     odds_map[fid] = parsed
     return parsed
 
-
 # ==================== MODÜL 2B/6: EWMA-5 GEÇMİŞ MAÇ İSTATİSTİK MOTORU ====================
 def _calc_ewma(vals, default_val):
     if not vals:
@@ -449,7 +448,7 @@ def _calc_ewma(vals, default_val):
 
 def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac, team_name=""):
     twin_cache = MEM.setdefault("twin_cache", {})
-    cache_key = f"{slug}_{team_id}_{current_ev_id}"
+    cache_key = f"{slug}_{team_id}_{current_ev_id}_v481"
     if cache_key in twin_cache:
         cached_res = twin_cache[cache_key]
         if isinstance(cached_res, dict) and "cor_avg" in cached_res and "sh_avg" in cached_res:
@@ -469,7 +468,7 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
     if not team_id:
         return res
     try:
-        r = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/teams/{team_id}/schedule", timeout=2.4)
+        r = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/teams/{team_id}/schedule", timeout=2.5)
         if r.status_code == 200:
             evs = [
                 e for e in (r.json().get("events") or [])
@@ -479,6 +478,7 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
             if evs:
                 last_5 = evs[-5:][::-1]
                 sot_list, sh_list, cor_list, foul_list, card_list, xg_list = [], [], [], [], [], []
+                missing_stat_ev_ids = set()
                 try:
                     last_dt_str = str(last_5[0].get("date") or "").replace("Z", "+00:00")
                     last_dt = datetime.fromisoformat(last_dt_str)
@@ -488,7 +488,9 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
                     pass
 
                 for ev_item in last_5:
+                    ev_item_id = str(ev_item.get("id") or "")
                     comp_i = (ev_item.get("competitions") or [{}])[0]
+                    found_stat = False
                     for c_tm in (comp_i.get("competitors") or []):
                         if str((c_tm.get("team") or {}).get("id")) == str(team_id):
                             sot_v = get_stat(c_tm, ["shotsOnTarget", "onGoal"])
@@ -498,6 +500,7 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
                             yc_v = get_stat(c_tm, ["yellowCards", "yellowCard"])
                             rc_v = get_stat(c_tm, ["redCards", "redCard"])
                             if sh_v > 0 or sot_v > 0 or cor_v > 0:
+                                found_stat = True
                                 sot_list.append(float(sot_v))
                                 sh_list.append(float(max(sh_v, sot_v)))
                                 cor_list.append(float(cor_v))
@@ -506,6 +509,54 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
                                 card_list.append(float(yc_v + rc_v))
                                 xg_est = round(sot_v * 0.30 + max(0, sh_v - sot_v) * 0.05 + cor_v * 0.035, 2)
                                 xg_list.append(max(0.45, min(3.10, xg_est)))
+                    if not found_stat and ev_item_id:
+                        missing_stat_ev_ids.add(ev_item_id)
+
+                core_counts = {}
+                ev_sum_cache = MEM.setdefault("event_summary_cache", {})
+                for p_ev in last_5:
+                    p_id = str(p_ev.get("id") or "")
+                    if not p_id:
+                        continue
+                    try:
+                        s_json = ev_sum_cache.get(p_id)
+                        if not isinstance(s_json, dict):
+                            r_s = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={p_id}", timeout=1.8)
+                            if r_s.status_code == 200:
+                                s_json = r_s.json()
+                                if len(ev_sum_cache) > 300:
+                                    ev_sum_cache.clear()
+                                ev_sum_cache[p_id] = s_json
+                        if isinstance(s_json, dict):
+                            for r_t in (s_json.get("rosters") or []):
+                                if str((r_t.get("team") or {}).get("id")) == str(team_id):
+                                    for a in (r_t.get("roster") or []):
+                                        if a.get("starter"):
+                                            nm = str((a.get("athlete") or {}).get("displayName") or "").strip()
+                                            if nm:
+                                                core_counts[nm] = core_counts.get(nm, 0) + 1
+
+                            # Alt Lig (ESP2/ITA2/ENG2) Boxscore Yedek Beslemesi:
+                            if p_id in missing_stat_ev_ids:
+                                for bs_t in ((s_json.get("boxscore") or {}).get("teams") or []):
+                                    if str((bs_t.get("team") or {}).get("id")) == str(team_id):
+                                        sot_b = get_stat(bs_t, ["shotsOnTarget", "onGoal"])
+                                        sh_b = get_stat(bs_t, ["totalShots", "shotsSummary"])
+                                        cor_b = get_stat(bs_t, ["wonCorners", "corners"])
+                                        fl_b = get_stat(bs_t, ["foulsCommitted", "fouls"])
+                                        yc_b = get_stat(bs_t, ["yellowCards", "yellowCard"])
+                                        rc_b = get_stat(bs_t, ["redCards", "redCard"])
+                                        if sh_b > 0 or sot_b > 0 or cor_b > 0:
+                                            sot_list.append(float(sot_b))
+                                            sh_list.append(float(max(sh_b, sot_b)))
+                                            cor_list.append(float(cor_b))
+                                            if fl_b > 0:
+                                                foul_list.append(float(fl_b))
+                                            card_list.append(float(yc_b + rc_b))
+                                            xg_b = round(sot_b * 0.30 + max(0, sh_b - sot_b) * 0.05 + cor_b * 0.035, 2)
+                                            xg_list.append(max(0.45, min(3.10, xg_b)))
+                    except Exception:
+                        pass
 
                 res["emp_n"] = len(sh_list)
                 if sot_list:
@@ -521,23 +572,6 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
                 if xg_list:
                     res["xg_avg"] = round(_calc_ewma(xg_list, res["xg_avg"]), 2)
 
-                core_counts = {}
-                for p_ev in last_5:
-                    p_id = str(p_ev.get("id") or "")
-                    if not p_id:
-                        continue
-                    try:
-                        r_s = HTTP_SESSION.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={p_id}", timeout=1.6)
-                        if r_s.status_code == 200:
-                            for r_t in (r_s.json().get("rosters") or []):
-                                if str((r_t.get("team") or {}).get("id")) == str(team_id):
-                                    for a in (r_t.get("roster") or []):
-                                        if a.get("starter"):
-                                            nm = str((a.get("athlete") or {}).get("displayName") or "").strip()
-                                            if nm:
-                                                core_counts[nm] = core_counts.get(nm, 0) + 1
-                    except Exception:
-                        pass
                 if core_counts and curr_starters:
                     core_xi = {k for k, v in sorted(core_counts.items(), key=lambda item: item[1], reverse=True)[:11]}
                     rot = len(set(curr_starters) - core_xi)
@@ -551,7 +585,6 @@ def fetch_last_match_twin(slug, team_id, current_ev_id, curr_starters, curr_tac,
     except Exception:
         pass
     return res
-
 
 # ==================== MODÜL 2C/6: KADRO DOĞRULAMA, 5D REYTİNG VE HAKEM/HAVA MOTORU ====================
 def analyze_lineup(roster_obj, team_name, mom, is_fav, slug, current_ev_id):
@@ -753,7 +786,7 @@ def fetch_and_analyze_roster(args):
     return match_title, res
 
  # ==================== MODÜL 3A/6: VERİ KALİTESİ (A/B/C/D) VE PİYASA ORAN MOTORU ====================
-MODEL_VERSION = "M4.8_MODULAR_QUALITY_PRO"
+MODEL_VERSION = "M4.8.1_MODULAR_CALIBRATED_PRO"
 
 LEAGUE_GOAL_AVG = {
     "ger.1": 3.05, "ned.1": 3.00, "eng.league_cup": 2.82, "sco.1": 2.75,
@@ -770,14 +803,16 @@ LEAGUE_DC_RHO = {
 }
 
 LEAGUE_DNA_PROFILES = {
-    "arg.1": {"cor_mult": 1.02, "disp_r": 8.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
-    "bra.1": {"cor_mult": 1.03, "disp_r": 9.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
-    "esp.2": {"cor_mult": 1.02, "disp_r": 9.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
-    "ita.2": {"cor_mult": 1.00, "disp_r": 9.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
-    "esp.1": {"cor_mult": 1.01, "disp_r": 11.0, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
-    "eng.2": {"cor_mult": 0.98, "disp_r": 12.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8}
+    "arg.1": {"cor_mult": 1.02, "card_mult": 1.14, "disp_r": 8.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
+    "bra.1": {"cor_mult": 1.03, "card_mult": 1.10, "disp_r": 9.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
+    "esp.2": {"cor_mult": 1.03, "card_mult": 1.14, "disp_r": 9.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
+    "ita.2": {"cor_mult": 1.00, "card_mult": 1.12, "disp_r": 9.5, "ban_team_o15_if_lock": True, "lock_thresh": 13.5},
+    "tur.1": {"cor_mult": 1.01, "card_mult": 1.08, "disp_r": 10.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
+    "esp.1": {"cor_mult": 1.01, "card_mult": 1.05, "disp_r": 11.0, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
+    "mex.1": {"cor_mult": 1.01, "card_mult": 1.08, "disp_r": 10.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8},
+    "eng.2": {"cor_mult": 0.98, "card_mult": 1.00, "disp_r": 12.5, "ban_team_o15_if_lock": False, "lock_thresh": 13.8}
 }
-DEFAULT_LIG_DNA = {"cor_mult": 1.0, "disp_r": 12.0, "ban_team_o15_if_lock": False, "lock_thresh": 13.8}
+DEFAULT_LIG_DNA = {"cor_mult": 1.0, "card_mult": 1.0, "disp_r": 12.0, "ban_team_o15_if_lock": False, "lock_thresh": 13.8}
 
 def compute_data_quality_grade(r_data, disp_odd=""):
     """
@@ -845,11 +880,6 @@ def compute_true_3way_no_vig_or_proxy(ml_h, ml_d, ml_a, fav_val, fav_is_home):
     }
 
 def _compute_pick_specific_value(pick, conf, m4, ou_val):
-    """
-    Tahmin ve Piyasa Ayrımı:
-    Gerçek oran varsa marjı temizlenmiş Piyasa Olasılığı (P_Piyasa) ile Model Olasılığını (P_Model) karşılaştırır.
-    Gerçek oran yoksa sahte EV üretmez, açıkça '📊SadeceModel(OranYok)' olarak işaretler.
-    """
     p_mkt_fav = safe_float(m4.get("market_probability_proxy"), 52.0) / 100.0
     is_true_nv = bool(m4.get("is_true_novig", False))
     af_odds = m4.get("af_odds") or {}
@@ -1262,7 +1292,9 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
     card_line_num = 4.5 if is_hot_lig else 3.5
 
     foul_adj = max(-0.4, min(0.6, (hist_fouls - 22.0) * 0.05))
-    card_mu = max(1.8, min(7.8, (ref_avg * 0.55) + (hist_cards * 0.45) + foul_adj + (0.35 if is_hot_lig else 0.0) + (0.25 if mom_gap <= 14 else 0.0) - (0.65 if is_blowout else 0.0)))
+    card_mult = safe_float(lig_dna.get("card_mult"), 1.0)
+    raw_card_mu = ((ref_avg * 0.50) + (hist_cards * 0.50)) * card_mult + foul_adj + (0.45 if is_hot_lig else 0.0) + (0.25 if mom_gap <= 14 else 0.0) - (0.55 if is_blowout else 0.0)
+    card_mu = max(1.8, min(8.2, raw_card_mu))
     card_prob_pct = int(round(neg_binom_prob_over(card_line_num, card_mu, disp_r=10.0) * 100.0))
 
     est_cor_cnt = max(5, min(16, int(round(cor_mu))))
@@ -1437,10 +1469,10 @@ def _build_patron_sim_summary(m4, pick, is_home_fav, conf=72, ou_val=2.5):
     p1, px, p2 = safe_float(m4.get("p_home"), 45.0), safe_float(m4.get("p_draw"), 27.0), safe_float(m4.get("p_away"), 28.0)
     edge_v, val_t = _compute_pick_specific_value(pick, conf, m4, ou_val)
     edge_str = f" (Δ:{edge_v:+.1f}%)" if edge_v != 0.0 else ""
-    lock_warn_ui = f" &nbsp;|&nbsp; <span style='color:#ff7b72;font-weight:800;'>⚠️1-1 Kilit:%{p_1_1_lock:.0f}</span>" if p_1_1_lock >= lock_thresh else ""
+    lock_warn_ui = f"  |  <span style='color:#ff7b72;font-weight:800;'>⚠️1-1 Kilit:%{p_1_1_lock:.0f}</span>" if p_1_1_lock >= lock_thresh else ""
     lock_warn_mini = f"|⚠️1-1:%{p_1_1_lock:.0f}" if p_1_1_lock >= lock_thresh else ""
     return {
-        "ui": f"👑 <b>M4.8 ({dq['badge']}):</b> 📊 <b>1X2:</b> <code>1:%{p1:.0f}|X:%{px:.0f}|2:%{p2:.0f}</code> &nbsp;|&nbsp; 🎯 <b>Olasılık/Karar:</b> <code>%{conf} / {dec_score}p</code> &nbsp;|&nbsp; {delta_lbl}: <code>{fav_delta:+.1f}</code> &nbsp;|&nbsp; ⚽ <b>DC Matris:</b> <span style='color:#56d364;font-weight:800;'>{est_sc} (%{sc_p} • λ:{lam_h}-{lam_a})</span>{lock_warn_ui} &nbsp;|&nbsp; 🚩 <b>NB Korner:</b> <span style='color:#ffd33d;font-weight:800;'>{c_cnt} (%{c_p})</span> &nbsp;|&nbsp; 🟨 <b>Kart:</b> <span style='color:#ff7b72;font-weight:800;'>{k_cnt} (%{k_p})</span> &nbsp;|&nbsp; {val_t}{edge_str}",
+        "ui": f"👑 <b>M4.8.1 ({dq['badge']}):</b> 📊 <b>1X2:</b> <code>1:%{p1:.0f}|X:%{px:.0f}|2:%{p2:.0f}</code>  |  🎯 <b>Olasılık/Karar:</b> <code>%{conf} / {dec_score}p</code>  |  {delta_lbl}: <code>{fav_delta:+.1f}</code>  |  ⚽ <b>DC Matris:</b> <span style='color:#56d364;font-weight:800;'>{est_sc} (%{sc_p} • λ:{lam_h}-{lam_a})</span>{lock_warn_ui}  |  🚩 <b>NB Korner:</b> <span style='color:#ffd33d;font-weight:800;'>{c_cnt} (%{c_p})</span>  |  🟨 <b>Kart:</b> <span style='color:#ff7b72;font-weight:800;'>{k_cnt} (%{k_p})</span>  |  {val_t}{edge_str}",
         "mini": f"[{dq['mini']}|👑DC:{est_sc}(%{sc_p}){lock_warn_mini}|P:%{conf}/U:{dec_score}|Δ:{fav_delta:+.1f}|λ:{lam_h}-{lam_a}|Kor:{c_cnt}(%{c_p})|{val_t}]"
     }
 
@@ -1484,7 +1516,6 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
     whale_against_fav = ("⚠️Δ" in str(disp_odd) or "⚠️PinnacleTers" in str(disp_odd))
     whale_for_fav = ("🔥Δ" in str(disp_odd) or "🐋PinnacleSharp" in str(disp_odd))
-    heavy_rot_collapse = ("🧬AğırRotasyon" in str(disp_odd) and d_wk >= 90)
     mom_gap = abs(h_mom - a_mom)
 
     lig_u = str(lig_adi).upper()
@@ -1492,6 +1523,8 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
     is_high_goal_lig = any(k in lig_u for k in ("HOLLANDA", "ALMANYA", "NED", "GER"))
     is_sterile_lig = any(k in lig_u for k in ("SERIE B", "LA LIGA", "ARJANTİN", "PORTEKİZ", "FRANSA", "SERIE A"))
     is_arg_or_it2 = any(k in lig_u for k in ("ARJANTİN", "SERIE B", "ARG", "ITA2"))
+
+    heavy_rot_collapse = ("🧬AğırRotasyon" in str(disp_odd) and d_wk >= 90 and (is_uk_lig or is_high_goal_lig or min_lam > 1.04))
 
     is_locked_match = (p_1_1_lock >= lock_thresh)
     is_extreme_one_sided_bus = (min_lam <= 1.04 and ou_val <= 2.5 and real_cor < 11.5)
@@ -1521,22 +1554,26 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
     min_cor_req = 11.8 if is_arg_or_it2 else 10.6
     both_sides_cor_ok = (min_side_cor >= (4.5 if is_arg_or_it2 else 4.0) or real_cor >= 12.2)
     cor_volume_ok = (sh_sum >= 22.0 or wing_asym or real_cor >= 11.6)
+    extreme_cor_override = bool(real_cor >= 13.0 and cor_prob >= 74 and not inj_wing and ou_val >= 2.5 and not is_arg_or_it2)
 
     if both_sides_cor_ok and cor_volume_ok and (not inj_wing or real_cor >= 11.4) and real_cor >= min_cor_req and not is_arg_or_it2:
         u_cor = cor_prob + _get_autonomous_market_learning_bonus("COR", lig_adi)
         if real_cor >= 11.5:
             u_cor += 7
+        if extreme_cor_override:
+            u_cor += 16  # K5 >= 13.0 ekstrem korner hacminde duran top karambol riskine karşı korner önceliği
         if cor_prob >= 70:
             candidates.append((u_cor, f"🚩 {cor_line}", cor_prob))
 
     if is_asymmetric_under and p_o35 <= 30:
         cons_u35 = int(round(mkt_u35_p * 0.50 + max(p_u35, 76) * 0.50))
-        u_u35 = cons_u35 + 13 + (6 if is_locked_match else 0) + (5 if is_karavana else 0) + (5 if is_sterile_lig else 0) + _get_autonomous_market_learning_bonus("U35", lig_adi)
+        u35_cor_pen = -6 if extreme_cor_override else 0
+        u_u35 = cons_u35 + 13 + (6 if is_locked_match else 0) + (5 if is_karavana else 0) + (5 if is_sterile_lig else 0) + u35_cor_pen + _get_autonomous_market_learning_bonus("U35", lig_adi)
         candidates.append((u_u35, "Maç 3.5 Gol Alt", max(76, cons_u35)))
 
         if not whale_against_fav and (p_mkt_fav >= 54.0 or fav_val <= -150 or p_struct_fav >= 55.0) and p_shield >= 62:
             cons_dc_u35 = int(round(mkt_dc_p * 0.45 + max(p_shield, 70) * 0.55))
-            u_shd = cons_dc_u35 + 11 + (7 if is_extreme_one_sided_bus else 0) + (4 if is_one_sided_bus else 0) + _get_autonomous_market_learning_bonus("U35", lig_adi)
+            u_shd = cons_dc_u35 + 11 + (7 if is_extreme_one_sided_bus else 0) + (4 if is_one_sided_bus else 0) + u35_cor_pen + _get_autonomous_market_learning_bonus("U35", lig_adi)
             candidates.append((u_shd, f"{dc_tag} & 3.5 Alt", max(75, cons_dc_u35)))
 
     true_over_consensus = bool(
@@ -1722,9 +1759,15 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
 
     old_pick = pre_mem.get(match_key, pick)
     fav_info = ((r_data or {}).get("h") if fav_is_home else (r_data or {}).get("a")) or {}
+    opp_info = ((r_data or {}).get("a") if fav_is_home else (r_data or {}).get("h")) or {}
     rot_cnt = safe_int(fav_info.get("rot_cnt"), 0)
+    opp_rot_cnt = safe_int(opp_info.get("rot_cnt"), 0)
     fav_hist = fav_info.get("hist") or {}
     sub_rat = safe_int(fav_hist.get("sub_rat"), 72)
+
+    lig_u = str(lig_adi).upper()
+    is_open_lig = any(k in lig_u for k in ("PREMIER", "CHAMPIONSHIP", "İSKOÇYA", "EFL", "ENG", "SCO", "HOLLANDA", "ALMANYA", "NED", "GER"))
+    min_lam = min(safe_float(m4.get("lam_h_struct"), 1.35), safe_float(m4.get("lam_a_struct"), 1.05))
 
     if rot_cnt <= 2:
         conf = min(dq_max, conf + 1)
@@ -1735,12 +1778,14 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
         conf = max(45, conf - drop_pts)
         if f"🧬AğırRotasyon(-{drop_pts}p)" not in disp_odd:
             disp_odd += f" 🧬AğırRotasyon(-{drop_pts}p)"
-        if "Alt" in str(pick) and safe_int(m4.get("d_weak"), 20) >= 90:
-            pick = "Maç 1.5 Gol Üst"
-            conf = _calibrate_decision_score_by_market_and_band(max(75, p_o15), "O15", max_allowed_conf=dq_max)
+
+    # Dw >= 90 geçişi yalnızca açık/Britanya liglerinde veya iki takımın da gol beklentisi > 1.04 olduğunda devreye girer:
+    if "Alt" in str(pick) and safe_int(m4.get("d_weak"), 20) >= 90 and max(rot_cnt, opp_rot_cnt) >= 4 and (is_open_lig or min_lam > 1.04):
+        pick = "Maç 1.5 Gol Üst"
+        conf = _calibrate_decision_score_by_market_and_band(max(75, p_o15), "O15", max_allowed_conf=dq_max)
 
     if "Korner" in pick and inj_wing and p_cor < 60 and real_cor_sum < 11.4:
-        if ou_val <= 2.5 and safe_int(m4.get("d_weak"), 20) < 90:
+        if ou_val <= 2.5 and (safe_int(m4.get("d_weak"), 20) < 90 or (not is_open_lig and min_lam <= 1.04)):
             pick = f"{dc_tag} & 3.5 Alt" if p_shd >= 62 else "Maç 3.5 Gol Alt"
             conf = _calibrate_decision_score_by_market_and_band(max(74, p_u35), "U35", max_allowed_conf=dq_max)
         else:
@@ -1756,7 +1801,6 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
     evo_changed = (pick != old_pick)
     evo_str = f"🔄 {old_pick} ➔ ✅ {pick}" if evo_changed else "✅ Kadro Onaylı (Sabit)"
     return conf, pick, disp_odd, evo_str, prop_str, evo_changed
-
 
 # ==================== MODÜL 3D/6: CANLI MAÇ PUSU MOTORU VE FT HAKEM TESTLERİ ====================
 def analyze_live_pro(match_key, h_name, a_name, h_abbr, a_abbr, h_score, a_score, h_sh, a_sh, h_sot, a_sot, h_cor, a_cor, h_poss, m_int, add_min, h_mom, a_mom, fav_abbr, fav_val, ou_val, has_live_api_odds, r_data):
@@ -2015,6 +2059,30 @@ for _k, _v in list(MEM.setdefault("live_signals", {}).items()):
     if not isinstance(_v, dict) or "score_at" not in _v or "cor_at" not in _v:
         MEM["live_signals"].pop(_k, None)
 
+def _settle_live_signal_at_ft(sig_obj, h_sc, a_sc, tot_cor_ft):
+    if not isinstance(sig_obj, dict) or sig_obj.get("status") != "WAIT":
+        return False
+    st_type = sig_obj.get("sig_type", "GOAL")
+    if st_type == "GOAL":
+        sig_obj["status"] = "WON" if f"{h_sc}-{a_sc}" != str(sig_obj.get("score_at")) else "LOST"
+    elif st_type == "CORNER":
+        sig_obj["status"] = "WON" if (tot_cor_ft - safe_int(sig_obj.get("cor_at"), 0)) >= 3 else "LOST"
+    else:
+        sig_obj["status"] = "LOST"
+    return True
+
+# Daha önce bitip finished_cache içine girmiş ama WAIT olarak asılı kalmış canlı sinyalleri uzlaştır:
+_settled_dirty = False
+for _ls_k, _ls_v in list(MEM.get("live_signals", {}).items()):
+    if isinstance(_ls_v, dict) and _ls_v.get("status") == "WAIT":
+        _fin_m = MEM.get("finished_cache", {}).get(_ls_k)
+        if isinstance(_fin_m, dict) and "h_score" in _fin_m:
+            _tot_c = safe_int(_fin_m.get("h_cor"), 0) + safe_int(_fin_m.get("a_cor"), 0)
+            if _settle_live_signal_at_ft(_ls_v, safe_int(_fin_m.get("h_score"), 0), safe_int(_fin_m.get("a_score"), 0), _tot_c):
+                _settled_dirty = True
+if _settled_dirty:
+    save_persistent_store()
+
 _REPAIR_LOCKED_MAP = {
     "Eyupspor": ("Maç 1.5 Gol Üst", 84, True),
     "Necaxa": ("🚩 8.5 Korner Üst", 74, True),
@@ -2051,20 +2119,15 @@ for _hk in list(MEM.setdefault("history_scores", {}).keys()):
         MEM["history_scores"].pop(_hk, None)
 
 def _resolve_immutable_match_lock(locked_picks, match_key, match_title, state):
-    """
-    Sarsılmaz Kilit (Immutable Lock):
-    Model versiyonu (MODEL_VERSION) güncellense bile, daha önce kilitlenmiş bir maçın (özellikle başlayan/biten maçların)
-    tahmin kaydını kaybetmez ve maç başladıktan sonra maç önü tahmininin değişmesine izin vermez.
-    """
     curr_lock_id = f"{match_key}_{MODEL_VERSION}"
     if isinstance(locked_picks.get(curr_lock_id), dict):
         return curr_lock_id, locked_picks[curr_lock_id]
 
-    # Versiyon bağımsız geriye dönük kilit taraması:
     if isinstance(locked_picks.get(match_key), dict):
         return curr_lock_id, dict(locked_picks[match_key])
 
     for k_old in (
+        f"{match_key}_M4.8_MODULAR_QUALITY_PRO",
         f"{match_key}_M4.7_CONSENSUS_PRUNING_PRO",
         f"{match_key}_M4.6_WALD_ARMOR_PRO",
         f"{match_key}_M4.5_MULTI_MARKET_PRO",
@@ -2212,6 +2275,12 @@ else:
         slug, lig_adi, kademe, ev, comp, state, completed, clk, h_c, a_c, h_name, a_name, h_abbr, a_abbr, match_title, h_form, a_form, h_mom, a_mom, disp_odd, fav_abbr, fav_val, ou_val, has_live_api_odds, ev_id, odds_3way, kickoff_utc, eval_fav_abbr, eval_fav_val, eval_ou_val = item
         match_key = ev_id if ev_id else match_title
 
+        # Maç bitmişse ve daha önce fin_cache içine girmiş olsa bile asılı kalan canlı pusu varsa uzlaştır:
+        if state == "post" and match_key in MEM.get("live_signals", {}) and MEM["live_signals"][match_key].get("status") == "WAIT":
+            _h_sc_tmp, _a_sc_tmp = safe_int(h_c.get("score"), 0), safe_int(a_c.get("score"), 0)
+            _cor_tmp = get_stat(h_c, ["wonCorners", "corners"]) + get_stat(a_c, ["wonCorners", "corners"])
+            _settle_live_signal_at_ft(MEM["live_signals"][match_key], _h_sc_tmp, _a_sc_tmp, _cor_tmp)
+
         if state == "post" and match_key in fin_cache and isinstance(fin_cache[match_key], dict) and "won" in fin_cache[match_key]:
             continue
 
@@ -2238,7 +2307,6 @@ else:
         rec.setdefault("match_title", match_title)
 
         if state == "pre":
-            # Maç başlamadan önce (pre) güncel modelin en doğru kararını kaydet:
             rec["PRE_LINEUP"] = {
                 "pick": pick, "conf": conf, "prop": prop_str,
                 "locked_at": now_tr.strftime("%Y-%m-%d %H:%M")
@@ -2256,7 +2324,6 @@ else:
             locked_picks[lock_id] = rec
             locked_picks[match_key] = rec
         else:
-            # SARSILMAZ KİLİT: Maç başladığı an (in veya post) maç önü tahmini asla değiştirilemez!
             active_stage = rec.get("CONFIRMED_XI") or rec.get("PRE_LINEUP") or rec
             if active_stage.get("pick"):
                 pick = active_stage.get("pick", pick)
@@ -2287,7 +2354,6 @@ else:
         except Exception:
             m_time = "20:30"
 
-        # Maç bittikten sonra (post) TG barajının 2.5'a sıfırlanmaması için eval_ou_val kaydedilir:
         base_obj = {
             "ev_id": ev_id, "mac_key": match_key, "mac": match_title, "lig": lig_adi, "saat": m_time, "h_name": h_name, "a_name": a_name,
             "h_form": h_form or "—", "a_form": a_form or "—", "h_mom": h_mom, "a_mom": a_mom, "h_tac": h_tac, "a_tac": a_tac,
@@ -2315,6 +2381,10 @@ else:
             if not completed or not has_real_pre_lock:
                 continue
             tot_cor_ft = h_cor + a_cor
+            # Canlı Pusu Otomatik Kapanışı:
+            if match_key in MEM.get("live_signals", {}):
+                _settle_live_signal_at_ft(MEM["live_signals"][match_key], h_score, a_score, tot_cor_ft)
+
             if "Korner" in pick and tot_cor_ft == 0:
                 continue
             if "Kart" in pick and tot_cards == 0 and (h_sh + a_sh) == 0:
