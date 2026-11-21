@@ -553,7 +553,7 @@ def _fetch_af_real_odds(fid):
         return {}
     af_cache = MEM.setdefault("af_daily_cache", {"ts": 0.0, "fixtures": {}, "odds": {}})
     odds_map = af_cache.setdefault("odds", {})
-    if fid in odds_map and isinstance(odds_map[fid], dict) and ("u25_odd" in odds_map[fid] or "o25_odd" in odds_map[fid]):
+    if fid in odds_map and isinstance(odds_map[fid], dict) and odds_map[fid].get("_v") == 2:
         return odds_map[fid]
     if len(odds_map) >= 300:
         return odds_map.get(fid, {})
@@ -564,8 +564,7 @@ def _fetch_af_real_odds(fid):
     agg_lists = {}
 
     def _add_agg(k, val):
-        # Yanlış alternatif baremleri (@1.05 veya @6.17 gibi uç sapmaları) filtrele:
-        if 1.20 <= val <= 3.75:
+        if 1.24 <= val <= 3.40:
             agg_lists.setdefault(k, []).append(val)
 
     try:
@@ -640,6 +639,7 @@ def _fetch_af_real_odds(fid):
             parsed["af_bm_cnt"] = len(multi_bms)
     except Exception:
         pass
+    parsed["_v"] = 2
     odds_map[fid] = parsed
     return parsed
 
@@ -987,7 +987,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
     # ==================== MODÜL 3A/6: VERİ KALİTESİ (A/B/C/D) VE ÇAPRAZ PİYASA DEĞER MOTORU ====================
-MODEL_VERSION = "M5.0_FULL_SPECTRUM_SUPABASE_PRO"
+MODEL_VERSION = "M5.0.2_PRO_CLEAN_ODDS"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1887,15 +1887,27 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
             candidates.append((75, "Maç 1.5 Gol Üst", max(74, p_o15)))
 
     # M5.0.1 Düşük Oran (< @1.26) Veto Filtresi: @1.08-@1.15 gibi değersiz 1.5Ü yerine 2.5Ü / Takım 1.5Ü / Korner seçtirir!
+    # M5.0.2 Akıllı Oran Yükseltici: Oranı < @1.26 olan 1.5Ü adaylarını otomatik olarak 2.5Ü veya Takım 1.5Ü basamağına terfi ettirir!
     filtered_cands = []
     for c_u, c_pk, c_pr in candidates:
         d_odd = _lookup_direct_market_odd(c_pk, af_d, oa_d, is_home_fav)
         if 1.01 < d_odd < 1.26:
-            c_u -= 24  # @1.09 gibi çöp oranlı adayların karar puanını kır, değerli üst basamak (2.5Ü / TG 1.5Ü) öne geçsin!
-        elif d_odd >= 1.48 and ((c_pr / 100.0) - ((1.0 / d_odd) / 1.052)) >= 0.045:
-            c_u += 5   # Gerçek 💎VALUE oranlı pazarlara ekstra öncelik ver!
+            if c_pk == "Maç 1.5 Gol Üst":
+                if fav_lam >= 1.95 and p_team >= 60 and not is_locked_match:
+                    filtered_cands.append((p_team + 14, f"{fav_team} Takım Golü 1.5 Üst", max(68, p_team)))
+                elif p_o25 >= 56:
+                    o25_d = _lookup_direct_market_odd("Maç 2.5 Gol Üst", af_d, oa_d, is_home_fav)
+                    val_b = 6 if (o25_d >= 1.50 and ((p_o25 / 100.0) - ((1.0 / o25_d) / 1.052)) >= 0.04) else 0
+                    filtered_cands.append((p_o25 + 15 + val_b, "Maç 2.5 Gol Üst", max(64, p_o25)))
+                elif p_ht_o05 >= 72:
+                    filtered_cands.append((p_ht_o05 + 8, "İlk Yarı 0.5 Gol Üst", p_ht_o05))
+                continue  # Çöp oranlı (< @1.26) 1.5Ü tamamen elendi!
+            c_u -= 28
+        elif d_odd >= 1.45 and ((c_pr / 100.0) - ((1.0 / d_odd) / 1.052)) >= 0.045:
+            c_u += 6
         filtered_cands.append((c_u, c_pk, c_pr))
-    candidates = filtered_cands
+    if filtered_cands:
+        candidates = filtered_cands
     
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_u, best_pick, true_prob = candidates[0]
