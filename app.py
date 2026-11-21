@@ -611,7 +611,7 @@ def _fetch_af_real_odds(fid):
                             for v in vals:
                                 if str(v.get("value") or "") == "Over 1.5":
                                     _add_agg("a_o15_odd", safe_float(v.get("odd"), 0.0))
-                        elif "corners over/under" in bname or "total corners" in bname:
+                        elif bname in ("corners over/under", "total corners"):
                             for v in vals:
                                 val_s = str(v.get("value") or "")
                                 odd_v = safe_float(v.get("odd"), 0.0)
