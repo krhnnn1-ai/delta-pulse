@@ -276,9 +276,9 @@ _ODDS_API_SPORTS = [
 ]
 
 def _fetch_single_odds_sport(sp_key):
-    url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?regions=eu&markets=h2h,totals&oddsFormat=decimal&apiKey={ODDS_API_KEY}"
+    url = f"https://api.the-odds-api.com/v4/sports/{sp_key}/odds/?regions=eu,uk,us&markets=h2h,totals&oddsFormat=decimal&apiKey={ODDS_API_KEY}"
     try:
-        r = HTTP_SESSION.get(url, timeout=2.8)
+        r = HTTP_SESSION.get(url, timeout=3.2)
         if r.status_code == 200:
             return r.headers.get("x-requests-remaining"), (r.json() or [])
     except Exception:
@@ -288,7 +288,8 @@ def _fetch_single_odds_sport(sp_key):
 def _fetch_odds_api_global_map():
     now_ts = time.time()
     oa_cache = MEM.setdefault("odds_api_cache", {"ts": 0.0, "data": {}, "remaining_quota": "Bilinmiyor"})
-    if now_ts - safe_float(oa_cache.get("ts"), 0.0) < 2700.0 and oa_cache.get("data"):
+    sample_v = next(iter((oa_cache.get("data") or {}).values()), {})
+    if now_ts - safe_float(oa_cache.get("ts"), 0.0) < 2700.0 and oa_cache.get("data") and "eu_h" in sample_v:
         return oa_cache["data"]
     if not ODDS_API_KEY:
         return oa_cache.get("data") or {}
@@ -296,6 +297,10 @@ def _fetch_odds_api_global_map():
     new_map = dict(oa_cache.get("data") or {})
     with ThreadPoolExecutor(max_workers=8) as ex:
         results = list(ex.map(_fetch_single_odds_sport, _ODDS_API_SPORTS))
+
+    eu_keys = {"pinnacle", "marathonbet", "betclic", "unibet_eu", "1xbet", "winamax_fr"}
+    uk_keys = {"williamhill", "betfair_ex_uk", "skybet", "paddypower", "ladbrokes_uk", "virginbet"}
+    us_keys = {"draftkings", "fanduel", "betmgm", "caesars", "bovada", "betrivers"}
 
     for rem_q, items in results:
         if rem_q:
@@ -308,39 +313,80 @@ def _fetch_odds_api_global_map():
             bms = item.get("bookmakers") or []
             if not bms:
                 continue
+
             pin_bm = next((b for b in bms if "pinnacle" in str(b.get("key", "")).lower()), bms[0])
             h_odd, d_odd, a_odd = 0.0, 0.0, 0.0
-            for mkt in (pin_bm.get("markets") or []):
-                if mkt.get("key") == "h2h":
-                    for outc in (mkt.get("outcomes") or []):
-                        onm = _norm_team_key(outc.get("name"))
-                        prc = safe_float(outc.get("price"), 0.0)
-                        if "draw" in str(outc.get("name", "")).lower():
-                            d_odd = prc
-                        elif onm == h_tm or h_tm in onm or onm in h_tm:
-                            h_odd = prc
-                        else:
-                            a_odd = prc
+            reg_probs_h = {"eu": [], "uk": [], "us": [], "all": []}
+            o25_list, u25_list = [], []
+            bm_snapshots = {}
+
+            for b in bms:
+                bkey = str(b.get("key") or "").lower()
+                bh, bd, ba = 0.0, 0.0, 0.0
+                bo25, bu25 = 0.0, 0.0
+                for mkt in (b.get("markets") or []):
+                    mkey = mkt.get("key")
+                    if mkey == "h2h":
+                        for outc in (mkt.get("outcomes") or []):
+                            onm = _norm_team_key(outc.get("name"))
+                            prc = safe_float(outc.get("price"), 0.0)
+                            if "draw" in str(outc.get("name", "")).lower():
+                                bd = prc
+                            elif onm == h_tm or h_tm in onm or onm in h_tm:
+                                bh = prc
+                            else:
+                                ba = prc
+                    elif mkey == "totals":
+                        for outc in (mkt.get("outcomes") or []):
+                            pt = safe_float(outc.get("point"), 0.0)
+                            prc = safe_float(outc.get("price"), 0.0)
+                            nm_l = str(outc.get("name") or "").lower()
+                            if abs(pt - 2.5) < 0.05 and prc > 1.02:
+                                if "over" in nm_l:
+                                    bo25 = prc
+                                    o25_list.append(prc)
+                                elif "under" in nm_l:
+                                    bu25 = prc
+                                    u25_list.append(prc)
+
+                if bh > 1.01 and bd > 1.01 and ba > 1.01:
+                    inv_b = (1.0 / bh) + (1.0 / bd) + (1.0 / ba)
+                    ph_b = round(((1.0 / bh) / inv_b) * 100.0, 1)
+                    reg_probs_h["all"].append(ph_b)
+                    if bkey in eu_keys:
+                        reg_probs_h["eu"].append(ph_b)
+                    elif bkey in uk_keys:
+                        reg_probs_h["uk"].append(ph_b)
+                    elif bkey in us_keys:
+                        reg_probs_h["us"].append(ph_b)
+                    if len(bm_snapshots) < 8:
+                        bm_snapshots[bkey] = {"h": bh, "d": bd, "a": ba, "o25": bo25, "u25": bu25}
+                    if b == pin_bm:
+                        h_odd, d_odd, a_odd = bh, bd, ba
+
             if h_odd > 1.01 and d_odd > 1.01 and a_odd > 1.01:
                 inv_s = (1.0 / h_odd) + (1.0 / d_odd) + (1.0 / a_odd)
                 nv_h = round(((1.0 / h_odd) / inv_s) * 100.0, 1)
                 nv_d = round(((1.0 / d_odd) / inv_s) * 100.0, 1)
                 nv_a = round(((1.0 / a_odd) / inv_s) * 100.0, 1)
-                avg_h_list = []
-                for b in bms:
-                    for mkt in (b.get("markets") or []):
-                        if mkt.get("key") == "h2h":
-                            for outc in (mkt.get("outcomes") or []):
-                                onm = _norm_team_key(outc.get("name"))
-                                if onm == h_tm or h_tm in onm:
-                                    avg_h_list.append(safe_float(outc.get("price"), 0.0))
-                avg_h = sum(avg_h_list) / max(1, len(avg_h_list)) if avg_h_list else h_odd
-                pin_sharp_h = round(((1.0 / h_odd) - (1.0 / max(1.01, avg_h))) * 100.0, 1)
+                avg_ph = sum(reg_probs_h["all"]) / max(1, len(reg_probs_h["all"]))
+                pin_sharp_h = round(nv_h - avg_ph, 1)
+
+                eu_m = round(sum(reg_probs_h["eu"]) / len(reg_probs_h["eu"]), 1) if reg_probs_h["eu"] else nv_h
+                uk_m = round(sum(reg_probs_h["uk"]) / len(reg_probs_h["uk"]), 1) if reg_probs_h["uk"] else round(avg_ph, 1)
+                us_m = round(sum(reg_probs_h["us"]) / len(reg_probs_h["us"]), 1) if reg_probs_h["us"] else round(avg_ph, 1)
+                reg_spread = round(max(eu_m, uk_m, us_m) - min(eu_m, uk_m, us_m), 1)
+
                 new_map[f"{h_tm}_{a_tm}"] = {
                     "dec_h": h_odd, "dec_d": d_odd, "dec_a": a_odd,
                     "nv_h": nv_h, "nv_d": nv_d, "nv_a": nv_a,
                     "pin_sharp_h": pin_sharp_h, "pin_sharp_a": -pin_sharp_h,
-                    "bm_title": str(pin_bm.get("title") or "Pinnacle/EU")
+                    "eu_h": eu_m, "uk_h": uk_m, "us_h": us_m,
+                    "reg_spread": reg_spread, "bm_count": len(reg_probs_h["all"]),
+                    "o25_dec": round(sum(o25_list) / len(o25_list), 2) if o25_list else 0.0,
+                    "u25_dec": round(sum(u25_list) / len(u25_list), 2) if u25_list else 0.0,
+                    "books": bm_snapshots,
+                    "bm_title": str(pin_bm.get("title") or "Pinnacle/Global")
                 }
     oa_cache["ts"] = now_ts
     oa_cache["data"] = new_map
@@ -398,34 +444,50 @@ def _fetch_af_real_odds(fid):
         return {}
     af_cache = MEM.setdefault("af_daily_cache", {"ts": 0.0, "fixtures": {}, "odds": {}})
     odds_map = af_cache.setdefault("odds", {})
-    if fid in odds_map:
+    if fid in odds_map and "u25_odd" in (odds_map[fid] or {}):
         return odds_map[fid]
-    if len(odds_map) >= 48:
-        return {}
+    if len(odds_map) >= 64:
+        return odds_map.get(fid, {})
 
     headers = {"x-apisports-key": API_FOOTBALL_KEY}
     parsed = {}
+    multi_bms = {}
     try:
-        r = HTTP_SESSION.get(f"https://v3.football.api-sports.io/odds?fixture={fid}", headers=headers, timeout=2.6)
+        r = HTTP_SESSION.get(f"https://v3.football.api-sports.io/odds?fixture={fid}", headers=headers, timeout=2.8)
         if r.status_code == 200:
             resp = r.json().get("response") or []
             if resp:
                 bms = (resp[0].get("bookmakers") or [])
-                for bm in bms[:3]:
+                for bm in bms[:6]:
+                    bm_nm = str(bm.get("name") or "Book").strip()
+                    bm_rec = {}
                     for bet in (bm.get("bets") or []):
                         bname = str(bet.get("name") or "").lower()
                         vals = bet.get("values") or []
-                        if "goals over/under" in bname and "first half" not in bname:
+                        if "goals over/under" in bname and "first half" not in bname and "second half" not in bname:
                             for v in vals:
                                 val_s = str(v.get("value") or "")
-                                if val_s == "Over 1.5":
-                                    parsed.setdefault("o15_odd", safe_float(v.get("odd"), 0.0))
-                                elif val_s == "Over 2.5":
-                                    parsed.setdefault("o25_odd", safe_float(v.get("odd"), 0.0))
-                        elif "both teams score" in bname:
+                                odd_v = safe_float(v.get("odd"), 0.0)
+                                if val_s == "Over 1.5": parsed.setdefault("o15_odd", odd_v); bm_rec["o15"] = odd_v
+                                elif val_s == "Under 1.5": parsed.setdefault("u15_odd", odd_v)
+                                elif val_s == "Over 2.5": parsed.setdefault("o25_odd", odd_v); bm_rec["o25"] = odd_v
+                                elif val_s == "Under 2.5": parsed.setdefault("u25_odd", odd_v); bm_rec["u25"] = odd_v
+                                elif val_s == "Over 3.5": parsed.setdefault("o35_odd", odd_v)
+                                elif val_s == "Under 3.5": parsed.setdefault("u35_odd", odd_v); bm_rec["u35"] = odd_v
+                        elif "goals over/under first half" in bname or ("first half" in bname and "over/under" in bname):
                             for v in vals:
-                                if str(v.get("value") or "").lower() == "yes":
-                                    parsed.setdefault("btts_odd", safe_float(v.get("odd"), 0.0))
+                                val_s = str(v.get("value") or "")
+                                odd_v = safe_float(v.get("odd"), 0.0)
+                                if val_s == "Over 0.5": parsed.setdefault("ht_o05_odd", odd_v)
+                                elif val_s == "Under 0.5": parsed.setdefault("ht_u05_odd", odd_v)
+                                elif val_s == "Over 1.5": parsed.setdefault("ht_o15_odd", odd_v)
+                                elif val_s == "Under 1.5": parsed.setdefault("ht_u15_odd", odd_v)
+                        elif "both teams score" in bname and "half" not in bname:
+                            for v in vals:
+                                val_l = str(v.get("value") or "").lower()
+                                odd_v = safe_float(v.get("odd"), 0.0)
+                                if val_l == "yes": parsed.setdefault("btts_odd", odd_v); bm_rec["btts_y"] = odd_v
+                                elif val_l == "no": parsed.setdefault("btts_no_odd", odd_v); bm_rec["btts_n"] = odd_v
                         elif "total - home" in bname:
                             for v in vals:
                                 if str(v.get("value") or "") == "Over 1.5":
@@ -437,15 +499,19 @@ def _fetch_af_real_odds(fid):
                         elif "corners over/under" in bname or "total corners" in bname:
                             for v in vals:
                                 val_s = str(v.get("value") or "")
-                                if "Over 8.5" in val_s:
-                                    parsed.setdefault("cor85_odd", safe_float(v.get("odd"), 0.0))
-                                elif "Over 9.5" in val_s:
-                                    parsed.setdefault("cor95_odd", safe_float(v.get("odd"), 0.0))
+                                odd_v = safe_float(v.get("odd"), 0.0)
+                                if "Over 8.5" in val_s: parsed.setdefault("cor85_odd", odd_v)
+                                elif "Under 8.5" in val_s: parsed.setdefault("cor_u85_odd", odd_v)
+                                elif "Over 9.5" in val_s: parsed.setdefault("cor95_odd", odd_v)
+                                elif "Under 9.5" in val_s: parsed.setdefault("cor_u95_odd", odd_v)
+                    if bm_rec:
+                        multi_bms[bm_nm] = bm_rec
+        if multi_bms:
+            parsed["multi_books"] = multi_bms
     except Exception:
         pass
     odds_map[fid] = parsed
     return parsed
-
 # ==================== MODÜL 2B/6: EWMA-5 GEÇMİŞ MAÇ İSTATİSTİK MOTORU ====================
 def _calc_ewma(vals, default_val):
     if not vals:
