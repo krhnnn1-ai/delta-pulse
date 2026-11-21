@@ -802,7 +802,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
 # ==================== MODÜL 3A/6: VERİ KALİTESİ (A/B/C/D) VE PİYASA ORAN MOTORU ====================
-MODEL_VERSION = "M4.8.2_MULTI_LEAGUE_CHRONO_PRO"
+MODEL_VERSION = "M4.8.3_CORNER_SHIELD_AK_PRO"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1572,23 +1572,39 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
     candidates = []
 
-    min_cor_req = 11.8 if is_arg_or_it2 else 10.6
-    both_sides_cor_ok = (min_side_cor >= (4.5 if is_arg_or_it2 else 4.0) or real_cor >= 12.2)
-    cor_volume_ok = (sh_sum >= 22.0 or wing_asym or real_cor >= 11.6)
-    extreme_cor_override = bool(real_cor >= 13.0 and cor_prob >= 74 and not inj_wing and ou_val >= 2.5 and not is_arg_or_it2)
+    # M4.8.3 Tek Taraflı / Ağır Favori Korner Tuzağı Kalkanı (Bayern 5-0, Troyes 7-0, Almere 1-2 Koruması):
+    one_sided_cor_trap = bool(
+        fav_val <= -200
+        or is_blowout
+        or min_lam < 1.08
+        or abs(lam_h - lam_a) >= 0.72
+        or min_side_cor < 4.5
+    )
+    min_cor_req = 12.2 if is_arg_or_it2 else 11.6
+    both_sides_cor_ok = (min_side_cor >= 4.5 and not one_sided_cor_trap)
+    cor_volume_ok = (sh_sum >= 22.5 or (wing_asym and real_cor >= 12.0))
+    extreme_cor_override = bool(
+        real_cor >= 13.2
+        and min_side_cor >= 4.8
+        and not one_sided_cor_trap
+        and cor_prob >= 76
+        and not inj_wing
+        and ou_val >= 2.5
+        and not is_arg_or_it2
+    )
 
-    if both_sides_cor_ok and cor_volume_ok and (not inj_wing or real_cor >= 11.4) and real_cor >= min_cor_req and not is_arg_or_it2:
+    if both_sides_cor_ok and cor_volume_ok and not inj_wing and real_cor >= min_cor_req and not is_arg_or_it2:
         u_cor = cor_prob + _get_autonomous_market_learning_bonus("COR", lig_adi)
-        if real_cor >= 11.5:
-            u_cor += 7
+        if real_cor >= 12.4:
+            u_cor += 5
         if extreme_cor_override:
-            u_cor += 16  # K5 >= 13.0 ekstrem korner hacminde duran top karambol riskine karşı korner önceliği
-        if cor_prob >= 70:
+            u_cor += 12
+        if cor_prob >= 74:
             candidates.append((u_cor, f"🚩 {cor_line}", cor_prob))
 
-    if is_asymmetric_under and p_o35 <= 30:
+    if is_asymmetric_under and p_o35 <= 32:
         cons_u35 = int(round(mkt_u35_p * 0.50 + max(p_u35, 76) * 0.50))
-        u35_cor_pen = -6 if extreme_cor_override else 0
+        u35_cor_pen = -5 if extreme_cor_override else 0
         u_u35 = cons_u35 + 13 + (6 if is_locked_match else 0) + (5 if is_karavana else 0) + (5 if is_sterile_lig else 0) + u35_cor_pen + _get_autonomous_market_learning_bonus("U35", lig_adi)
         candidates.append((u_u35, "Maç 3.5 Gol Alt", max(76, cons_u35)))
 
@@ -1629,7 +1645,7 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         candidates.append((u_card, f"🟨 {card_line}", card_prob))
 
     if not candidates:
-        if ou_val <= 2.5 and not uk_or_heavy_fav_collapse:
+        if ou_val <= 2.5 and not uk_or_heavy_fav_collapse and (p_o35 <= 33 or min_lam <= 1.15):
             candidates.append((76, "Maç 3.5 Gol Alt", max(75, p_u35)))
         else:
             candidates.append((75, "Maç 1.5 Gol Üst", max(74, p_o15)))
@@ -2104,8 +2120,6 @@ for _ls_k, _ls_v in list(MEM.get("live_signals", {}).items()):
             _tot_c = safe_int(_fin_m.get("h_cor"), 0) + safe_int(_fin_m.get("a_cor"), 0)
             if _settle_live_signal_at_ft(_ls_v, safe_int(_fin_m.get("h_score"), 0), safe_int(_fin_m.get("a_score"), 0), _tot_c):
                 _settled_dirty = True
-if _settled_dirty:
-    save_persistent_store()
 
 _REPAIR_LOCKED_MAP = {
     "Eyupspor": ("Maç 1.5 Gol Üst", 84, True),
@@ -2124,6 +2138,23 @@ for _bad_k in list(MEM.setdefault("finished_cache", {}).keys()):
         MEM["finished_cache"].pop(_bad_k, None)
         MEM.setdefault("history_scores", {}).pop(_bad_k, None)
         continue
+
+    # Post aşamasında ESPN oranları silindiği için AK bayrağı düşen yüksek güvenli (conf >= 78 & Q:A/B) maçları onar:
+    _fm_conf = safe_int(_fm.get("conf"), 70)
+    _fm_m4 = _fm.get("m4") or {}
+    _fm_lck = MEM.get("locked_picks", {}).get(_bad_k) or {}
+    _had_real_dq = bool(
+        (_fm_conf >= 76)  # Q:C tavanı %75 olduğu için %76+ kilitlenmiş her maç maç önünde kesin Q:A veya Q:B idi!
+        or _fm_lck.get("CONFIRMED_XI")
+        or str((_fm_m4.get("dq") or {}).get("grade") or "") in ("A", "B")
+    )
+    _true_ak = bool("Ana Kasa" in str(_fm.get("pick", "")) or (_fm_conf >= 78 and _had_real_dq))
+    if _fm.get("is_ak") != _true_ak:
+        _fm["is_ak"] = _true_ak
+        if _bad_k in MEM.get("history_scores", {}) and isinstance(MEM["history_scores"][_bad_k], dict):
+            MEM["history_scores"][_bad_k]["ak"] = _true_ak
+        _settled_dirty = True
+
     for _r_team, (_r_pk, _r_cf, _r_won) in _REPAIR_LOCKED_MAP.items():
         if _r_team.lower() == str(_fm.get("h_name", "")).strip().lower():
             _fm["pick"] = _r_pk
@@ -2138,6 +2169,9 @@ for _bad_k in list(MEM.setdefault("finished_cache", {}).keys()):
                     "brier": _b_val, "mkt": _classify_pick_market_type(_r_pk)
                 })
 
+if _settled_dirty:
+    save_persistent_store()
+
 for _hk in list(MEM.setdefault("history_scores", {}).keys()):
     if _hk not in MEM.get("finished_cache", {}):
         MEM["history_scores"].pop(_hk, None)
@@ -2151,6 +2185,7 @@ def _resolve_immutable_match_lock(locked_picks, match_key, match_title, state):
         return curr_lock_id, dict(locked_picks[match_key])
 
     for k_old in (
+        f"{match_key}_M4.8.2_MULTI_LEAGUE_CHRONO_PRO",
         f"{match_key}_M4.8.1_MODULAR_CALIBRATED_PRO",
         f"{match_key}_M4.8_MODULAR_QUALITY_PRO",
         f"{match_key}_M4.7_CONSENSUS_PRUNING_PRO",
@@ -2168,8 +2203,6 @@ def _resolve_immutable_match_lock(locked_picks, match_key, match_title, state):
             return curr_lock_id, dict(v_any)
 
     return curr_lock_id, {}
-
-
 # ==================== MODÜL 4C/6: BÜLTEN MOTORU, FT HAKEM VE DP-MİNİ ÜRETİCİSİ ====================
 now_tr = datetime.now(TR_TZ)
 now_epoch = time.time()
@@ -2334,21 +2367,23 @@ else:
         rec.setdefault("model_version", MODEL_VERSION)
         rec.setdefault("match_title", match_title)
 
+        curr_dq_grade = str((m4.get("dq") or {}).get("grade") or "B")
         if state == "pre":
             rec["PRE_LINEUP"] = {
-                "pick": pick, "conf": conf, "prop": prop_str,
+                "pick": pick, "conf": conf, "prop": prop_str, "dq_grade": curr_dq_grade,
                 "locked_at": now_tr.strftime("%Y-%m-%d %H:%M")
             }
             if is_off:
                 rec["CONFIRMED_XI"] = {
-                    "pick": pick, "conf": conf, "prop": prop_str,
+                    "pick": pick, "conf": conf, "prop": prop_str, "dq_grade": "A" if curr_dq_grade in ("A", "B") else curr_dq_grade,
                     "locked_at": now_tr.strftime("%Y-%m-%d %H:%M")
                 }
             active_stage = rec.get("CONFIRMED_XI") if is_off else rec.get("PRE_LINEUP")
             pick = active_stage.get("pick", pick)
             conf = safe_int(active_stage.get("conf"), conf)
             prop_str = active_stage.get("prop", prop_str)
-            rec.update({"pick": pick, "conf": conf, "prop": prop_str, "stage": "CONFIRMED_XI" if is_off else "PRE_LINEUP"})
+            locked_dq = str(active_stage.get("dq_grade") or curr_dq_grade)
+            rec.update({"pick": pick, "conf": conf, "prop": prop_str, "dq_grade": locked_dq, "stage": "CONFIRMED_XI" if is_off else "PRE_LINEUP"})
             locked_picks[lock_id] = rec
             locked_picks[match_key] = rec
         else:
@@ -2359,7 +2394,8 @@ else:
                 prop_str = active_stage.get("prop", prop_str)
             elif match_key in MEM.get("pre_lineup_memory", {}):
                 pick = MEM["pre_lineup_memory"][match_key]
-            rec.update({"pick": pick, "conf": conf, "prop": prop_str, "stage": "LIVE" if state == "in" else "POST_MATCH"})
+            locked_dq = str(active_stage.get("dq_grade") or rec.get("dq_grade") or ("A" if conf >= 76 else curr_dq_grade))
+            rec.update({"pick": pick, "conf": conf, "prop": prop_str, "dq_grade": locked_dq, "stage": "LIVE" if state == "in" else "POST_MATCH"})
             locked_picks[lock_id] = rec
             locked_picks[match_key] = rec
 
@@ -2445,7 +2481,7 @@ else:
             else:
                 won = evaluate_ft_result(pick, h_name, a_name, h_score, a_score, ht_h_score, ht_a_score)
 
-            dq_grade = str((m4.get("dq") or {}).get("grade") or "B")
+            dq_grade = str(rec.get("dq_grade") or ("A" if (conf >= 76 or rec.get("CONFIRMED_XI")) else (m4.get("dq") or {}).get("grade") or "B"))
             is_ak = ("Ana Kasa" in pick or (conf >= 78 and dq_grade in ("A", "B")))
             brier_val = round(((conf / 100.0) - (1.0 if won else 0.0)) ** 2, 3)
 
