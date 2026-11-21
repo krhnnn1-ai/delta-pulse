@@ -564,7 +564,8 @@ def _fetch_af_real_odds(fid):
     agg_lists = {}
 
     def _add_agg(k, val):
-        if val > 1.02:
+        # Yanlış alternatif baremleri (@1.05 veya @6.17 gibi uç sapmaları) filtrele:
+        if 1.20 <= val <= 3.75:
             agg_lists.setdefault(k, []).append(val)
 
     try:
@@ -1885,6 +1886,17 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         else:
             candidates.append((75, "Maç 1.5 Gol Üst", max(74, p_o15)))
 
+    # M5.0.1 Düşük Oran (< @1.26) Veto Filtresi: @1.08-@1.15 gibi değersiz 1.5Ü yerine 2.5Ü / Takım 1.5Ü / Korner seçtirir!
+    filtered_cands = []
+    for c_u, c_pk, c_pr in candidates:
+        d_odd = _lookup_direct_market_odd(c_pk, af_d, oa_d, is_home_fav)
+        if 1.01 < d_odd < 1.26:
+            c_u -= 24  # @1.09 gibi çöp oranlı adayların karar puanını kır, değerli üst basamak (2.5Ü / TG 1.5Ü) öne geçsin!
+        elif d_odd >= 1.48 and ((c_pr / 100.0) - ((1.0 / d_odd) / 1.052)) >= 0.045:
+            c_u += 5   # Gerçek 💎VALUE oranlı pazarlara ekstra öncelik ver!
+        filtered_cands.append((c_u, c_pk, c_pr))
+    candidates = filtered_cands
+    
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_u, best_pick, true_prob = candidates[0]
     m4["decision_score"] = best_u
