@@ -992,7 +992,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
     # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.1_IDDAA_OPEN"
+MODEL_VERSION = "M5.1.2_IDDAA_STRICT"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1956,80 +1956,83 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         else:
             candidates.append((76, "Maç 2.5 Gol Üst" if p_o25 >= 58 else "Maç 1.5 Gol Üst", max(65, p_o25 if p_o25 >= 58 else p_o15)))
 
-    # M5.1 İDDAA KAPALI BAREM (< @1.24 Oransız Pazar) VE DÜŞÜK ORAN ENGELLEYİCİ
+    # M5.1.2 İDDAA KESİN ORAN SÜZGECİ (Terfi Adayları Dahil Baraj Altı Oran Yasak)
     odd_mode = str(MEM.get("odd_mode", "IDDAA_130"))
     min_tr_odd = get_min_odd_threshold()
     filtered_cands = []
     seen_pks = set()
 
+    def _get_cand_chk_odd(pk_lbl, pr_val):
+        eu_o = _lookup_direct_market_odd(pk_lbl, af_d, oa_d, is_home_fav)
+        if ("Korner" in pk_lbl or "Kart" in pk_lbl) and eu_o <= 1.25:
+            eu_o = 0.0
+        return estimate_iddaa_odd(pk_lbl, eu_o, pr_val) if odd_mode != "GLOBAL" else eu_o
+
     def _push_cand(u_sc, pk_lbl, pr_val):
-        if pk_lbl not in seen_pks:
-            seen_pks.add(pk_lbl)
-            filtered_cands.append((u_sc, pk_lbl, pr_val))
+        if pk_lbl in seen_pks:
+            return False
+        c_odd = _get_cand_chk_odd(pk_lbl, pr_val)
+        if c_odd > 1.01 and c_odd < min_tr_odd:
+            return False
+        ev_c = (pr_val / 100.0) * c_odd - 1.0 if c_odd > 1.05 else 0.0
+        if c_odd >= min_tr_odd and ev_c >= 0.04:
+            u_sc += 6
+        seen_pks.add(pk_lbl)
+        filtered_cands.append((u_sc, pk_lbl, pr_val))
+        return True
 
     for c_u, c_pk, c_pr in candidates:
-        d_odd = _lookup_direct_market_odd(c_pk, af_d, oa_d, is_home_fav)
-        if ("Korner" in c_pk or "Kart" in c_pk) and d_odd <= 1.25:
-            d_odd = 0.0  # Hatalı alt barem API sızıntısını (@1.05 vb.) temizle
-        chk_odd = estimate_iddaa_odd(c_pk, d_odd, c_pr) if odd_mode != "GLOBAL" else d_odd
+        chk_odd = _get_cand_chk_odd(c_pk, c_pr)
 
         if chk_odd > 1.01 and chk_odd < min_tr_odd:
             if c_pk == "Maç 1.5 Gol Üst":
-                # İddaa'da 1.5 Üst kapalı veya < @1.30 ise AÇIK pazarlara zorunlu terfi:
                 if not whale_against_fav and (p_mkt_fav >= 53.0 or fav_val <= -140) and p_dc_o15 >= 64:
                     _push_cand(p_dc_o15 + 16, f"{dc_tag} & 1.5 Gol Üst", max(67, p_dc_o15))
-                if fav_lam >= 1.95 and p_team >= 61 and not is_locked_match:
-                    _push_cand(p_team + 16, f"{fav_team} Takım Golü 1.5 Üst", max(67, p_team))
+                if fav_lam >= 1.90 and p_team >= 58 and not is_locked_match:
+                    _push_cand(p_team + 16, f"{fav_team} Takım Golü 1.5 Üst", max(64, p_team))
                 if p_o25 >= 50:
-                    o25_eu = _lookup_direct_market_odd("Maç 2.5 Gol Üst", af_d, oa_d, is_home_fav)
-                    o25_tr = estimate_iddaa_odd("Maç 2.5 Gol Üst", o25_eu, p_o25)
-                    if o25_tr >= min_tr_odd:
-                        _push_cand(p_o25 + 17, "Maç 2.5 Gol Üst", max(62, p_o25))
-                    else:
-                        # Hollanda 2. Lig vb. 2.5 Üst bile kapalı/düşükse 3.5 Üst veya KG Var seç:
-                        _push_cand(max(58, p_o35) + 18, "Maç 3.5 Gol Üst", max(58, p_o35))
+                    if not _push_cand(p_o25 + 17, "Maç 2.5 Gol Üst", max(62, p_o25)):
+                        _push_cand(max(55, p_o35) + 18, "Maç 3.5 Gol Üst", max(55, p_o35))
                 if p_btts_yes >= 54 and min_lam >= 1.12 and not is_locked_match:
-                    _push_cand(p_btts_yes + 16, "Karşılıklı Gol Var", max(62, p_btts_yes))
+                    _push_cand(p_btts_yes + 16, "Karşılıklı Gol Var", max(60, p_btts_yes))
                 if p_ht_o05 >= 68:
-                    ht_eu = _lookup_direct_market_odd("İlk Yarı 0.5 Gol Üst", af_d, oa_d, is_home_fav)
-                    ht_tr = estimate_iddaa_odd("İlk Yarı 0.5 Gol Üst", ht_eu, p_ht_o05)
-                    if ht_tr >= 1.26:
-                        _push_cand(p_ht_o05 + 12, "İlk Yarı 0.5 Gol Üst", p_ht_o05)
-                continue  # İddaa'da oranı olmayan 1.5Ü tamamen silindi!
-
-            if c_pk == "Maç 2.5 Gol Üst":
-                # Jong Ajax gibi 2.5 Üst'ün bile @1.18 kaldığı maçlarda 3.5 Üst veya KG Var'a geç:
-                if fav_lam >= 1.95 and p_team >= 62:
-                    _push_cand(p_team + 17, f"{fav_team} Takım Golü 1.5 Üst", max(66, p_team))
-                if p_btts_yes >= 60:
-                    _push_cand(p_btts_yes + 16, "Karşılıklı Gol Var", p_btts_yes)
-                _push_cand(max(56, p_o35) + 15, "Maç 3.5 Gol Üst", max(58, p_o35))
+                    _push_cand(p_ht_o05 + 12, "İlk Yarı 0.5 Gol Üst", p_ht_o05)
                 continue
 
-            if c_pk == "Maç 3.5 Gol Alt":
+            if c_pk == "Maç 2.5 Gol Üst":
+                if fav_lam >= 1.90 and p_team >= 58:
+                    _push_cand(p_team + 17, f"{fav_team} Takım Golü 1.5 Üst", max(64, p_team))
+                if p_btts_yes >= 56:
+                    _push_cand(p_btts_yes + 16, "Karşılıklı Gol Var", p_btts_yes)
+                _push_cand(max(55, p_o35) + 18, "Maç 3.5 Gol Üst", max(55, p_o35))
+                continue
+
+            if c_pk in ("Maç 3.5 Gol Alt", "İlk Yarı 1.5 Gol Alt"):
                 if not whale_against_fav and (p_mkt_fav >= 52.0 or fav_val <= -135) and p_shield >= 62:
                     _push_cand(p_shield + 16, f"{dc_tag} & 3.5 Alt", max(69, p_shield))
                 if p_u25 >= 52 and lam_tot <= 2.50:
-                    _push_cand(p_u25 + 16, "Maç 2.5 Gol Alt", max(62, p_u25))
+                    _push_cand(p_u25 + 16, "Maç 2.5 Gol Alt", max(60, p_u25))
                 if p_ht_u15 >= 70:
                     _push_cand(p_ht_u15 + 12, "İlk Yarı 1.5 Gol Alt", p_ht_u15)
-                if p_btts_no >= 55 and min_lam <= 1.00:
-                    _push_cand(p_btts_no + 14, "Karşılıklı Gol Yok", max(62, p_btts_no))
+                if p_btts_no >= 52 and min_lam <= 1.05:
+                    _push_cand(p_btts_no + 14, "Karşılıklı Gol Yok", max(58, p_btts_no))
                 continue
 
-            continue  # Eşik altı (veya İddaa'da kapalı) hiçbir aday listeye giremez!
+            continue
 
-        ev_chk = (c_pr / 100.0) * chk_odd - 1.0 if chk_odd > 1.05 else 0.0
-        if chk_odd >= min_tr_odd and ev_chk >= 0.04:
-            c_u += 6
         _push_cand(c_u, c_pk, c_pr)
 
     if not filtered_cands:
-        # Hiçbir aday kalmazsa İddaa'da her zaman açık olan 2.5 Alt/Üst veya KG Var seç:
-        if lam_tot >= 2.65:
-            filtered_cands.append((74, "Karşılıklı Gol Var" if min_lam >= 1.20 else "Maç 2.5 Gol Üst", max(62, p_btts_yes if min_lam >= 1.20 else p_o25)))
-        else:
-            filtered_cands.append((74, "Maç 2.5 Gol Alt", max(62, p_u25)))
+        rescue_ladder = (
+            [(75, f"{fav_team} Takım Golü 1.5 Üst", max(60, p_team)), (74, "Maç 3.5 Gol Üst", max(54, p_o35)), (73, "Maç 2.5 Gol Üst", max(58, p_o25)), (72, "Karşılıklı Gol Var", max(56, p_btts_yes))]
+            if lam_tot >= 2.60 else
+            [(75, "Maç 2.5 Gol Alt", max(56, p_u25)), (74, "Karşılıklı Gol Yok", max(54, p_btts_no)), (73, "Karşılıklı Gol Var", max(54, p_btts_yes))]
+        )
+        for r_u, r_pk, r_pr in rescue_ladder:
+            if _push_cand(r_u, r_pk, r_pr):
+                break
+        if not filtered_cands:
+            filtered_cands.append((72, "Maç 3.5 Gol Üst" if lam_tot >= 2.60 else "Maç 2.5 Gol Alt", max(55, p_o35 if lam_tot >= 2.60 else p_u25)))
 
     candidates = filtered_cands
 
