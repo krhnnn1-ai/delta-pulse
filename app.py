@@ -3244,7 +3244,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
             _render_match_share_box(m, "post", idx_f, is_unlocked)
 
 
-# ==================== MODÜL 6/6: PATRON KOMUTA, SUPABASE BULUT KONTROLÜ VE TELEMETRİ MERKEZİ ====================
+# ==================== MODÜL 6/6: PATRON KOMUTA, İDDAA MOD ŞALTERİ VE TELEMETRİ MERKEZİ ====================
 load_persistent_store()
 
 url_ref = str(st.query_params.get("ref") or "").strip().upper()
@@ -3280,7 +3280,7 @@ def run_m50_spectrum_audit(fin_list):
         return None
     mkt_stats = {}
     spectrum_potentials = {
-        "MS 3.5 Alt": [0, 0], "MS 2.5 Alt": [0, 0], "MS 1.5 Üst": [0, 0],
+        "MS 3.5 Alt": [0, 0], "MS 2.5 Alt": [0, 0], "MS 2.5 Üst": [0, 0], "MS 1.5 Üst": [0, 0],
         "KG Yok": [0, 0], "KG Var": [0, 0], "9.5 Korner Alt": [0, 0], "8.5 Korner Üst": [0, 0]
     }
     wins, ak_w, ak_t = 0, 0, 0
@@ -3312,6 +3312,8 @@ def run_m50_spectrum_audit(fin_list):
         if tg <= 3: spectrum_potentials["MS 3.5 Alt"][0] += 1
         spectrum_potentials["MS 2.5 Alt"][1] += 1
         if tg <= 2: spectrum_potentials["MS 2.5 Alt"][0] += 1
+        spectrum_potentials["MS 2.5 Üst"][1] += 1
+        if tg >= 3: spectrum_potentials["MS 2.5 Üst"][0] += 1
         spectrum_potentials["MS 1.5 Üst"][1] += 1
         if tg >= 2: spectrum_potentials["MS 1.5 Üst"][0] += 1
         spectrum_potentials["KG Yok"][1] += 1
@@ -3344,7 +3346,7 @@ def render_x_and_telegram_command_center():
             st.success("✅ Telegram ayarları Supabase Pro bulutuna kaydedildi!")
 
     ldg = MEM.get("DATA_LEDGER") or {"karne_str": "0/0", "ak_str": "0/0", "lp_str": "0/0"}
-    t_global = f"⚡ DELTA-PULSE AI M5.0 LIVE TELEMETRY!\n🏆 Verified Record: {ldg['karne_str']}\n💎 Main Safe: {ldg['ak_str']} | 🔥 Live Ambush: {ldg['lp_str']}\n🌍 28-Market Spectrum & 4-Continent Cross-Book Engine!\n👉 {APP_PUBLIC_URL}"
+    t_global = f"⚡ DELTA-PULSE AI M5.1 LIVE TELEMETRY!\n🏆 Verified Record: {ldg['karne_str']}\n💎 Main Safe: {ldg['ak_str']} | 🔥 Live Ambush: {ldg['lp_str']}\n🌍 28-Market Spectrum & Cross-Book Engine!\n👉 {APP_PUBLIC_URL}"
     t_live = _build_match_social_text(live_matches[0], mode="live") if live_matches else (_build_match_social_text(finished_matches[0], mode="post") if finished_matches else t_global)
     t_pre = _build_match_social_text(upcoming_matches[0], mode="pre") if upcoming_matches else t_global
 
@@ -3360,27 +3362,51 @@ def render_x_and_telegram_command_center():
         st.markdown(f"<a href='https://twitter.com/intent/tweet?text={urllib.parse.quote(t_pre)}' target='_blank' style='display:block;text-align:center;background:#f0b90b;color:#000;padding:7px;border-radius:6px;font-weight:800;text-decoration:none;'>🐦 Maç Önü X'te Paylaş</a>", unsafe_allow_html=True)
 
 if st.session_state.get("patron_unlocked"):
-    st.markdown(f"## 👑 PATRON M5.0 KOMUTA MERKEZİ *(Cihaz: `{my_dev_id}` • Bulut: `{MEM.get('sb_status','Aktif')}`)*")
-    t1, t2, t3, t4 = st.tabs(["📊 Canlı Bülten & 28 Pazar", "📋 DP-MİNİ M5.0 & Spektrum Raporu", "🗄️ Supabase Bulut & Kasa", "🐦 X & 📢 Telegram Paneli"])
+    curr_odd_mode = str(MEM.get("odd_mode", "IDDAA_130"))
+    st.markdown(f"## 👑 PATRON M5.1 KOMUTA MERKEZİ *(Cihaz: `{my_dev_id}` • Bulut: `{MEM.get('sb_status','Aktif')}` • Mod: `{curr_odd_mode}`)*")
+
+    mode_options = {
+        "IDDAA_130": "🇹🇷 İddaa Banko Modu (Min @1.30 • Alt Lig Yan Pazar Kilitli)",
+        "IDDAA_142": "🔥 İddaa Yüksek Oran Modu (Min @1.42 • 2.5Ü / KG / Kombo Odaklı)",
+        "GLOBAL": "🌍 Global Büro Modu (Avrupa Oranları • Min @1.26)"
+    }
+    rev_mode_map = {v: k for k, v in mode_options.items()}
+    sel_label = st.radio(
+        "🎯 Aktif Bülten & Oran Seçim Motoru:",
+        list(mode_options.values()),
+        index=list(mode_options.keys()).index(curr_odd_mode) if curr_odd_mode in mode_options else 0,
+        horizontal=True,
+        key="patron_odd_mode_selector"
+    )
+    chosen_mode = rev_mode_map.get(sel_label, "IDDAA_130")
+    if chosen_mode != curr_odd_mode:
+        MEM["odd_mode"] = chosen_mode
+        MEM.setdefault("bulletin_snap", {})["ts"] = 0.0
+        MEM.setdefault("pre_lineup_memory", {}).clear()
+        save_persistent_store()
+        st.rerun()
+
+    t1, t2, t3, t4 = st.tabs(["📊 Canlı Bülten & 28 Pazar", "📋 DP-MİNİ M5.1 & Spektrum Raporu", "🗄️ Supabase Bulut & Kasa", "🐦 X & 📢 Telegram Paneli"])
     with t1:
         render_main_bulletin(tier="ADMIN", is_patron_mode=True)
     with t2:
-        st.markdown("##### 📋 Patron Özel DP-MİNİ M5.0 Telemetri & Kalibrasyon Çıktısı")
+        st.markdown("##### 📋 Patron Özel DP-MİNİ M5.1 Telemetri & Kalibrasyon Çıktısı")
         t_pass, t_tot, t_fails = run_ft_evaluator_self_test()
         test_badge = f"✅ {t_pass}/{t_tot} GEÇTİ" if t_pass == t_tot else f"❌ HATA ({', '.join(t_fails)})"
         oa_quota = MEM.get("odds_api_cache", {}).get("remaining_quota", "20K Pro Aktif")
         af_cnt = len((MEM.get("af_daily_cache") or {}).get("odds") or {})
         st.info(
+            f"🇹🇷 **Aktif Oran Modu:** `{curr_odd_mode} (Min @{get_min_odd_threshold():.2f})` | "
             f"🗄️ **Bulut Hafıza:** `{MEM.get('sb_status','Aktif')}` | "
-            f"🌍 **OddsAPI 4-Kıta (Kalan Kota: `{oa_quota}`)** | "
-            f"⚽ **API-Football Pro Oran Çekilen Maç:** `{af_cnt}` | "
-            f"🧪 **M5.0 FT Hakem Öz-Testi:** `{test_badge}` | Sürüm: `{MODEL_VERSION}`"
+            f"🌍 **OddsAPI 4-Kıta (`{oa_quota}`)** | "
+            f"⚽ **AF Pro Maç:** `{af_cnt}` | "
+            f"🧪 **FT Öz-Test:** `{test_badge}`"
         )
 
         aud = run_m50_spectrum_audit(finished_matches)
         if aud:
             aud_lines = [
-                f"🔬 M5.0 GERÇEK KARNE ({aud['tot']} Maç): {aud['w']}/{aud['tot']} (%{aud['r']}) | 💎 ANA KASA: {aud['ak_w']}/{aud['ak_t']} (%{aud['ak_r']})",
+                f"🔬 M5.1 GERÇEK KARNE ({aud['tot']} Maç): {aud['w']}/{aud['tot']} (%{aud['r']}) | 💎 ANA KASA: {aud['ak_w']}/{aud['ak_t']} (%{aud['ak_r']})",
                 "🎯 SEÇİLEN PAZAR İSABETİ: " + " | ".join(f"{k}:{v[0]}/{v[1]}(%{int(round(v[0]*100.0/v[1]))})" for k, v in aud["mkt_stats"].items() if v[1] > 0),
                 "📊 ARŞİV TAM SPEKTRUM DOĞAL ORANLARI: " + " | ".join(f"{k}:{v[0]}/{v[1]}(%{int(round(v[0]*100.0/v[1]))})" for k, v in aud["spec_pot"].items() if v[1] > 0)
             ]
@@ -3391,6 +3417,7 @@ if st.session_state.get("patron_unlocked"):
 
         def _compact_mini_line(ln):
             reps = [
+                ("DP-MİNİ M5.0", f"DP-MİNİ M5.1[{curr_odd_mode}]"),
                 ("📊Son5Kor(EWMA):", "K5:"), ("📊ΔÜretim(EWMA5):", "ΔÜ:"),
                 ("⏳5MaçÇekirdekXI", "⏳ÇekXI"), ("🧱BlokŞut->Korner", "🧱BlokK"),
                 ("📐KanatKorner", "📐KanatK"), ("🛡️SakatKapanma", "🛡️SakatK"),
@@ -3399,10 +3426,13 @@ if st.session_state.get("patron_unlocked"):
                 ("💥ErkenKopar", "💥Kopar"), ("🧬RotasyonUyum", "🧬Rot"),
                 ("✅ÇekirdekKadro", "✅ÇekKadro"), ("✅ Kadro Onaylı (Sabit)", "✅Sabit"),
                 ("🎯 2.Tercih:", "2.T:"), ("Karşılıklı Gol Var", "KG Var"), ("Karşılıklı Gol Yok", "KG Yok"),
+                ("1X & 1.5 Gol Üst", "1X&1.5Ü"), ("X2 & 1.5 Gol Üst", "X2&1.5Ü"),
+                ("1X & 3.5 Alt", "1X&3.5A"), ("X2 & 3.5 Alt", "X2&3.5A"),
                 ("Takım Golü 1.5 Üst", "TG 1.5Ü"), ("Maç 1.5 Gol Üst", "1.5Ü"),
                 ("Maç 2.5 Gol Üst", "2.5Ü"), ("Maç 2.5 Gol Alt", "2.5A"), ("Maç 3.5 Gol Alt", "3.5A"),
                 ("İlk Yarı 1.5 Gol Alt", "İY 1.5A"), ("İlk Yarı 0.5 Gol Üst", "İY 0.5Ü"),
                 ("Korner Üst", "KorÜ"), ("Korner Alt", "KorA"), ("Kart Üst", "KartÜ"), ("Kart Alt", "KartA"),
+                ("🇹🇷İddaa:", "🇹🇷"), ("💎VALUE", "💎VAL"),
                 ("TÜRKİYE SÜPER LİG", "TR1"), ("TÜRKİYE 1. LİG", "TR2"),
                 ("İNGİLTERE PREMIER LİG", "ENG1"), ("İNGİLTERE CHAMPIONSHIP", "ENG2"),
                 ("İSPANYA LA LIGA 2", "ESP2"), ("İSPANYA LA LIGA", "ESP1"),
@@ -3427,7 +3457,7 @@ if st.session_state.get("patron_unlocked"):
         )
 
         comp_lines = [_compact_mini_line(x) for x in mini_lines]
-        head_line = comp_lines[0] if comp_lines else "⚡ DP-MİNİ M5.0"
+        head_line = comp_lines[0] if comp_lines else f"⚡ DP-MİNİ M5.1[{curr_odd_mode}]"
         live_lns = [x for x in comp_lines[1:] if x.startswith("CANLI|")]
         up_lns = [x for x in comp_lines[1:] if x.startswith("ÖNÜ|")]
         ft_lns = [x for x in comp_lines[1:] if x.startswith("BİTTİ|")]
@@ -3440,8 +3470,8 @@ if st.session_state.get("patron_unlocked"):
                 m_min_val = _time_sort_minutes(pts[1]) if len(pts) > 1 else (now_epoch_min + 120)
                 mins_diff = (m_min_val - now_epoch_min) if m_min_val > 100000 else 999
                 conf_v = safe_int(pts[4].replace("%", ""), 0) if len(pts) > 4 else 0
-                is_soon = (-15 <= mins_diff <= 300) or ("✅Kadro" in ln)
-                is_high_or_val = (conf_v >= 75) or ("💎VALUE" in ln) or ("|TR1|" in ln) or ("|TR2|" in ln)
+                is_soon = (-15 <= mins_diff <= 360) or ("✅Kadro" in ln)
+                is_high_or_val = (conf_v >= 74) or ("💎VAL" in ln) or ("|TR1|" in ln) or ("|TR2|" in ln)
                 if is_soon or is_high_or_val:
                     smart_up.append(ln)
             final_txt = "\n".join([head_line] + live_lns + smart_up[:34] + ft_lns[:14])
