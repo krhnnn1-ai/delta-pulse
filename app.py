@@ -569,7 +569,7 @@ def _fetch_af_real_odds(fid):
     agg_lists = {}
 
     def _add_agg(k, val):
-        if 1.12 <= val <= 3.60:
+        if 1.24 <= val <= 3.40:
             agg_lists.setdefault(k, []).append(val)
 
     try:
@@ -991,8 +991,8 @@ def fetch_and_analyze_roster(args):
     if ev_id and state == "pre":
         roster_cache[ev_id] = res
     return match_title, res
-    # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.5_TRAP_SHIELD"
+   # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
+MODEL_VERSION = "M5.1.6_FINAL_POLISH"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1027,7 +1027,7 @@ LEAGUE_DNA_PROFILES = {
 DEFAULT_LIG_DNA = {"cor_mult": 1.0, "card_mult": 1.0, "disp_r": 12.0, "ban_team_o15_if_lock": False, "lock_thresh": 13.8}
 
 IDDAA_PROP_OPEN_SLUGS = {
-    "uefa.champions", "uefa.europa", "uefa.europa.conf", "conmebol.libertadores",
+    "uefa.champions", "uefa.europa", "uefa.europa.conf",
     "tur.1", "eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "ned.1", "por.1", "sco.1", "eng.league_cup"
 }
 
@@ -1035,12 +1035,16 @@ def is_iddaa_prop_league_open(slug="", lig_adi=""):
     if MEM.get("odd_mode", "IDDAA_130") == "GLOBAL":
         return True
     s = str(slug or "").lower().strip()
+    lu = str(lig_adi or "").upper()
+    # Gece Güney/Kuzey Amerika ve 2. liglerde (Brezilya Serie A kelime çakışması dahil) İddaa korner/kart açmaz:
+    if s in ("bra.1", "arg.1", "mex.1", "ned.2", "ita.2", "esp.2", "fra.2", "ger.2", "eng.2", "tur.2"):
+        return False
+    if any(sub in lu for sub in ("BREZİLYA", "ARJANTİN", "MEKSİKA", "LIGA 2", "BUNDESLIGA 2", "LIGUE 2", "SERIE B", "1. LİG", "EERSTE", "CHAMPIONSHIP")):
+        return False
     if s in IDDAA_PROP_OPEN_SLUGS:
         return True
-    lu = str(lig_adi or "").upper()
-    if any(x in lu for x in ("SÜPER LİG", "PREMIER", "LA LIGA", "SERIE A", "BUNDESLIGA", "LIGUE 1", "EREDIVISIE", "PORTEKİZ", "UEFA")):
-        if not any(sub in lu for sub in ("LIGA 2", "BUNDESLIGA 2", "LIGUE 2", "SERIE B", "1. LİG", "EERSTE")):
-            return True
+    if any(x in lu for x in ("SÜPER LİG", "PREMIER", "LA LIGA", "SERIE A", "BUNDESLIGA", "LIGUE 1", "EREDIVISIE", "PORTEKİZ", "UEFA", "ŞAMPİYONLAR")):
+        return True
     return False
 
 def get_min_odd_threshold():
@@ -1054,14 +1058,23 @@ def get_min_odd_threshold():
 def estimate_iddaa_odd(pick_str, eu_odd, model_prob_pct=72):
     pk = str(pick_str or "")
     is_prop = any(k in pk for k in ("Korner", "Kart", "Takım Golü", "&"))
-    iddaa_payout = 0.850 if is_prop else 0.875  # Spor Toto resmi marj kesintisi (%15 yan pazar, %12.5 ana pazar)
+    is_cor_or_card = ("Korner" in pk or "Kart" in pk)
+    iddaa_payout = 0.855 if is_prop else 0.875
 
-    if eu_odd and eu_odd > 1.03:
-        p_true = min(0.95, max(0.06, (1.0 / float(eu_odd)) / 1.052))
+    val_eu = safe_float(eu_odd, 0.0)
+    if is_cor_or_card and val_eu <= 1.28:
+        val_eu = 0.0  # Hatalı alt barem API sızıntısını (@1.07 / @1.15) kesin temizle
+
+    if val_eu > 1.03:
+        p_true = min(0.95, max(0.06, (1.0 / val_eu) / 1.052))
     else:
-        # Doğrudan büro oranı çekilemediyse model olasılığını muhafazakar piyasa tabanına çekip İddaa marjı uygula
         p_raw = min(0.92, max(0.12, safe_float(model_prob_pct, 72.0) / 100.0))
-        p_true = min(0.93, p_raw * 0.96 + 0.03)
+        if is_cor_or_card:
+            # İddaa'da 8.5/9.5 Korner ve 3.5/4.5 Kart ana baremleri piyasada %52-%62 bandında fiyatlanır (@1.38 - @1.68)
+            p_mkt_anchor = min(0.63, max(0.44, 0.50 + (p_raw - 0.55) * 0.42))
+            p_true = p_mkt_anchor
+        else:
+            p_true = min(0.93, p_raw * 0.94 + 0.03)
 
     tr_odd = round(max(1.05, iddaa_payout / p_true), 2)
     return tr_odd
@@ -1127,31 +1140,35 @@ def _lookup_direct_market_odd(pick_str, af_odds, oa_d, fav_is_h):
     pk = str(pick_str or "")
     af = af_odds or {}
     oa = oa_d or {}
-    if "7.5 Korner Üst" in pk: return safe_float(af.get("cor75_odd"), 0.0)
-    if "8.5 Korner Üst" in pk: return safe_float(af.get("cor85_odd"), 0.0)
-    if "9.5 Korner Üst" in pk: return safe_float(af.get("cor95_odd"), 0.0)
-    if "8.5 Korner Alt" in pk: return safe_float(af.get("cor_u85_odd"), 0.0)
-    if "9.5 Korner Alt" in pk: return safe_float(af.get("cor_u95_odd"), 0.0)
-    if "3.5 Kart Üst" in pk: return safe_float(af.get("card35_odd"), 0.0)
-    if "4.5 Kart Üst" in pk: return safe_float(af.get("card45_odd"), 0.0)
-    if "3.5 Kart Alt" in pk: return safe_float(af.get("card_u35_odd"), 0.0)
-    if "4.5 Kart Alt" in pk: return safe_float(af.get("card_u45_odd"), 0.0)
-    if "İlk Yarı 0.5 Gol Üst" in pk: return safe_float(af.get("ht_o05_odd"), 0.0)
-    if "İlk Yarı 0.5 Gol Alt" in pk: return safe_float(af.get("ht_u05_odd"), 0.0)
-    if "İlk Yarı 1.5 Gol Üst" in pk: return safe_float(af.get("ht_o15_odd"), 0.0)
-    if "İlk Yarı 1.5 Gol Alt" in pk: return safe_float(af.get("ht_u15_odd"), 0.0)
-    if "Maç 1.5 Gol Üst" in pk: return safe_float(af.get("o15_odd") or oa.get("o15_dec"), 0.0)
-    if "Maç 1.5 Gol Alt" in pk: return safe_float(af.get("u15_odd"), 0.0)
-    if "2.5 Gol Üst" in pk and "&" not in pk: return safe_float(af.get("o25_odd") or oa.get("o25_dec"), 0.0)
-    if "2.5 Gol Alt" in pk: return safe_float(af.get("u25_odd") or oa.get("u25_dec"), 0.0)
-    if "3.5 Gol Alt" in pk and "&" not in pk: return safe_float(af.get("u35_odd") or oa.get("u35_dec"), 0.0)
-    if "3.5 Gol Üst" in pk: return safe_float(af.get("o35_odd"), 0.0)
-    if "Karşılıklı Gol Var" in pk: return safe_float(af.get("btts_odd"), 0.0)
-    if "Karşılıklı Gol Yok" in pk: return safe_float(af.get("btts_no_odd"), 0.0)
-    if "Takım Golü 1.5 Üst" in pk: return safe_float(af.get("h_o15_odd" if fav_is_h else "a_o15_odd"), 0.0)
-    if "Kazanır" in pk and "&" not in pk and "İY " not in pk:
-        return safe_float(oa.get("dec_h" if fav_is_h else "dec_a"), 0.0)
-    return 0.0
+    raw_o = 0.0
+    if "7.5 Korner Üst" in pk: raw_o = safe_float(af.get("cor75_odd"), 0.0)
+    elif "8.5 Korner Üst" in pk: raw_o = safe_float(af.get("cor85_odd"), 0.0)
+    elif "9.5 Korner Üst" in pk: raw_o = safe_float(af.get("cor95_odd"), 0.0)
+    elif "8.5 Korner Alt" in pk: raw_o = safe_float(af.get("cor_u85_odd"), 0.0)
+    elif "9.5 Korner Alt" in pk: raw_o = safe_float(af.get("cor_u95_odd"), 0.0)
+    elif "3.5 Kart Üst" in pk: raw_o = safe_float(af.get("card35_odd"), 0.0)
+    elif "4.5 Kart Üst" in pk: raw_o = safe_float(af.get("card45_odd"), 0.0)
+    elif "3.5 Kart Alt" in pk: raw_o = safe_float(af.get("card_u35_odd"), 0.0)
+    elif "4.5 Kart Alt" in pk: raw_o = safe_float(af.get("card_u45_odd"), 0.0)
+    elif "İlk Yarı 0.5 Gol Üst" in pk: raw_o = safe_float(af.get("ht_o05_odd"), 0.0)
+    elif "İlk Yarı 0.5 Gol Alt" in pk: raw_o = safe_float(af.get("ht_u05_odd"), 0.0)
+    elif "İlk Yarı 1.5 Gol Üst" in pk: raw_o = safe_float(af.get("ht_o15_odd"), 0.0)
+    elif "İlk Yarı 1.5 Gol Alt" in pk: raw_o = safe_float(af.get("ht_u15_odd"), 0.0)
+    elif "Maç 1.5 Gol Üst" in pk: raw_o = safe_float(af.get("o15_odd") or oa.get("o15_dec"), 0.0)
+    elif "Maç 1.5 Gol Alt" in pk: raw_o = safe_float(af.get("u15_odd"), 0.0)
+    elif "2.5 Gol Üst" in pk and "&" not in pk: raw_o = safe_float(af.get("o25_odd") or oa.get("o25_dec"), 0.0)
+    elif "2.5 Gol Alt" in pk: raw_o = safe_float(af.get("u25_odd") or oa.get("u25_dec"), 0.0)
+    elif "3.5 Gol Alt" in pk and "&" not in pk: raw_o = safe_float(af.get("u35_odd") or oa.get("u35_dec"), 0.0)
+    elif "3.5 Gol Üst" in pk: raw_o = safe_float(af.get("o35_odd"), 0.0)
+    elif "Karşılıklı Gol Var" in pk: raw_o = safe_float(af.get("btts_odd"), 0.0)
+    elif "Karşılıklı Gol Yok" in pk: raw_o = safe_float(af.get("btts_no_odd"), 0.0)
+    elif "Takım Golü 1.5 Üst" in pk: raw_o = safe_float(af.get("h_o15_odd" if fav_is_h else "a_o15_odd"), 0.0)
+    elif "Kazanır" in pk and "&" not in pk and "İY " not in pk:
+        raw_o = safe_float(oa.get("dec_h" if fav_is_h else "dec_a"), 0.0)
+
+    if ("Korner" in pk or "Kart" in pk) and raw_o <= 1.28:
+        return 0.0
+    return raw_o
 
 def _compute_pick_specific_value(pick, conf, m4, ou_val):
     spec = m4.get("spectrum") or {}
@@ -1167,6 +1184,7 @@ def _compute_pick_specific_value(pick, conf, m4, ou_val):
     elif "1.5 Gol Üst" in pk and "&" in pk: p_struct = safe_float(m4.get("p_dc_o15"), conf) / 100.0
     elif "Maç 1.5 Gol Üst" in pk: p_struct = safe_float(spec.get("MS_O15"), conf) / 100.0
     elif "Maç 2.5 Gol Üst" in pk: p_struct = safe_float(spec.get("MS_O25"), conf) / 100.0
+    elif "Maç 3.5 Gol Üst" in pk: p_struct = safe_float(spec.get("MS_O35"), conf) / 100.0
     elif "Karşılıklı Gol Var" in pk: p_struct = safe_float(spec.get("BTTS_YES"), conf) / 100.0
     elif "Karşılıklı Gol Yok" in pk: p_struct = safe_float(spec.get("BTTS_NO"), conf) / 100.0
     elif "İlk Yarı 0.5 Gol Üst" in pk: p_struct = safe_float(spec.get("HT_O05"), conf) / 100.0
@@ -1183,7 +1201,7 @@ def _compute_pick_specific_value(pick, conf, m4, ou_val):
     if odd_mode != "GLOBAL":
         ev_iddaa = round((p_struct * tr_odd - 1.0) * 100.0, 1)
         eu_part = f"|Avr:@{direct_odd_val:.2f}" if direct_odd_val > 1.04 else ""
-        if ev_iddaa >= 4.0:
+        if ev_iddaa >= 4.0 and tr_odd >= get_min_odd_threshold():
             return ev_iddaa, f"🇹🇷İddaa:@{tr_odd:.2f}💎VALUE({eu_part.lstrip('|')})" if eu_part else f"🇹🇷İddaa:@{tr_odd:.2f}💎VALUE"
         if tr_odd >= get_min_odd_threshold():
             return ev_iddaa, f"🇹🇷İddaa:@{tr_odd:.2f}✅({eu_part.lstrip('|')})" if eu_part else f"🇹🇷İddaa:@{tr_odd:.2f}✅"
