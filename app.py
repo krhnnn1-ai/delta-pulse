@@ -647,8 +647,6 @@ def _fetch_af_real_odds(fid):
     parsed["_v"] = 3
     odds_map[fid] = parsed
     return parsed
-
-
 # ==================== MODÜL 2B/6: EWMA-5 GEÇMİŞ MAÇ İSTATİSTİK MOTORU ====================
 def _calc_ewma(vals, default_val):
     if not vals:
