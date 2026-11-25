@@ -994,7 +994,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
    # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.7_PURE_IDDAA"
+MODEL_VERSION = "M5.1.8_FINAL_LOCK"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1952,10 +1952,10 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
             u_cor_o = cor_prob_main + 8 + (5 if real_cor >= 12.5 else 0) + (4 if (high_shot_explosion_risk or ou_trap or side_trap) else 0) + compute_conditional_twin_memory_bonus("COR_O", curr_ctx, lig_adi)
             candidates.append((u_cor_o, f"🚩 {cor_line}", cor_prob_main))
 
-        if not is_uk_lig and real_cor <= 7.6 and p_cor_u95 >= 76 and sh_sum <= 20.5:
-            cor_u_lbl = "🚩 8.5 Korner Alt" if (real_cor <= 6.6 and p_cor_u85 >= 75) else "🚩 9.5 Korner Alt"
+        if not is_uk_lig and real_cor <= 7.0 and p_cor_u95 >= 78 and sh_sum <= 19.0 and not is_blowout:
+            cor_u_lbl = "🚩 8.5 Korner Alt" if (real_cor <= 6.2 and p_cor_u85 >= 76) else "🚩 9.5 Korner Alt"
             cor_u_pr = p_cor_u85 if "8.5" in cor_u_lbl else p_cor_u95
-            u_cor_u = cor_u_pr + 7 + (4 if one_sided_cor_trap else 0) + compute_conditional_twin_memory_bonus("COR_U", curr_ctx, lig_adi)
+            u_cor_u = cor_u_pr + 5 + compute_conditional_twin_memory_bonus("COR_U", curr_ctx, lig_adi)
             candidates.append((u_cor_u, cor_u_lbl, cor_u_pr))
 
     # 2) KADEMELİ ALT MERDİVENİ
@@ -2164,8 +2164,8 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         if props_open:
             if cor_prob_main >= 64 and real_cor >= 10.2 and not inj_wing:
                 safe_fallbacks.insert(0, (cor_prob_main + 15, f"🚩 {cor_line}", cor_prob_main))
-            elif not is_uk_lig and p_cor_u95 >= 70 and real_cor <= 8.2:
-                safe_fallbacks.append((p_cor_u95 + 11, "🚩 9.5 Korner Alt", p_cor_u95))
+            elif not is_uk_lig and p_cor_u95 >= 76 and real_cor <= 7.0 and sh_sum <= 19.5 and not is_blowout:
+                safe_fallbacks.append((p_cor_u95 + 9, "🚩 9.5 Korner Alt", p_cor_u95))
             if card_prob_main >= 63:
                 safe_fallbacks.append((card_prob_main + 12, f"🟨 {card_line}", card_prob_main))
 
