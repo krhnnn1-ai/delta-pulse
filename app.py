@@ -31,7 +31,7 @@ header[data-testid="stHeader"], .stAppHeader, .stAppToolbar, [data-testid="stToo
 }
 .block-container { padding-top: 0.6rem !important; padding-bottom: 1.5rem !important; max-width: 1180px !important; }
 .dp-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 11px 14px; margin-bottom: 9px; color: #e6edf3; font-size: 13px; line-height: 1.5; }
-.dp-ak { border-left: 4px solid #f0b90b !important; background: linear-gradient(90deg, #241d08 0%, #161b22 100%); }
+.dp-ak { border-left: 4px solid #58a6ff !important; border-color: rgba(148, 163, 184, 0.48) !important; background: linear-gradient(90deg, rgba(56, 139, 253, 0.18) 0%, rgba(148, 163, 184, 0.08) 45%, rgba(22, 27, 34, 0.96) 100%) !important; }
 .dp-warn { border-left: 4px solid #f85149 !important; }
 .dp-tier-green { border-left: 4px solid #3fb950 !important; background: linear-gradient(90deg, rgba(46, 160, 67, 0.16) 0%, rgba(22, 27, 34, 0.95) 65%) !important; }
 .dp-tier-ak { border-left: 4px solid #f0b90b !important; background: linear-gradient(90deg, rgba(240, 185, 11, 0.14) 0%, rgba(46, 160, 67, 0.14) 45%, rgba(22, 27, 34, 0.95) 85%) !important; }
@@ -3317,7 +3317,7 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
     st.markdown(
         f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>"
         f"<div class='dp-card' style='flex:1;min-width:140px;'>🏆 <b>Verified AI Record:</b> <span style='color:#56d364;font-weight:800;'>{ldg['karne_str']}</span></div>"
-        f"<div class='dp-card dp-ak' style='flex:1;min-width:140px;'>💎 <b>Main Safe (Ana Kasa):</b> <span style='color:#ffd33d;font-weight:800;'>{ldg['ak_str']}</span></div>"
+        f"<div class='dp-card dp-ak' style='flex:1;min-width:140px;'>💎 <b>Main Safe (Ana Kasa):</b> <span style='color:#79c0ff;font-weight:800;'>{ldg['ak_str']}</span></div>"
         f"<div class='dp-card' style='flex:1;min-width:140px;'>🔥 <b>Live Ambush:</b> <span style='color:#79c0ff;font-weight:800;'>{ldg['lp_str']}</span></div></div>",
         unsafe_allow_html=True
     )
@@ -3386,33 +3386,36 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         spec_d = m4_d.get("spectrum") or {}
         dec_u = safe_int(m4_d.get("decision_score"), m["conf"])
         psim_ui_str = str(m4_d.get("patron_sim_ui") or "")
-        has_hard_warn = ("🚨BÜRO_TUZAĞI" in str(m.get("odd", "")) or "⚠️İddaaDüşük" in psim_ui_str)
+        has_hard_warn = ("🚨BÜRO_TUZAĞI" in str(m.get("odd", ""))) or ("⚠️İddaaDüşük" in psim_ui_str)
 
-        # Kasa Anayasası Renk Sınıflandırması (Yeşil / Turuncu / Kırmızı Saydam Arka Plan)
-        if m["conf"] >= 78 and dec_u >= 88 and not has_hard_warn:
-            tier_cls = "dp-tier-ak"
-            tier_pill = "<span style='background:rgba(240,185,11,0.2);color:#ffd33d;border:1px solid rgba(240,185,11,0.45);padding:2px 8px;border-radius:6px;font-weight:800;'>💎 ANA KASA • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
-        elif m["conf"] >= 70 and dec_u >= 80 and not has_hard_warn:
+        if not has_hard_warn and m["conf"] >= 78 and dec_u >= 85:
+            tier_cls = "dp-ak"
+            tier_pill = "💎 ANA KASA"
+            pill_col = "#79c0ff"
+        elif not has_hard_warn and m["conf"] >= 70 and dec_u >= 80:
             tier_cls = "dp-tier-green"
-            tier_pill = "<span style='background:rgba(63,185,80,0.18);color:#56d364;border:1px solid rgba(63,185,80,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🟢 GÜVENLİ • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
-        elif m["conf"] >= 64 and dec_u >= 76 and not has_hard_warn:
+            tier_pill = "🟢 GÜVENLİ"
+            pill_col = "#56d364"
+        elif not has_hard_warn and m["conf"] >= 64 and dec_u >= 76:
             tier_cls = "dp-tier-orange"
-            tier_pill = "<span style='background:rgba(210,153,34,0.18);color:#e3b341;border:1px solid rgba(210,153,34,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🟠 SEÇİCİ • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+            tier_pill = "🟠 SEÇİCİ"
+            pill_col = "#e3b341"
         else:
             tier_cls = "dp-tier-red"
-            tier_pill = "<span style='background:rgba(248,81,73,0.18);color:#ff7b72;border:1px solid rgba(248,81,73,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🔴 RİSKLİ/PAS • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+            tier_pill = "🔴 PAS / CANLI"
+            pill_col = "#ff7b72"
 
-        patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:rgba(13,17,23,0.75);border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{psim_ui_str}</div>" if (is_patron_mode and psim_ui_str) else ""
+        patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:rgba(13,17,23,0.78);border-left:3px solid #58a6ff;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{psim_ui_str}</div>" if (is_patron_mode and psim_ui_str) else ""
         t_lbl = m.get("tarih_saat") or m.get("saat", "20:00")
         st.markdown(
             f"<div class='dp-card {tier_cls}'>"
-            f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;font-size:11.5px;color:#8b949e;'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#c9d1d9;'>"
             f"<span>🕒 <b>{t_lbl}</b> • {m['lig']} • {k_badge}</span>"
-            f"{tier_pill}</div>"
+            f"<span style='background:rgba(13,17,23,0.75);color:{pill_col};border:1px solid rgba(255,255,255,0.12);padding:2px 8px;border-radius:6px;font-weight:800;'>{tier_pill} • %{m['conf']} ({dec_u}p)</span></div>"
             f"<div style='font-size:15.5px;font-weight:800;margin:5px 0;color:#fff;'>{m['h_name']} vs {m['a_name']}</div>"
             f"<div style='font-size:11.5px;color:#c9d1d9;margin-bottom:4px;'>📈 <b>Form & Mom:</b> {format_form_badges(m['h_form'])} ({m['h_mom']}%) vs {format_form_badges(m['a_form'])} ({m['a_mom']}%)</div>"
             f"<div style='font-size:11px;color:#79c0ff;'>🐋 <b>Çapraz Büro & Fizik:</b> {m['odd']} | TG: {m['ou']} | <code>2.5A:%{spec_d.get('MS_U25',50)} | 3.5A:%{spec_d.get('MS_U35',80)} | KGY:%{spec_d.get('BTTS_NO',48)} | Dw:{m4_d.get('d_weak',15)}</code></div>"
-            f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid rgba(48,54,61,0.7);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
+            f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
             f"<span>🎯 <b>1. Tercih (Ana):</b> <b style='color:#56d364;'>{p_disp}</b> ({m['evo']})</span><span style='color:#d2a8ff;'>{pr_disp}</span></div>"
             f"{patron_line}</div>",
             unsafe_allow_html=True
@@ -3420,7 +3423,6 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         with st.expander(f"🏟️ {m['h_name']} vs {m['a_name']} — Saha Dizilimi, 28 Pazar Olasılık Matrisi & 4 Kıta Oranları", expanded=False):
             st.markdown(build_tactical_pitch_html(m), unsafe_allow_html=True)
         _render_match_share_box(m, "pre", idx_u, is_unlocked)
-
     if finished_matches:
         st.markdown("---")
         st.markdown("### 🏁 BİTEN MAÇLAR & DOĞRULANMIŞ SUPABASE ARŞİVİ")
