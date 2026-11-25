@@ -569,7 +569,7 @@ def _fetch_af_real_odds(fid):
     agg_lists = {}
 
     def _add_agg(k, val):
-        if 1.24 <= val <= 3.40:
+        if 1.12 <= val <= 3.60:
             agg_lists.setdefault(k, []).append(val)
 
     try:
@@ -992,7 +992,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
     # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.3_IDDAA_BALANCED"
+MODEL_VERSION = "M5.1.4_IDDAA_CLEAN"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -2039,27 +2039,36 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
         _push_cand(c_u, c_pk, c_pr, min_prob_req=62)
 
-    # EMNİYET SÜBABI: Zoraki %55'lik kumar oynamak yerine en yüksek gerçek olasılıklı (>= %64) kombinasyonu seç!
+    # EMNİYET SÜBABI: Sadece İddaa barajını (>= @1.30) geçen gerçek ve açık pazarları seç!
     if not filtered_cands:
         safe_fallbacks = [
-            (p_dc_o15 + 12, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15),
-            (p_shield + 12, f"{dc_tag} & 3.5 Alt", p_shield),
-            (p_ht_u15 + 10, "İlk Yarı 1.5 Gol Alt", p_ht_u15),
-            (p_ht_o05 + 10, "İlk Yarı 0.5 Gol Üst", p_ht_o05),
-            (p_o25 + 9, "Maç 2.5 Gol Üst", p_o25),
-            (p_u25 + 9, "Maç 2.5 Gol Alt", p_u25),
-            (p_btts_yes + 8, "Karşılıklı Gol Var", p_btts_yes),
-            (p_btts_no + 8, "Karşılıklı Gol Yok", p_btts_no),
+            (p_dc_o15 + 14, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15),
+            (p_shield + 13, f"{dc_tag} & 3.5 Alt", p_shield),
+            (p_o25 + 12, "Maç 2.5 Gol Üst", p_o25),
+            (p_btts_yes + 11, "Karşılıklı Gol Var", p_btts_yes),
+            (p_u25 + 11, "Maç 2.5 Gol Alt", p_u25),
+            (p_btts_no + 10, "Karşılıklı Gol Yok", p_btts_no),
+            (p_ht_u15 + 9, "İlk Yarı 1.5 Gol Alt", p_ht_u15),
+            (p_ht_o05 + 9, "İlk Yarı 0.5 Gol Üst", p_ht_o05),
         ]
+        if props_open:
+            safe_fallbacks.insert(0, (cor_prob_main + 15, f"🚩 {cor_line}", cor_prob_main))
+            if not is_uk_lig and p_cor_u95 >= 70:
+                safe_fallbacks.append((p_cor_u95 + 10, "🚩 9.5 Korner Alt", p_cor_u95))
+
         safe_fallbacks.sort(key=lambda x: x[2], reverse=True)
         for s_u, s_pk, s_pr in safe_fallbacks:
             if "3.5 Alt" in s_pk and (uk_or_heavy_fav_collapse or it2_second_half_boom):
                 continue
-            if _push_cand(s_u, s_pk, s_pr, min_prob_req=60):
+            if _push_cand(s_u, s_pk, s_pr, min_prob_req=56):
                 break
+
+        # Hâlâ barajı geçen yoksa oranı her zaman >= @1.35 olan ana İddaa pazarını ver (asla @1.10 İY 0.5Ü verme!):
         if not filtered_cands:
-            top_fb = safe_fallbacks[0]
-            filtered_cands.append((top_fb[0], top_fb[1], max(60, top_fb[2])))
+            if lam_tot >= 2.65:
+                filtered_cands.append((76, "Maç 2.5 Gol Üst" if p_o25 >= p_btts_yes else "Karşılıklı Gol Var", max(60, max(p_o25, p_btts_yes))))
+            else:
+                filtered_cands.append((76, f"{dc_tag} & 3.5 Alt" if p_shield >= 62 else "Maç 2.5 Gol Alt", max(60, p_shield if p_shield >= 62 else p_u25)))
 
     candidates = filtered_cands
     candidates.sort(key=lambda x: x[0], reverse=True)
