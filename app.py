@@ -558,7 +558,7 @@ def _fetch_af_real_odds(fid):
         return {}
     af_cache = MEM.setdefault("af_daily_cache", {"ts": 0.0, "fixtures": {}, "odds": {}})
     odds_map = af_cache.setdefault("odds", {})
-    if fid in odds_map and isinstance(odds_map[fid], dict) and odds_map[fid].get("_v") == 2:
+    if fid in odds_map and isinstance(odds_map[fid], dict) and odds_map[fid].get("_v") == 3:
         return odds_map[fid]
     if len(odds_map) >= 300:
         return odds_map.get(fid, {})
@@ -569,7 +569,7 @@ def _fetch_af_real_odds(fid):
     agg_lists = {}
 
     def _add_agg(k, val):
-        if 1.24 <= val <= 3.40:
+        if 1.12 <= val <= 3.60:
             agg_lists.setdefault(k, []).append(val)
 
     try:
@@ -644,7 +644,7 @@ def _fetch_af_real_odds(fid):
             parsed["af_bm_cnt"] = len(multi_bms)
     except Exception:
         pass
-    parsed["_v"] = 2
+    parsed["_v"] = 3
     odds_map[fid] = parsed
     return parsed
 
