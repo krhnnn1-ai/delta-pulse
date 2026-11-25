@@ -990,7 +990,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
    # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.6_FINAL_POLISH"
+MODEL_VERSION = "M5.1.7_PURE_IDDAA"
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -2042,12 +2042,19 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
             eu_o = 0.0
         return estimate_iddaa_odd(pk_lbl, eu_o, pr_val) if odd_mode != "GLOBAL" else eu_o
 
+    
+   p_fav_o15 = safe_int(m4.get("p_fav_o15"), 52)
+    ms_fav_o15_lbl = f"{fav_team} Kazanır & 1.5 Gol Üst"
+
     def _push_cand(u_sc, pk_lbl, pr_val, min_prob_req=63):
         if pk_lbl in seen_pks or pr_val < min_prob_req:
             return False
+        # TÜRKİYE İDDAA KURALI: İddaa'da Çifte Şans & Alt/Üst (1X/X2 & 1.5Ü / 3.5A) pazarı YOKTUR!
+        if odd_mode != "GLOBAL" and ("1X" in pk_lbl or "X2" in pk_lbl) and "&" in pk_lbl:
+            return False
         if "Takım Golü 1.5 Üst" in pk_lbl and (is_team_o15_banned_lig or whale_against_fav):
             return False
-        if ("1X" in pk_lbl or "X2" in pk_lbl) and whale_against_fav:
+        if ("1X" in pk_lbl or "X2" in pk_lbl or "Kazanır" in pk_lbl) and whale_against_fav:
             return False
         c_odd = _get_cand_chk_odd(pk_lbl, pr_val)
         if c_odd > 1.01 and c_odd < min_tr_odd:
@@ -2062,39 +2069,57 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
     for c_u, c_pk, c_pr in candidates:
         chk_odd = _get_cand_chk_odd(c_pk, c_pr)
 
+        # Eğer aday 1X/X2 kombosuysa ve İddaa modundaysak gerçek İddaa karşılıklarına çevir:
+        if odd_mode != "GLOBAL" and ("1X" in c_pk or "X2" in c_pk) and "&" in c_pk:
+            if "1.5" in c_pk:
+                if not whale_against_fav and fav_val <= -175 and p_fav_o15 >= 62:
+                    _push_cand(p_fav_o15 + 14, ms_fav_o15_lbl, p_fav_o15, min_prob_req=62)
+                if p_o25 >= 62 and not ou_trap:
+                    _push_cand(p_o25 + 13, "Maç 2.5 Gol Üst", p_o25, min_prob_req=62)
+                if p_btts_yes >= 61 and min_lam >= 1.15:
+                    _push_cand(p_btts_yes + 12, "Karşılıklı Gol Var", p_btts_yes, min_prob_req=61)
+            else:
+                if p_ht_u15 >= 71:
+                    _push_cand(p_ht_u15 + 13, "İlk Yarı 1.5 Gol Alt", p_ht_u15, min_prob_req=70)
+                if p_u25 >= 62 and not is_uk_lig and not ou_trap:
+                    _push_cand(p_u25 + 13, "Maç 2.5 Gol Alt", p_u25, min_prob_req=62)
+            continue
+
         if chk_odd > 1.01 and chk_odd < min_tr_odd:
             if c_pk == "Maç 1.5 Gol Üst":
-                if not whale_against_fav and (p_mkt_fav >= 53.0 or fav_val <= -140) and p_dc_o15 >= 66:
+                if odd_mode == "GLOBAL" and not whale_against_fav and (p_mkt_fav >= 53.0 or fav_val <= -140) and p_dc_o15 >= 66:
                     _push_cand(p_dc_o15 + 15, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15, min_prob_req=65)
+                elif not whale_against_fav and fav_val <= -175 and p_fav_o15 >= 62:
+                    _push_cand(p_fav_o15 + 14, ms_fav_o15_lbl, p_fav_o15, min_prob_req=62)
                 if p_ht_o05 >= 73:
                     _push_cand(p_ht_o05 + 12, "İlk Yarı 0.5 Gol Üst", p_ht_o05, min_prob_req=71)
                 if props_open and cor_prob_main >= 70 and real_cor >= 11.2 and not inj_wing:
                     _push_cand(cor_prob_main + 12, f"🚩 {cor_line}", cor_prob_main, min_prob_req=68)
                 if not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 2.12 and p_team >= 67 and not is_locked_match:
                     _push_cand(p_team + 14, f"{fav_team} Takım Golü 1.5 Üst", p_team, min_prob_req=66)
-                if p_o25 >= 64 and lam_tot >= 2.85 and not ou_trap:
-                    _push_cand(p_o25 + 13, "Maç 2.5 Gol Üst", p_o25, min_prob_req=64)
-                if p_btts_yes >= 63 and min_lam >= 1.25 and not is_locked_match:
-                    _push_cand(p_btts_yes + 12, "Karşılıklı Gol Var", p_btts_yes, min_prob_req=63)
+                if p_o25 >= 63 and lam_tot >= 2.80 and not ou_trap:
+                    _push_cand(p_o25 + 13, "Maç 2.5 Gol Üst", p_o25, min_prob_req=63)
+                if p_btts_yes >= 62 and min_lam >= 1.20 and not is_locked_match:
+                    _push_cand(p_btts_yes + 12, "Karşılıklı Gol Var", p_btts_yes, min_prob_req=62)
                 if lam_tot >= 3.35 and p_o35 >= 63 and not ou_trap:
                     _push_cand(p_o35 + 10, "Maç 3.5 Gol Üst", p_o35, min_prob_req=63)
                 continue
 
             if c_pk == "Maç 2.5 Gol Üst":
-                if not whale_against_fav and p_dc_o15 >= 68:
-                    _push_cand(p_dc_o15 + 14, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15, min_prob_req=66)
+                if not whale_against_fav and fav_val <= -180 and p_fav_o15 >= 63:
+                    _push_cand(p_fav_o15 + 14, ms_fav_o15_lbl, p_fav_o15, min_prob_req=62)
                 if props_open and cor_prob_main >= 70 and real_cor >= 11.2 and not inj_wing:
                     _push_cand(cor_prob_main + 13, f"🚩 {cor_line}", cor_prob_main, min_prob_req=68)
                 if not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 2.15 and p_team >= 67:
                     _push_cand(p_team + 14, f"{fav_team} Takım Golü 1.5 Üst", p_team, min_prob_req=66)
-                if p_btts_yes >= 64 and min_lam >= 1.28:
-                    _push_cand(p_btts_yes + 13, "Karşılıklı Gol Var", p_btts_yes, min_prob_req=63)
+                if p_btts_yes >= 63 and min_lam >= 1.25:
+                    _push_cand(p_btts_yes + 13, "Karşılıklı Gol Var", p_btts_yes, min_prob_req=62)
                 if lam_tot >= 3.30 and p_o35 >= 62 and not ou_trap:
                     _push_cand(p_o35 + 11, "Maç 3.5 Gol Üst", p_o35, min_prob_req=62)
                 continue
 
             if c_pk in ("Maç 3.5 Gol Alt", "İlk Yarı 1.5 Gol Alt"):
-                if not whale_against_fav and (p_mkt_fav >= 53.0 or fav_val <= -140) and p_shield >= 65 and not it2_second_half_boom:
+                if odd_mode == "GLOBAL" and not whale_against_fav and (p_mkt_fav >= 53.0 or fav_val <= -140) and p_shield >= 65 and not it2_second_half_boom:
                     _push_cand(p_shield + 15, f"{dc_tag} & 3.5 Alt", p_shield, min_prob_req=65)
                 if p_ht_u15 >= 72:
                     _push_cand(p_ht_u15 + 13, "İlk Yarı 1.5 Gol Alt", p_ht_u15, min_prob_req=70)
@@ -2108,20 +2133,23 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
         _push_cand(c_u, c_pk, c_pr, min_prob_req=62)
 
-    # EMNİYET SÜBABI: Sadece İddaa barajını (>= @1.30) geçen ve maçın doğasına uygun pazarları seç!
+    # EMNİYET SÜBABI: %100 Gerçek İddaa Bülteni Pazarları (1X/X2 & Alt/Üst Yok!)
     if not filtered_cands:
         safe_fallbacks = [
-            (p_dc_o15 + 14, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15),
             (p_o25 + 13 + ou_trap_pen, "Maç 2.5 Gol Üst", p_o25),
             (p_btts_yes + 12, "Karşılıklı Gol Var", p_btts_yes),
         ]
-        # Açık gol maçlarında (lam_tot >= 2.85) İY 1.5 Alt veya 3.5 Alt önerisini engelle:
+        if not whale_against_fav and fav_val <= -165 and p_fav_o15 >= 58:
+            safe_fallbacks.append((p_fav_o15 + 14, ms_fav_o15_lbl, p_fav_o15))
+        if odd_mode == "GLOBAL":
+            safe_fallbacks.append((p_dc_o15 + 14, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15))
+
         if lam_tot < 2.85:
             safe_fallbacks.extend([
-                (p_shield + 13, f"{dc_tag} & 3.5 Alt", p_shield),
                 (p_u25 + 11 + ou_trap_pen, "Maç 2.5 Gol Alt", p_u25),
                 (p_btts_no + 10, "Karşılıklı Gol Yok", p_btts_no),
                 (p_ht_u15 + 9, "İlk Yarı 1.5 Gol Alt", p_ht_u15),
+                (p_u35 + 8, "Maç 3.5 Gol Alt", p_u35),
             ])
         else:
             if not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 1.95 and p_team >= 62:
@@ -2129,28 +2157,30 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
             safe_fallbacks.append((p_ht_o05 + 9, "İlk Yarı 0.5 Gol Üst", p_ht_o05))
 
         if props_open:
-            if cor_prob_main >= 66 and real_cor >= 10.8 and not inj_wing:
-                safe_fallbacks.insert(0, (cor_prob_main + 16, f"🚩 {cor_line}", cor_prob_main))
+            if cor_prob_main >= 64 and real_cor >= 10.2 and not inj_wing:
+                safe_fallbacks.insert(0, (cor_prob_main + 15, f"🚩 {cor_line}", cor_prob_main))
             elif not is_uk_lig and p_cor_u95 >= 70 and real_cor <= 8.2:
                 safe_fallbacks.append((p_cor_u95 + 11, "🚩 9.5 Korner Alt", p_cor_u95))
+            if card_prob_main >= 63:
+                safe_fallbacks.append((card_prob_main + 12, f"🟨 {card_line}", card_prob_main))
 
         safe_fallbacks.sort(key=lambda x: x[2], reverse=True)
         for s_u, s_pk, s_pr in safe_fallbacks:
-            if "3.5 Alt" in s_pk and (uk_or_heavy_fav_collapse or it2_second_half_boom):
+            if "3.5 Gol Alt" in s_pk and (uk_or_heavy_fav_collapse or it2_second_half_boom):
                 continue
-            if _push_cand(s_u, s_pk, s_pr, min_prob_req=58):
+            if _push_cand(s_u, s_pk, s_pr, min_prob_req=56):
                 break
 
-        # Son kilit: Tüm standart baremler bile @1.30 altında ezilmişse (örn. PSG @1.20), oranı garantili üst kombinasyonu ver:
         if not filtered_cands:
-            if props_open and cor_prob_main >= 68:
+            if props_open and cor_prob_main >= 65:
                 filtered_cands.append((cor_prob_main + 12, f"🚩 {cor_line}", cor_prob_main))
-            elif not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 1.95:
-                filtered_cands.append((max(64, p_team) + 12, f"{fav_team} Takım Golü 1.5 Üst", max(64, p_team)))
-            elif lam_tot >= 2.75:
-                filtered_cands.append((max(60, p_o35) + 10, "Maç 3.5 Gol Üst", max(58, p_o35)))
+            elif not whale_against_fav and fav_val <= -170:
+                filtered_cands.append((max(62, p_fav_o15) + 12, ms_fav_o15_lbl, max(60, p_fav_o15)))
+            elif lam_tot >= 2.65:
+                filtered_cands.append((74, "Maç 2.5 Gol Üst" if p_o25 >= p_btts_yes else "Karşılıklı Gol Var", max(58, max(p_o25, p_btts_yes))))
             else:
                 filtered_cands.append((74, "Maç 2.5 Gol Alt" if p_u25 >= 52 else "Karşılıklı Gol Var", max(58, p_u25 if p_u25 >= 52 else p_btts_yes)))
+                
     candidates = filtered_cands
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_u, best_pick, true_prob = candidates[0]
@@ -2164,7 +2194,7 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
             break
 
     if not sec_pick or _same_market_family(sec_pick, best_pick):
-        smart_goal_alt = ("İlk Yarı 1.5 Gol Alt", p_ht_u15) if p_o15 < 70 else (f"{dc_tag} & 1.5 Gol Üst" if (p_dc_o15 >= 66 and not whale_against_fav) else "Maç 2.5 Gol Üst", p_dc_o15 if (p_dc_o15 >= 66 and not whale_against_fav) else p_o25)
+        smart_goal_alt = ("İlk Yarı 1.5 Gol Alt", p_ht_u15) if p_o15 < 70 else (ms_fav_o15_lbl if (p_dc_o15 >= 66 and not whale_against_fav) else "Maç 2.5 Gol Üst", p_dc_o15 if (p_dc_o15 >= 66 and not whale_against_fav) else p_o25)
         smart_btts = ("Karşılıklı Gol Yok", p_btts_no) if p_btts_no >= p_btts_yes else ("Karşılıklı Gol Var", p_btts_yes)
         fallback_pool = [
             (smart_goal_alt[1], smart_goal_alt[0]),
