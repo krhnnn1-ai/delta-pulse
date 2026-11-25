@@ -2043,7 +2043,7 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
         return estimate_iddaa_odd(pk_lbl, eu_o, pr_val) if odd_mode != "GLOBAL" else eu_o
 
     
-   p_fav_o15 = safe_int(m4.get("p_fav_o15"), 52)
+    p_fav_o15 = safe_int(m4.get("p_fav_o15"), 52)
     ms_fav_o15_lbl = f"{fav_team} Kazanır & 1.5 Gol Üst"
 
     def _push_cand(u_sc, pk_lbl, pr_val, min_prob_req=63):
@@ -2385,21 +2385,25 @@ def compute_post_lineup_evolution_and_props(match_key, is_off, h_name, a_name, h
         if f"🧬AğırRotasyon(-{drop_pts}p)" not in disp_odd:
             disp_odd += f" 🧬AğırRotasyon(-{drop_pts}p)"
 
+    odd_mode_evo = str(MEM.get("odd_mode", "IDDAA_130"))
+    fav_tm_evo = h_name if fav_is_home else a_name
+    iddaa_over_evo = f"{dc_tag} & 1.5 Gol Üst" if odd_mode_evo == "GLOBAL" else (f"{fav_tm_evo} Kazanır & 1.5 Gol Üst" if (fav_val <= -175 and safe_int(m4.get("p_fav_o15"), 60) >= 62) else "Maç 2.5 Gol Üst")
+
     if "Gol Alt" in str(pick) and safe_int(m4.get("d_weak"), 20) >= 90 and max(rot_cnt, opp_rot_cnt) >= 4 and (is_open_lig or (min_lam > 1.12 and real_cor_sum >= 9.0 and ou_val >= 3.0)):
-        pick = f"{dc_tag} & 1.5 Gol Üst" if safe_int(m4.get("p_dc_o15"), 70) >= 66 else "Maç 2.5 Gol Üst"
-        conf = _calibrate_decision_score_by_market_and_band(max(68, safe_int(m4.get("p_dc_o15"), 70)), "DC_O15", max_allowed_conf=dq_max)
+        pick = iddaa_over_evo
+        conf = _calibrate_decision_score_by_market_and_band(max(66, safe_int(m4.get("p_fav_o15" if "Kazanır" in pick else "p_over25"), 66)), _classify_pick_market_type(pick), max_allowed_conf=dq_max)
 
     if "Korner Üst" in pick and inj_wing and p_cor_o < 62 and real_cor_sum < 11.4:
         if ou_val <= 2.5 and safe_int(spec.get("HT_U15"), 72) >= 72:
             pick = "İlk Yarı 1.5 Gol Alt"
             conf = _calibrate_decision_score_by_market_and_band(safe_int(spec.get("HT_U15"), 72), "HT_U", max_allowed_conf=dq_max)
         elif ou_val <= 2.5:
-            pick = f"{dc_tag} & 3.5 Alt" if p_shd >= 64 else "Maç 2.5 Gol Alt"
-            conf = _calibrate_decision_score_by_market_and_band(max(68, p_shd if "3.5" in pick else p_u25), "U35", max_allowed_conf=dq_max)
+            pick = (f"{dc_tag} & 3.5 Alt" if (odd_mode_evo == "GLOBAL" and p_shd >= 64) else "Maç 2.5 Gol Alt")
+            conf = _calibrate_decision_score_by_market_and_band(max(66, p_shd if "3.5" in pick else p_u25), _classify_pick_market_type(pick), max_allowed_conf=dq_max)
         else:
-            pick = f"{dc_tag} & 1.5 Gol Üst" if safe_int(m4.get("p_dc_o15"), 70) >= 66 else "Maç 2.5 Gol Üst"
-            conf = _calibrate_decision_score_by_market_and_band(max(68, safe_int(m4.get("p_dc_o15"), 70)), "DC_O15", max_allowed_conf=dq_max)
-
+            pick = iddaa_over_evo
+            conf = _calibrate_decision_score_by_market_and_band(max(66, safe_int(m4.get("p_over25"), 66)), _classify_pick_market_type(pick), max_allowed_conf=dq_max)
+            
     prop_str = _build_clean_prop_bar(pick, top2_pk, top2_cf)
     psim = _build_patron_sim_summary(m4, pick, fav_is_home, conf, ou_val)
     m4["patron_sim_ui"] = psim["ui"]
