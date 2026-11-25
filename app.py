@@ -33,6 +33,10 @@ header[data-testid="stHeader"], .stAppHeader, .stAppToolbar, [data-testid="stToo
 .dp-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 11px 14px; margin-bottom: 9px; color: #e6edf3; font-size: 13px; line-height: 1.5; }
 .dp-ak { border-left: 4px solid #f0b90b !important; background: linear-gradient(90deg, #241d08 0%, #161b22 100%); }
 .dp-warn { border-left: 4px solid #f85149 !important; }
+.dp-tier-green { border-left: 4px solid #3fb950 !important; background: linear-gradient(90deg, rgba(46, 160, 67, 0.16) 0%, rgba(22, 27, 34, 0.95) 65%) !important; }
+.dp-tier-ak { border-left: 4px solid #f0b90b !important; background: linear-gradient(90deg, rgba(240, 185, 11, 0.14) 0%, rgba(46, 160, 67, 0.14) 45%, rgba(22, 27, 34, 0.95) 85%) !important; }
+.dp-tier-orange { border-left: 4px solid #d29922 !important; background: linear-gradient(90deg, rgba(210, 153, 34, 0.15) 0%, rgba(22, 27, 34, 0.95) 65%) !important; }
+.dp-tier-red { border-left: 4px solid #f85149 !important; background: linear-gradient(90deg, rgba(248, 81, 73, 0.14) 0%, rgba(22, 27, 34, 0.95) 65%) !important; }
 .dp-live { border-left: 4px solid #2f81f7 !important; }
 .dp-live-hot { border-left: 4px solid #3fb950 !important; background: linear-gradient(90deg, #0d2818 0%, #161b22 100%); }
 .dp-badge { background: #21262d; color: #79c0ff; padding: 2px 7px; border-radius: 5px; font-size: 11px; font-weight: 700; margin-left: 4px; }
@@ -1179,6 +1183,7 @@ def _compute_pick_specific_value(pick, conf, m4, ou_val):
     if "2.5 Gol Alt" in pk: p_struct = safe_float(spec.get("MS_U25"), conf) / 100.0
     elif "Maç 3.5 Gol Alt" in pk: p_struct = safe_float(spec.get("MS_U35"), conf) / 100.0
     elif "3.5 Alt" in pk and "&" in pk: p_struct = safe_float(m4.get("p_shield"), conf) / 100.0
+    elif "Kazanır & 1.5 Gol Üst" in pk: p_struct = safe_float(m4.get("p_fav_o15"), conf) / 100.0
     elif "1.5 Gol Üst" in pk and "&" in pk: p_struct = safe_float(m4.get("p_dc_o15"), conf) / 100.0
     elif "Maç 1.5 Gol Üst" in pk: p_struct = safe_float(spec.get("MS_O15"), conf) / 100.0
     elif "Maç 2.5 Gol Üst" in pk: p_struct = safe_float(spec.get("MS_O25"), conf) / 100.0
@@ -3376,22 +3381,38 @@ def render_main_bulletin(tier="NORMAL", is_patron_mode=False):
         locked_card = (m["conf"] >= 66 and not is_unlocked)
         p_disp = "🔒 VIP LOCKED (66%+ High Probability)" if locked_card else m["pick"]
         pr_disp = "🔒 Unlock VIP to view 28-Market Matrix & Props" if locked_card else m["prop"]
-        b_col = "#f0b90b" if m["conf"] >= 78 else "#2f81f7"
         k_badge = f"<span style='color:#56d364;font-weight:700;'>✅ Resmi 11 ({m['h_tac']}v{m['a_tac']})</span>" if m["is_off"] else f"<span style='color:#8b949e;'>⏳ 5-Maç Çekirdek XI ({m['h_tac']}v{m['a_tac']})</span>"
         m4_d = m.get("m4") or {}
         spec_d = m4_d.get("spectrum") or {}
         dec_u = safe_int(m4_d.get("decision_score"), m["conf"])
-        patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:#0d1117;border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{m4_d.get('patron_sim_ui','')}</div>" if (is_patron_mode and m4_d.get("patron_sim_ui")) else ""
+        psim_ui_str = str(m4_d.get("patron_sim_ui") or "")
+        has_hard_warn = ("🚨BÜRO_TUZAĞI" in str(m.get("odd", "")) or "⚠️İddaaDüşük" in psim_ui_str)
+
+        # Kasa Anayasası Renk Sınıflandırması (Yeşil / Turuncu / Kırmızı Saydam Arka Plan)
+        if m["conf"] >= 78 and dec_u >= 88 and not has_hard_warn:
+            tier_cls = "dp-tier-ak"
+            tier_pill = "<span style='background:rgba(240,185,11,0.2);color:#ffd33d;border:1px solid rgba(240,185,11,0.45);padding:2px 8px;border-radius:6px;font-weight:800;'>💎 ANA KASA • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+        elif m["conf"] >= 70 and dec_u >= 80 and not has_hard_warn:
+            tier_cls = "dp-tier-green"
+            tier_pill = "<span style='background:rgba(63,185,80,0.18);color:#56d364;border:1px solid rgba(63,185,80,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🟢 GÜVENLİ • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+        elif m["conf"] >= 64 and dec_u >= 76 and not has_hard_warn:
+            tier_cls = "dp-tier-orange"
+            tier_pill = "<span style='background:rgba(210,153,34,0.18);color:#e3b341;border:1px solid rgba(210,153,34,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🟠 SEÇİCİ • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+        else:
+            tier_cls = "dp-tier-red"
+            tier_pill = "<span style='background:rgba(248,81,73,0.18);color:#ff7b72;border:1px solid rgba(248,81,73,0.4);padding:2px 8px;border-radius:6px;font-weight:800;'>🔴 RİSKLİ/PAS • Olasılık: %{conf} ({u}p)</span>".format(conf=m["conf"], u=dec_u)
+
+        patron_line = f"<div style='margin-top:5px;padding:5px 8px;background:rgba(13,17,23,0.75);border-left:3px solid #f0b90b;border-radius:4px;font-size:11.5px;color:#e6edf3;'>{psim_ui_str}</div>" if (is_patron_mode and psim_ui_str) else ""
         t_lbl = m.get("tarih_saat") or m.get("saat", "20:00")
         st.markdown(
-            f"<div class='dp-card' style='border-left:4px solid {b_col};'>"
-            f"<div style='display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:#8b949e;'>"
+            f"<div class='dp-card {tier_cls}'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;font-size:11.5px;color:#8b949e;'>"
             f"<span>🕒 <b>{t_lbl}</b> • {m['lig']} • {k_badge}</span>"
-            f"<span style='background:#21262d;color:#ffd33d;padding:2px 8px;border-radius:6px;font-weight:800;'>Olasılık: %{m['conf']} (Karar:{dec_u}p)</span></div>"
+            f"{tier_pill}</div>"
             f"<div style='font-size:15.5px;font-weight:800;margin:5px 0;color:#fff;'>{m['h_name']} vs {m['a_name']}</div>"
             f"<div style='font-size:11.5px;color:#c9d1d9;margin-bottom:4px;'>📈 <b>Form & Mom:</b> {format_form_badges(m['h_form'])} ({m['h_mom']}%) vs {format_form_badges(m['a_form'])} ({m['a_mom']}%)</div>"
             f"<div style='font-size:11px;color:#79c0ff;'>🐋 <b>Çapraz Büro & Fizik:</b> {m['odd']} | TG: {m['ou']} | <code>2.5A:%{spec_d.get('MS_U25',50)} | 3.5A:%{spec_d.get('MS_U35',80)} | KGY:%{spec_d.get('BTTS_NO',48)} | Dw:{m4_d.get('d_weak',15)}</code></div>"
-            f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid #30363d;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
+            f"<div style='margin-top:6px;padding-top:6px;border-top:1px solid rgba(48,54,61,0.7);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;'>"
             f"<span>🎯 <b>1. Tercih (Ana):</b> <b style='color:#56d364;'>{p_disp}</b> ({m['evo']})</span><span style='color:#d2a8ff;'>{pr_disp}</span></div>"
             f"{patron_line}</div>",
             unsafe_allow_html=True
