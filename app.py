@@ -2110,38 +2110,49 @@ def _select_best_autonomous_market(h_name, a_name, is_home_fav, fav_team, dc_tag
 
         _push_cand(c_u, c_pk, c_pr, min_prob_req=62)
 
-    # EMNİYET SÜBABI: Sadece İddaa barajını (>= @1.30) geçen gerçek ve tuzaksız pazarları seç!
+    # EMNİYET SÜBABI: Sadece İddaa barajını (>= @1.30) geçen ve maçın doğasına uygun pazarları seç!
     if not filtered_cands:
         safe_fallbacks = [
             (p_dc_o15 + 14, f"{dc_tag} & 1.5 Gol Üst", p_dc_o15),
-            (p_shield + 13, f"{dc_tag} & 3.5 Alt", p_shield),
-            (p_o25 + 12 + ou_trap_pen, "Maç 2.5 Gol Üst", p_o25),
-            (p_btts_yes + 11, "Karşılıklı Gol Var", p_btts_yes),
-            (p_u25 + 11 + ou_trap_pen, "Maç 2.5 Gol Alt", p_u25),
-            (p_btts_no + 10, "Karşılıklı Gol Yok", p_btts_no),
-            (p_ht_u15 + 9, "İlk Yarı 1.5 Gol Alt", p_ht_u15),
-            (p_ht_o05 + 9, "İlk Yarı 0.5 Gol Üst", p_ht_o05),
+            (p_o25 + 13 + ou_trap_pen, "Maç 2.5 Gol Üst", p_o25),
+            (p_btts_yes + 12, "Karşılıklı Gol Var", p_btts_yes),
         ]
+        # Açık gol maçlarında (lam_tot >= 2.85) İY 1.5 Alt veya 3.5 Alt önerisini engelle:
+        if lam_tot < 2.85:
+            safe_fallbacks.extend([
+                (p_shield + 13, f"{dc_tag} & 3.5 Alt", p_shield),
+                (p_u25 + 11 + ou_trap_pen, "Maç 2.5 Gol Alt", p_u25),
+                (p_btts_no + 10, "Karşılıklı Gol Yok", p_btts_no),
+                (p_ht_u15 + 9, "İlk Yarı 1.5 Gol Alt", p_ht_u15),
+            ])
+        else:
+            if not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 1.95 and p_team >= 62:
+                safe_fallbacks.append((p_team + 14, f"{fav_team} Takım Golü 1.5 Üst", p_team))
+            safe_fallbacks.append((p_ht_o05 + 9, "İlk Yarı 0.5 Gol Üst", p_ht_o05))
+
         if props_open:
-            safe_fallbacks.insert(0, (cor_prob_main + 15, f"🚩 {cor_line}", cor_prob_main))
-            if not is_uk_lig and p_cor_u95 >= 70:
-                safe_fallbacks.append((p_cor_u95 + 10, "🚩 9.5 Korner Alt", p_cor_u95))
+            if cor_prob_main >= 66 and real_cor >= 10.8 and not inj_wing:
+                safe_fallbacks.insert(0, (cor_prob_main + 16, f"🚩 {cor_line}", cor_prob_main))
+            elif not is_uk_lig and p_cor_u95 >= 70 and real_cor <= 8.2:
+                safe_fallbacks.append((p_cor_u95 + 11, "🚩 9.5 Korner Alt", p_cor_u95))
 
         safe_fallbacks.sort(key=lambda x: x[2], reverse=True)
         for s_u, s_pk, s_pr in safe_fallbacks:
             if "3.5 Alt" in s_pk and (uk_or_heavy_fav_collapse or it2_second_half_boom):
                 continue
-            if _push_cand(s_u, s_pk, s_pr, min_prob_req=56):
+            if _push_cand(s_u, s_pk, s_pr, min_prob_req=58):
                 break
 
+        # Son kilit: Tüm standart baremler bile @1.30 altında ezilmişse (örn. PSG @1.20), oranı garantili üst kombinasyonu ver:
         if not filtered_cands:
-            if props_open and cor_prob_main >= 70:
-                filtered_cands.append((cor_prob_main + 10, f"🚩 {cor_line}", cor_prob_main))
-            elif lam_tot >= 2.65:
-                filtered_cands.append((76, "Karşılıklı Gol Var" if p_btts_yes >= 58 else "Maç 2.5 Gol Üst", max(60, max(p_o25, p_btts_yes))))
+            if props_open and cor_prob_main >= 68:
+                filtered_cands.append((cor_prob_main + 12, f"🚩 {cor_line}", cor_prob_main))
+            elif not is_team_o15_banned_lig and not whale_against_fav and fav_lam >= 1.95:
+                filtered_cands.append((max(64, p_team) + 12, f"{fav_team} Takım Golü 1.5 Üst", max(64, p_team)))
+            elif lam_tot >= 2.75:
+                filtered_cands.append((max(60, p_o35) + 10, "Maç 3.5 Gol Üst", max(58, p_o35)))
             else:
-                filtered_cands.append((76, f"{dc_tag} & 3.5 Alt" if (p_shield >= 62 and not whale_against_fav) else "Maç 2.5 Gol Alt", max(60, p_shield if (p_shield >= 62 and not whale_against_fav) else p_u25)))
-
+                filtered_cands.append((74, "Maç 2.5 Gol Alt" if p_u25 >= 52 else "Karşılıklı Gol Var", max(58, p_u25 if p_u25 >= 52 else p_btts_yes)))
     candidates = filtered_cands
     candidates.sort(key=lambda x: x[0], reverse=True)
     best_u, best_pick, true_prob = candidates[0]
