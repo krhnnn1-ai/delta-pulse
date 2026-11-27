@@ -994,7 +994,8 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
    # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.8_FINAL_LOCK"
+MODEL_VERSION = "M5.1.9_CORNER_REALITY"
+
 
 LEAGUE_GOAL_AVG = {
     "ned.2": 3.10, "ger.1": 3.05, "ned.1": 3.00, "ger.2": 2.92,
@@ -1518,11 +1519,24 @@ def compute_friction_physics(h_name, a_name, h_tac, a_tac, h_mom, a_mom, fav_val
         blowout_prob = min(88, 52 + int(mom_gap * 0.6) + int(max(0, abs_fav - 150) * 0.12))
     is_blowout = (blowout_prob >= 58)
 
-    is_karavana = (sh_sum >= 21.0 and (sot_sum / max(1.0, sh_sum)) < 0.32)
-    blocked_shot_cor_boost = 1.09 if ((sh_sum >= 22.0 and abs(fav_delta) < 4.0 and real_cor_sum >= 9.4) or (is_karavana and real_cor_sum >= 9.5)) else 1.0
-    wx_mult = 1.05 if "Yağışlı" in wx_str else 1.0
-    wing_mult = 1.06 if (wing_asym and not inj_wing) else (0.90 if inj_wing else 1.0)
-    cor_mu = max(5.2, min(15.5, real_cor_sum * 0.96 * wing_mult * wx_mult * blocked_shot_cor_boost * safe_float(lig_dna.get("cor_mult"), 1.0)))
+        is_karavana = (sh_sum >= 21.0 and (sot_sum / max(1.0, sh_sum)) < 0.32)
+    is_goal_cannibal = (sh_sum >= 22.0 and (sot_sum / max(1.0, sh_sum)) >= 0.35) or (ou_val >= 3.5 and min_side_cor < 4.7)
+    min_emp_cor = min(safe_int(h_hist.get("emp_n"), 0), safe_int(a_hist.get("emp_n"), 0))
+    is_uefa_sec_cup = slug in ("uefa.europa.conf", "uefa.europa")
+
+    # UEFA Konferans/Avrupa Ligi dar örneklem sönümlemesi (14+ yapay korner ortalamasını keser)
+    eff_cor_sum = (real_cor_sum * 0.72 + 9.5 * 0.28) if is_uefa_sec_cup else ((real_cor_sum * 0.78 + 9.5 * 0.22) if min_emp_cor < 4 else real_cor_sum)
+
+    blocked_shot_cor_boost = 1.07 if ((sh_sum >= 22.0 and abs(fav_delta) < 4.0 and eff_cor_sum >= 9.6 and not is_goal_cannibal) or (is_karavana and eff_cor_sum >= 9.5)) else 1.0
+    cannibal_pen = 0.90 if is_goal_cannibal else 1.0
+    wx_mult = 1.04 if "Yağışlı" in wx_str else 1.0
+    wing_mult = 1.05 if (wing_asym and not inj_wing) else (0.90 if inj_wing else 1.0)
+    cor_mu = max(5.2, min(12.1, eff_cor_sum * 0.95 * wing_mult * wx_mult * blocked_shot_cor_boost * cannibal_pen * safe_float(lig_dna.get("cor_mult"), 1.0)))
+
+    is_high_cor_lig = any(k in str(lig_adi).upper() for k in ("PREMIER", "İSKOÇYA", "EFL"))
+    cor_line_num = 9.5 if is_high_cor_lig else 8.5
+    disp_r_use = 8.0 if blocked_shot_cor_boost > 1.0 else min(9.5, safe_float(lig_dna.get("disp_r"), 10.5))
+    cor_prob_pct = int(round(neg_binom_prob_over(cor_line_num, cor_mu, disp_r=disp_r_use) * 100.0))
 
     is_high_cor_lig = any(k in str(lig_adi).upper() for k in ("PREMIER", "İSKOÇYA", "EFL"))
     cor_line_num = 9.5 if is_high_cor_lig else 8.5
@@ -1733,14 +1747,22 @@ def compute_conditional_twin_memory_bonus(mkt_code, curr_ctx, lig_adi=""):
     return 0
 
 def _calibrate_decision_score_by_market_and_band(raw_prob_pct, mkt_type="WIN", max_allowed_conf=90):
-    p = min(95.0, max(5.0, float(raw_prob_pct))) / 100.0
+    # M5.1.9 PAZAR GERÇEKLİK TAVANI: Yan pazarların yapay %85-%87 Ana Kasa şişmesini kesin engeller
+    if mkt_type in ("COR_U", "CARD_O", "CARD_U"):
+        max_allowed_conf = min(max_allowed_conf, 75)
+    elif mkt_type in ("BTTS_YES", "O25", "U25", "TEAM_O15"):
+        max_allowed_conf = min(max_allowed_conf, 76)
+    elif mkt_type == "COR_O":
+        max_allowed_conf = min(max_allowed_conf, 78)
+
+    p = min(92.0, max(5.0, float(raw_prob_pct))) / 100.0
     fin_map = MEM.get("finished_cache", {})
     same_mkt = [
         m for m in fin_map.values()
         if isinstance(m, dict) and "pick" in m and "won" in m and _classify_pick_market_type(m.get("pick")) == mkt_type
     ]
     if len(same_mkt) < 10:
-        calib_p = 0.50 + (p - 0.50) * 0.94
+        calib_p = 0.50 + (p - 0.50) * 0.92
         return int(round(min(float(max_allowed_conf), max(45.0, calib_p * 100.0))))
 
     band_low, band_high = max(0.40, p - 0.10), min(0.98, p + 0.10)
@@ -1748,8 +1770,9 @@ def _calibrate_decision_score_by_market_and_band(raw_prob_pct, mkt_type="WIN", m
     pool = in_band if len(in_band) >= 5 else same_mkt[-25:]
     emp_hit = sum(1.0 for x in pool if x.get("won")) / len(pool)
     avg_pred = sum(safe_float(x.get("conf"), 70.0) / 100.0 for x in pool) / len(pool)
-    adj_p = p + max(-0.05, min(0.04, (emp_hit - avg_pred) * 0.28))
+    adj_p = p + max(-0.06, min(0.03, (emp_hit - avg_pred) * 0.28))
     return int(round(min(float(max_allowed_conf), max(45.0, adj_p * 100.0))))
+
 
 def _build_patron_sim_summary(m4, pick, is_home_fav, conf=74, ou_val=2.5):
     mat = m4.get("mat") or {}
