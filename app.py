@@ -194,6 +194,13 @@ def _merge_store_dict_into_mem(d):
             for mk, mv in src_map.items():
                 if mk not in dst_map:
                     dst_map[mk] = mv
+                elif dict_k == "locked_picks" and isinstance(mv, dict) and isinstance(dst_map.get(mk), dict):
+                    # Bulutta CONFIRMED_XI varsa ama RAM'de henüz yoksa koru; RAM'de CONFIRMED_XI varsa ezdirme!
+                    if mv.get("CONFIRMED_XI") and not dst_map[mk].get("CONFIRMED_XI"):
+                        dst_map[mk]["CONFIRMED_XI"] = mv["CONFIRMED_XI"]
+                        dst_map[mk]["pick"] = mv["CONFIRMED_XI"].get("pick", dst_map[mk].get("pick"))
+                        dst_map[mk]["conf"] = mv["CONFIRMED_XI"].get("conf", dst_map[mk].get("conf"))
+                        dst_map[mk]["prop"] = mv["CONFIRMED_XI"].get("prop", dst_map[mk].get("prop"))
     for k in ("base_w", "base_t", "base_ak_w", "base_ak_t"):
         if k in d and safe_int(d[k], 0) > safe_int(MEM.get(k), 0):
             MEM[k] = safe_int(d[k], 0)
@@ -996,7 +1003,7 @@ def fetch_and_analyze_roster(args):
         roster_cache[ev_id] = res
     return match_title, res
 # ==================== MODÜL 3A/6: VERİ KALİTESİ, İDDAA MARJ MOTORU VE ÇAPRAZ DEĞER ====================
-MODEL_VERSION = "M5.1.9_CORNER_REALITY"
+MODEL_VERSION = "M5.2.1_CONFIRMED_LOCK"
 
 
 LEAGUE_GOAL_AVG = {
@@ -2783,14 +2790,38 @@ for _hk in list(MEM.setdefault("history_scores", {}).keys()):
 
 def _resolve_immutable_match_lock(locked_picks, match_key, match_title, state):
     curr_lock_id = f"{match_key}_{MODEL_VERSION}"
-    if isinstance(locked_picks.get(curr_lock_id), dict):
-        return curr_lock_id, locked_picks[curr_lock_id]
+    base_rec = locked_picks.get(match_key) if isinstance(locked_picks.get(match_key), dict) else {}
+    ver_rec = locked_picks.get(curr_lock_id) if isinstance(locked_picks.get(curr_lock_id), dict) else {}
+
+    # 1. Maç canlı veya bitmişse: Hangi kayıtta CONFIRMED_XI (Resmi 11 Evrimi) varsa mutlak öncelik onundur!
     if state in ("in", "post"):
-        if isinstance(locked_picks.get(match_key), dict) and locked_picks[match_key].get("pick"):
-            return curr_lock_id, dict(locked_picks[match_key])
-        for k_any, v_any in locked_picks.items():
+        for cand in (ver_rec, base_rec):
+            if isinstance(cand, dict) and isinstance(cand.get("CONFIRMED_XI"), dict) and cand["CONFIRMED_XI"].get("pick"):
+                merged = dict(cand)
+                c_xi = cand["CONFIRMED_XI"]
+                merged.update({"pick": c_xi["pick"], "conf": c_xi.get("conf", merged.get("conf", 70)), "prop": c_xi.get("prop", merged.get("prop", ""))})
+                return curr_lock_id, merged
+
+        for k_any, v_any in list(locked_picks.items())[::-1]:
+            if str(k_any).startswith(f"{match_key}_") and isinstance(v_any, dict):
+                if isinstance(v_any.get("CONFIRMED_XI"), dict) and v_any["CONFIRMED_XI"].get("pick"):
+                    merged = dict(v_any)
+                    c_xi = v_any["CONFIRMED_XI"]
+                    merged.update({"pick": c_xi["pick"], "conf": c_xi.get("conf", 70), "prop": c_xi.get("prop", "")})
+                    return curr_lock_id, merged
+
+        if ver_rec.get("pick"):
+            return curr_lock_id, dict(ver_rec)
+        for k_any, v_any in list(locked_picks.items())[::-1]:
             if str(k_any).startswith(f"{match_key}_") and isinstance(v_any, dict) and v_any.get("pick"):
                 return curr_lock_id, dict(v_any)
+        if base_rec.get("pick"):
+            return curr_lock_id, dict(base_rec)
+        return curr_lock_id, {}
+
+    # 2. Maç henüz başlamadıysa (state == "pre"): Güncel sürüm kilidini döndür
+    if ver_rec:
+        return curr_lock_id, ver_rec
     return curr_lock_id, {}
 
 
@@ -2960,6 +2991,7 @@ else:
 
         curr_dq_grade = str((m4.get("dq") or {}).get("grade") or "B")
         if state == "pre":
+            had_conf_xi_before = bool(rec.get("CONFIRMED_XI"))
             rec["PRE_LINEUP"] = {
                 "pick": pick, "conf": conf, "prop": prop_str, "dq_grade": curr_dq_grade,
                 "locked_at": now_tr.strftime("%Y-%m-%d %H:%M")
@@ -2977,6 +3009,8 @@ else:
             rec.update({"pick": pick, "conf": conf, "prop": prop_str, "dq_grade": locked_dq, "stage": "CONFIRMED_XI" if is_off else "PRE_LINEUP"})
             locked_picks[lock_id] = rec
             locked_picks[match_key] = rec
+            if is_off and not had_conf_xi_before:
+                _settled_dirty = True
         else:
             active_stage = rec.get("CONFIRMED_XI") or rec.get("PRE_LINEUP") or rec
             if active_stage.get("pick"):
